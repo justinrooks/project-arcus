@@ -13,6 +13,7 @@ struct StormSetupHTTPClient: StormSetupQuerying {
     private let http: HTTPClient
     private let baseURL: URL
     private let logger = Logger.providersArcusClient
+    private let fallbackPolicy: HTTPFallbackPolicy = .maximumAge(5 * 60)
 
     init(
         baseURL: URL = ArcusSignalConfiguration.baseURL(),
@@ -47,7 +48,7 @@ struct StormSetupHTTPClient: StormSetupQuerying {
         do {
             try Task.checkCancellation()
 
-            let httpResponse = try await http.get(url, headers: requestHeaders)
+            let httpResponse = try await http.get(url, headers: requestHeaders, fallbackPolicy: fallbackPolicy)
             try Task.checkCancellation()
 
             if httpResponse.source != .live {

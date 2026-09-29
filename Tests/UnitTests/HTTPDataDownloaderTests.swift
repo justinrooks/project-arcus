@@ -261,6 +261,94 @@ struct HTTPDataDownloaderTests {
         }
     }
 
+    @Test("Maximum-age fallback requires a current origin Date header")
+    func maximumAgeFallbackRequiresCurrentOriginDateHeader() async throws {
+        let freshURL = URL(string: "https://example.test/fallback-age-fresh")!
+        let staleURL = URL(string: "https://example.test/fallback-age-stale")!
+        let missingDateURL = URL(string: "https://example.test/fallback-age-missing-date")!
+        let futureDateURL = URL(string: "https://example.test/fallback-age-future-date")!
+        let serviceUnavailableURL = URL(string: "https://example.test/fallback-age-service-unavailable")!
+        let cachedAt = Date(timeIntervalSince1970: 0)
+        let maximumAge: TimeInterval = 120
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 1_000_000, diskPath: nil)
+        let policy = HTTPRequestPolicy(
+            requestTimeout: 5,
+            resourceTimeout: 5,
+            retryDelays: [],
+            retryableStatusCodes: [429, 503],
+            allowCacheFallback: true
+        )
+
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([
+            freshURL: [.error(URLError(.timedOut))],
+            staleURL: [.error(URLError(.timedOut))],
+            missingDateURL: [.error(URLError(.timedOut))],
+            futureDateURL: [.error(URLError(.timedOut))],
+            serviceUnavailableURL: [.response(status: 503, headers: [:], body: Data("down".utf8))]
+        ])
+        storeCachedBody(
+            Data("fresh".utf8),
+            for: freshURL,
+            cache: cache,
+            headers: ["Date": "Thu, 01 Jan 1970 00:00:00 GMT"]
+        )
+        storeCachedBody(
+            Data("stale".utf8),
+            for: staleURL,
+            cache: cache,
+            headers: ["Date": "Thu, 01 Jan 1970 00:00:00 GMT"]
+        )
+        storeCachedBody(Data("missing-date".utf8), for: missingDateURL, cache: cache)
+        storeCachedBody(
+            Data("future-date".utf8),
+            for: futureDateURL,
+            cache: cache,
+            headers: ["Date": "Thu, 01 Jan 1970 00:02:01 GMT"]
+        )
+        storeCachedBody(
+            Data("stale-service".utf8),
+            for: serviceUnavailableURL,
+            cache: cache,
+            headers: ["Date": "Thu, 01 Jan 1970 00:00:00 GMT"]
+        )
+
+        let freshClient = makeDownloader(
+            cache: cache,
+            foregroundPolicy: policy,
+            backgroundPolicy: policy,
+            now: { cachedAt.addingTimeInterval(maximumAge) }
+        )
+        let fresh = try await freshClient.get(freshURL, headers: [:], fallbackPolicy: .maximumAge(maximumAge))
+        #expect(fresh.source == .cacheFallback)
+        #expect(fresh.data == Data("fresh".utf8))
+
+        let rejectedClient = makeDownloader(
+            cache: cache,
+            foregroundPolicy: policy,
+            backgroundPolicy: policy,
+            now: { cachedAt.addingTimeInterval(maximumAge + 0.001) }
+        )
+        await #expect(throws: URLError.self) {
+            try await rejectedClient.get(staleURL, headers: [:], fallbackPolicy: .maximumAge(maximumAge))
+        }
+        await #expect(throws: URLError.self) {
+            try await rejectedClient.get(missingDateURL, headers: [:], fallbackPolicy: .maximumAge(maximumAge))
+        }
+        await #expect(throws: URLError.self) {
+            try await rejectedClient.get(futureDateURL, headers: [:], fallbackPolicy: .maximumAge(maximumAge))
+        }
+
+        let rejectedStatusResponse = try await rejectedClient.get(
+            serviceUnavailableURL,
+            headers: [:],
+            fallbackPolicy: .maximumAge(maximumAge)
+        )
+        #expect(rejectedStatusResponse.status == 503)
+        #expect(rejectedStatusResponse.source == .live)
+        #expect(rejectedStatusResponse.data == Data("down".utf8))
+    }
+
     @Test("Execution mode selects foreground/background request policy")
     func executionModeSelectsPolicy() async throws {
         let foregroundURL = URL(string: "https://example.test/profile-foreground")!
@@ -496,6 +584,7 @@ struct HTTPDataDownloaderTests {
             allowCacheFallback: true
         ),
         sleepFor: @escaping @Sendable (TimeInterval) async throws -> Void = { _ in },
+        now: @escaping @Sendable () -> Date = Date.init,
         budgetNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
         sleepForDeadline: @escaping @Sendable (Duration) async throws -> Void = URLSessionHTTPClient.defaultDeadlineSleep
     ) -> URLSessionHTTPClient {
@@ -508,7 +597,7 @@ struct HTTPDataDownloaderTests {
             foregroundSession: foregroundSession,
             backgroundSession: backgroundSession,
             sleepFor: sleepFor,
-            now: Date.init,
+            now: now,
             budgetNow: budgetNow,
             sleepForDeadline: sleepForDeadline
         )
@@ -577,9 +666,19 @@ struct HTTPDataDownloaderTests {
         return URLSession(configuration: config)
     }
 
-    private func storeCachedBody(_ body: Data, for url: URL, cache: URLCache) {
+    private func storeCachedBody(
+        _ body: Data,
+        for url: URL,
+        cache: URLCache,
+        headers: [String: String] = [:]
+    ) {
         let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20)
-        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Cache-Control": "max-age=3600"])!
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Cache-Control": "max-age=3600"].merging(headers) { _, replacement in replacement }
+        )!
         cache.storeCachedResponse(CachedURLResponse(response: response, data: body), for: request)
     }
 }

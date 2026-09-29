@@ -20,17 +20,24 @@ struct AirQualityHTTPClientTests {
         #expect(response?.primaryPollutant == "PM2.5")
         #expect(http.url?.path == "/v1/air-quality/current")
         #expect(URLComponents(url: try #require(http.url), resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "613160066540896255")
+        #expect(http.fallbackPolicy == .maximumAge(60 * 60))
     }
 }
 
 private final class AirQualityStubHTTPClient: HTTPClient, @unchecked Sendable {
     let data: Data
     private(set) var url: URL?
+    private(set) var fallbackPolicy: HTTPFallbackPolicy?
 
     init(data: Data) { self.data = data }
 
-    func get(_ url: URL, headers: [String: String]) async throws -> HTTPResponse {
+    func get(
+        _ url: URL,
+        headers: [String: String],
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse {
         self.url = url
+        self.fallbackPolicy = fallbackPolicy
         return HTTPResponse(status: 200, headers: [:], data: data, source: .live)
     }
 

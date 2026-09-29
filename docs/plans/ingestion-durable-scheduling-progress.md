@@ -26,7 +26,7 @@ Coherent hot admission now uses location-scoped durable accepted state. Map and 
 | 1 | [#447](https://github.com/justinrooks/project-arcus/issues/447) — Drive hot scheduling from durable feed state | Implemented; awaiting human review | Feed-state/provenance epic |
 | 2 | [#446](https://github.com/justinrooks/project-arcus/issues/446) — Drive map and outlook scheduling independently from durable state | Implemented; awaiting human review | Feed-state/provenance epic |
 | 3 | [#448](https://github.com/justinrooks/project-arcus/issues/448) — Drive WeatherKit scheduling from durable state | Implemented; awaiting human review | Feed-state sidecar and projection acknowledgement |
-| 4 | [#442](https://github.com/justinrooks/project-arcus/issues/442) — Define feed-specific HTTP fallback age policies | Pending | 01–03 evidence |
+| 4 | [#442](https://github.com/justinrooks/project-arcus/issues/442) — Define feed-specific HTTP fallback age policies | Implemented; awaiting human review | 01–03 evidence |
 
 ## Existing Code Map
 
@@ -50,11 +50,22 @@ Coherent hot admission now uses location-scoped durable accepted state. Map and 
 - Handoff: Weather admission uses the location-scoped durable feed-state record. A provisional attempt is written before WeatherKit starts, so cancellation or snapshot failure remains retry eligible after restart. A success, including authoritative `nil`, advances acceptance only after the home projection commit is acknowledged; failed fetches and projection saves retain prior projected weather.
 
 ### [#442](https://github.com/justinrooks/project-arcus/issues/442) — Define feed-specific HTTP fallback age policies
-- Status: Pending policy gate
-- Handoff: Split by feed if evidence cannot support one reviewable issue.
+- Status: Implemented; awaiting human review
+- Handoff: Transport fallback now requires a parseable, non-future `Date` header within the calling client's policy:
+  Arcus and NWS alerts use 2 minutes, SPC uses 10 minutes, Storm Setup uses 5 minutes, and optional AQI uses 60
+  minutes. Rejected fallback follows each existing error path, which retains the application's durable cache and
+  prevents stale data from becoming authoritative. SPC map batches from `.cacheFallback` cannot commit or clear
+  persisted risk rows and retain the transport-failure provenance.
 
 ## Verification Ledger
 
 - [#447](https://github.com/justinrooks/project-arcus/issues/447): focused `HomeRefreshPipelineTests` lane passed (91 tests), full unit lane passed (1,258 tests), and Debug simulator build passed; both finalized `.xcresult` bundles reported zero failures and skips.
 - [#446](https://github.com/justinrooks/project-arcus/issues/446): focused slow-admission and SPC provider lanes passed (137 tests), full unit lane passed (1,264 tests), and Debug simulator build passed. Final unit result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.2hN0pN/unit.xcresult` (zero failures and skips).
 - [#448](https://github.com/justinrooks/project-arcus/issues/448): focused `HomeRefreshPipelineTests` lane passed (102 tests), and the full unit lane passed (1,270 tests) on iPhone 17 / iOS 26.5. Finalized full result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.UFWPjJ/unit.xcresult` (zero failures, skips, and expected failures). The documented Debug simulator build also passed; `git diff --check` is clean.
+- [#442](https://github.com/justinrooks/project-arcus/issues/442): focused downloader and affected-client lane passed
+  (43 tests), and the final SPC provider lane passed (42 tests), on iPhone 17 / iOS 26.5. Finalized results:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.aYsM7W/unit.xcresult` and
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.zN7MFb/unit.xcresult` (zero failures, skips,
+  and expected failures). Full unit lane passed (1,272 tests):
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.e8KEfG/unit.xcresult` (zero failures, skips,
+  and expected failures). Debug simulator build passed; `git diff --check` is clean.

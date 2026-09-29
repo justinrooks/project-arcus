@@ -11,13 +11,13 @@ import Foundation
 import ArcusCore
 
 private actor MockHTTPClientState {
-    var requests: [(url: URL, headers: [String: String])] = []
+    var requests: [(url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy)] = []
 
-    func record(url: URL, headers: [String: String]) {
-        requests.append((url: url, headers: headers))
+    func record(url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy) {
+        requests.append((url: url, headers: headers, fallbackPolicy: fallbackPolicy))
     }
 
-    func firstRequest() -> (url: URL, headers: [String: String])? {
+    func firstRequest() -> (url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy)? {
         requests.first
     }
 }
@@ -32,8 +32,12 @@ private final class MockHTTPClient: HTTPClient, @unchecked Sendable {
         self.error = error
     }
 
-    func get(_ url: URL, headers: [String : String]) async throws -> HTTPResponse {
-        await state.record(url: url, headers: headers)
+    func get(
+        _ url: URL,
+        headers: [String : String],
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse {
+        await state.record(url: url, headers: headers, fallbackPolicy: fallbackPolicy)
 
         if let error {
             throw error
@@ -42,7 +46,7 @@ private final class MockHTTPClient: HTTPClient, @unchecked Sendable {
     }
     
     func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
-        await state.record(url: url, headers: headers)
+        await state.record(url: url, headers: headers, fallbackPolicy: .unrestricted)
 
         if let error {
             throw error
@@ -52,7 +56,7 @@ private final class MockHTTPClient: HTTPClient, @unchecked Sendable {
 
     func clearCache() {}
 
-    func firstRequest() async -> (url: URL, headers: [String: String])? {
+    func firstRequest() async -> (url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy)? {
         await state.firstRequest()
     }
 }
@@ -81,6 +85,7 @@ struct NwsHttpClientTests {
         #expect(components.queryItems?.first(where: { $0.name == "point" })?.value == "39.1234,-104.9876")
         #expect(request.headers["Accept"] == "application/geo+json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)
+        #expect(request.fallbackPolicy == .maximumAge(2 * 60))
     }
 
     @Test("fetchPointMetadata builds points endpoint path")
@@ -168,13 +173,13 @@ struct NwsHttpClientTests {
 }
 
 private actor ArcusMockHTTPClientState {
-    var requests: [(method: String, url: URL, headers: [String: String], body: Data?)] = []
+    var requests: [(method: String, url: URL, headers: [String: String], body: Data?, fallbackPolicy: HTTPFallbackPolicy?)] = []
 
-    func record(method: String, url: URL, headers: [String: String], body: Data?) {
-        requests.append((method: method, url: url, headers: headers, body: body))
+    func record(method: String, url: URL, headers: [String: String], body: Data?, fallbackPolicy: HTTPFallbackPolicy? = nil) {
+        requests.append((method: method, url: url, headers: headers, body: body, fallbackPolicy: fallbackPolicy))
     }
 
-    func firstRequest() -> (method: String, url: URL, headers: [String: String], body: Data?)? {
+    func firstRequest() -> (method: String, url: URL, headers: [String: String], body: Data?, fallbackPolicy: HTTPFallbackPolicy?)? {
         requests.first
     }
 }
@@ -189,8 +194,12 @@ private final class ArcusMockHTTPClient: HTTPClient, @unchecked Sendable {
         self.error = error
     }
 
-    func get(_ url: URL, headers: [String : String]) async throws -> HTTPResponse {
-        await state.record(method: "GET", url: url, headers: headers, body: nil)
+    func get(
+        _ url: URL,
+        headers: [String : String],
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse {
+        await state.record(method: "GET", url: url, headers: headers, body: nil, fallbackPolicy: fallbackPolicy)
 
         if let error {
             throw error
@@ -209,7 +218,7 @@ private final class ArcusMockHTTPClient: HTTPClient, @unchecked Sendable {
 
     func clearCache() {}
 
-    func firstRequest() async -> (method: String, url: URL, headers: [String: String], body: Data?)? {
+    func firstRequest() async -> (method: String, url: URL, headers: [String: String], body: Data?, fallbackPolicy: HTTPFallbackPolicy?)? {
         await state.firstRequest()
     }
 }
@@ -278,6 +287,7 @@ struct ArcusHttpClientTests {
         #expect(components.queryItems?.first(where: { $0.name == "h3" })?.value == "613725958748241919")
         #expect(request.headers["Accept"] == "application/json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)
+        #expect(request.fallbackPolicy == .maximumAge(2 * 60))
     }
 
     @Test("live Arcus responses mark hot-alert reachability as reachable")

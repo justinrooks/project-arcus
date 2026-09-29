@@ -16,6 +16,16 @@ public enum HTTPExecutionMode: Sendable, Equatable {
     @TaskLocal public static var current: HTTPExecutionMode = .background
 }
 
+/// Determines whether a GET may use an already-cached response after transport fails.
+public enum HTTPFallbackPolicy: Sendable, Equatable {
+    /// Maintains legacy behavior for callers that do not make a feed-specific decision.
+    case unrestricted
+    /// Rejects transport fallback and lets the caller retain its application cache.
+    case disallowed
+    /// Accepts fallback only when the origin response has a trustworthy, bounded age.
+    case maximumAge(TimeInterval)
+}
+
 extension HTTPExecutionMode {
     var logName: String {
         switch self {
@@ -233,9 +243,19 @@ public actor LastGlobalSuccessHTTPObserver: HTTPResponseObserving {
 }
 
 public protocol HTTPClient: Sendable {
-    func get (_ url: URL, headers: [String: String]) async throws -> HTTPResponse
+    func get(
+        _ url: URL,
+        headers: [String: String],
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse
     func post(_ url: URL, headers: [String: String], body: Data?) async throws -> HTTPResponse
     func clearCache()
+}
+
+public extension HTTPClient {
+    func get(_ url: URL, headers: [String: String]) async throws -> HTTPResponse {
+        try await get(url, headers: headers, fallbackPolicy: .unrestricted)
+    }
 }
 
 public final class URLSessionHTTPClient: HTTPClient {
@@ -275,12 +295,22 @@ public final class URLSessionHTTPClient: HTTPClient {
         self.sleepForDeadline = sleepForDeadline
     }
 
-    public func get(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
-        try await request(url: url, method: "GET", headers: headers, body: nil)
+    public func get(
+        _ url: URL,
+        headers: [String: String] = [:],
+        fallbackPolicy: HTTPFallbackPolicy = .unrestricted
+    ) async throws -> HTTPResponse {
+        try await request(url: url, method: "GET", headers: headers, body: nil, fallbackPolicy: fallbackPolicy)
     }
 
     public func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
-        try await request(url: url, method: "POST", headers: headers, body: body)
+        try await request(
+            url: url,
+            method: "POST",
+            headers: headers,
+            body: body,
+            fallbackPolicy: .unrestricted
+        )
     }
 
     public func clearCache() {
@@ -311,7 +341,13 @@ public final class URLSessionHTTPClient: HTTPClient {
         try await Task.sleep(for: duration)
     }
 
-    private func request(url: URL, method: String, headers: [String: String], body: Data?) async throws -> HTTPResponse {
+    private func request(
+        url: URL,
+        method: String,
+        headers: [String: String],
+        body: Data?,
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse {
         let mode = HTTPExecutionMode.current
         let policy = policy(for: mode)
         let session = session(for: mode)
@@ -325,6 +361,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                     method: method,
                     url: url,
                     policy: policy,
+                    fallbackPolicy: fallbackPolicy,
                     executionContext: executionContext,
                     reason: "deadline_before_attempt"
                 )
@@ -356,6 +393,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                         method: method,
                         url: url,
                         policy: policy,
+                        fallbackPolicy: fallbackPolicy,
                         executionContext: executionContext,
                         reason: "deadline_after_response"
                     )
@@ -399,6 +437,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                                     method: method,
                                     url: url,
                                     policy: policy,
+                                    fallbackPolicy: fallbackPolicy,
                                     executionContext: executionContext,
                                     reason: "deadline_before_retry"
                                 )
@@ -414,6 +453,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                         method: method,
                         url: url,
                         policy: policy,
+                        fallbackPolicy: fallbackPolicy,
                         reason: "status_\(liveResponse.status)"
                     ) {
                         return fallback
@@ -436,6 +476,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                                 method: method,
                                 url: url,
                                 policy: policy,
+                                fallbackPolicy: fallbackPolicy,
                                 executionContext: executionContext,
                                 reason: "deadline_before_retry"
                             )
@@ -450,6 +491,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                         method: method,
                         url: url,
                         policy: policy,
+                        fallbackPolicy: fallbackPolicy,
                         reason: "transport_error"
                     ) {
                         return fallback
@@ -524,12 +566,19 @@ public final class URLSessionHTTPClient: HTTPClient {
         method: String,
         url: URL,
         policy: HTTPRequestPolicy,
+        fallbackPolicy: HTTPFallbackPolicy,
         executionContext: BackgroundRefreshExecutionContext?,
         reason: String
     ) async throws -> HTTPResponse {
         try Task.checkCancellation()
         if hasRemainingWork(in: executionContext),
-           let fallback = cacheFallbackResponse(method: method, url: url, policy: policy, reason: reason) {
+           let fallback = cacheFallbackResponse(
+                method: method,
+                url: url,
+                policy: policy,
+                fallbackPolicy: fallbackPolicy,
+                reason: reason
+           ) {
             return fallback
         }
         await executionContext?.deadlineState.markExceeded()
@@ -580,10 +629,15 @@ public final class URLSessionHTTPClient: HTTPClient {
         method: String,
         url: URL,
         policy: HTTPRequestPolicy,
+        fallbackPolicy: HTTPFallbackPolicy,
         reason: String
     ) -> HTTPResponse? {
         guard method == "GET", policy.allowCacheFallback else { return nil }
         guard let cached = getCachedResponse(for: url, timeout: policy.requestTimeout) else { return nil }
+        guard allowsFallback(cached, policy: fallbackPolicy) else {
+            logger.notice("Rejected cached HTTP fallback host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public) reason=\(reason, privacy: .public)")
+            return nil
+        }
 
         let headers: [String: String]
         let status: Int
@@ -601,6 +655,25 @@ public final class URLSessionHTTPClient: HTTPClient {
                             headers: headers,
                             data: cached.data.isEmpty ? nil : cached.data,
                             source: .cacheFallback)
+    }
+
+    private func allowsFallback(_ cached: CachedURLResponse, policy: HTTPFallbackPolicy) -> Bool {
+        switch policy {
+        case .unrestricted:
+            return true
+        case .disallowed:
+            return false
+        case .maximumAge(let maximumAge):
+            guard maximumAge >= 0,
+                  let response = cached.response as? HTTPURLResponse,
+                  let date = response.value(forHTTPHeaderField: "Date")?.fromRFC1123String()
+            else {
+                return false
+            }
+
+            let age = now().timeIntervalSince(date)
+            return age >= 0 && age <= maximumAge
+        }
     }
 
     private func normalizedHeaders(from raw: [AnyHashable: Any]) -> [String: String] {

@@ -6,6 +6,7 @@ struct AirQualityHTTPClient: AirQualityQuerying {
     private let http: HTTPClient
     private let baseURL: URL
     private let logger = Logger.providersArcusClient
+    private let fallbackPolicy: HTTPFallbackPolicy = .maximumAge(60 * 60)
 
     init(baseURL: URL = ArcusSignalConfiguration.baseURL(), http: HTTPClient = URLSessionHTTPClient()) {
         self.baseURL = baseURL
@@ -21,7 +22,11 @@ struct AirQualityHTTPClient: AirQualityQuerying {
             throw ArcusError.invalidUrl
         }
 
-        let response = try await http.get(url, headers: HTTPRequestHeaders.arcus())
+        let response = try await http.get(
+            url,
+            headers: HTTPRequestHeaders.arcus(),
+            fallbackPolicy: fallbackPolicy
+        )
         switch response.classifyStatus() {
         case .success, .notModified:
             guard let data = response.data else { throw ArcusError.missingData }
