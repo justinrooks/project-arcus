@@ -277,6 +277,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         let outlook: SpcOutlookSyncOutcome?
     }
 
+    private struct WeatherRefreshAttempt: Sendable {
+        let result: HomeWeatherRefreshResult
+        let wasAttempted: Bool
+        let networkSucceededAt: Date?
+    }
+
     struct Environment: Sendable {
         let logger: Logger
         let spcSync: any SpcSyncing
@@ -401,6 +407,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
         let now = Date()
         let hotFeedID = context.map { "home.hot.\(HomeProjection.projectionKey(for: $0))" }
+        let weatherFeedID = context.map { "home.weather.\(HomeProjection.projectionKey(for: $0))" }
         if let hotFeedID, let feedStateStore = environment.feedStateStore {
             do {
                 let record = try await feedStateStore.record(for: hotFeedID)
@@ -412,6 +419,17 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             }
         } else if environment.feedStateStore != nil {
             freshness.lastHotFeedSyncAt = nil
+        }
+        if let weatherFeedID, let feedStateStore = environment.feedStateStore {
+            do {
+                let record = try await feedStateStore.record(for: weatherFeedID)
+                freshness.lastWeatherSyncAt = Self.acceptedFeedDate(record, now: now)
+            } catch {
+                freshness.lastWeatherSyncAt = nil
+                environment.logger.error("Unable to load weather feed state: \(String(describing: error), privacy: .public)")
+            }
+        } else if environment.feedStateStore != nil {
+            freshness.lastWeatherSyncAt = nil
         }
         environment.logger.debug(
             "Home ingestion context resolution finished available=\((context != nil), privacy: .public) mode=\(executionMode.logName, privacy: .public)"
@@ -475,12 +493,14 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             }
         }
 
-        let weatherRefresh = await refreshWeatherIfNeeded(
+        let weatherAttempt = await refreshWeatherIfNeeded(
             plan: plan,
             context: context,
+            feedID: weatherFeedID,
             now: now,
             progress: progress
         )
+        let weatherRefresh = weatherAttempt.result
 
         var snapshot = try await environment.snapshotStore.loadSnapshot(
             for: context,
@@ -515,7 +535,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                 persistenceResult: persistenceResult,
                 attemptedAt: now
             )
+            await recordWeatherFeedAttempt(
+                feedID: weatherFeedID,
+                attempt: weatherAttempt,
+                persistenceResult: persistenceResult
+            )
             snapshot.freshness.lastHotFeedSyncAt = freshness.lastHotFeedSyncAt
+            snapshot.freshness.lastWeatherSyncAt = freshness.lastWeatherSyncAt
             switch persistenceResult {
             case .unavailable, .notRequired:
                 break
@@ -764,6 +790,92 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         }
     }
 
+    private func recordWeatherFeedAttempt(
+        feedID: String?,
+        attempt: WeatherRefreshAttempt,
+        persistenceResult: ProjectionPersistenceResult
+    ) async {
+        guard attempt.wasAttempted else { return }
+
+        let projectionAcceptedWeather: Bool
+        if case .committed = persistenceResult, case .success = attempt.result {
+            projectionAcceptedWeather = true
+        } else {
+            projectionAcceptedWeather = false
+        }
+        let finalizedAt = Date()
+        let acceptedAt = projectionAcceptedWeather ? finalizedAt : nil
+        guard let feedStateStore = environment.feedStateStore else {
+            freshness.lastWeatherSyncAt = acceptedAt
+            return
+        }
+        guard let feedID else { return }
+
+        do {
+            _ = try await feedStateStore.update(.init(
+                feedID: feedID,
+                attemptedAt: finalizedAt,
+                networkSucceededAt: attempt.networkSucceededAt,
+                canonicalAcceptedAt: acceptedAt,
+                transportSource: isSuccessfulWeatherResult(attempt.result) ? .live : nil,
+                failure: projectionAcceptedWeather ? nil : weatherFailure(for: attempt.result)
+            ))
+            let persistedRecord = try await feedStateStore.record(for: feedID)
+            freshness.lastWeatherSyncAt = projectionAcceptedWeather
+                ? Self.acceptedFeedDate(persistedRecord, now: Date())
+                : nil
+        } catch {
+            freshness.lastWeatherSyncAt = nil
+            environment.logger.error("Unable to record weather feed state: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func recordWeatherFeedStart(feedID: String?, attemptedAt: Date) async {
+        freshness.lastWeatherSyncAt = nil
+        guard let feedID, let feedStateStore = environment.feedStateStore else { return }
+        do {
+            _ = try await feedStateStore.update(.init(
+                feedID: feedID,
+                attemptedAt: attemptedAt,
+                failure: .cancelled
+            ))
+        } catch {
+            environment.logger.error("Unable to start weather feed state: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func recordWeatherFetchResult(
+        feedID: String?,
+        result: HomeWeatherRefreshResult,
+        networkSucceededAt: Date?,
+        attemptedAt: Date
+    ) async {
+        guard let feedID, let feedStateStore = environment.feedStateStore else { return }
+        let succeeded = isSuccessfulWeatherResult(result)
+        do {
+            _ = try await feedStateStore.update(.init(
+                feedID: feedID,
+                attemptedAt: attemptedAt,
+                networkSucceededAt: networkSucceededAt,
+                transportSource: succeeded ? .live : nil,
+                failure: succeeded ? .cancelled : weatherFailure(for: result)
+            ))
+        } catch {
+            environment.logger.error("Unable to record weather fetch result: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func isSuccessfulWeatherResult(_ result: HomeWeatherRefreshResult) -> Bool {
+        if case .success = result { return true }
+        return false
+    }
+
+    private func weatherFailure(for result: HomeWeatherRefreshResult) -> FeedStateFailureClassification {
+        if Task.isCancelled { return .cancelled }
+        if case .success = result { return .persistence }
+        return .transport
+    }
+
     private func shouldSyncHotFeeds(plan: HomeIngestionPlan, now: Date) -> Bool {
         guard plan.lanes.contains(.hotAlerts) else { return false }
         return alertRefreshPolicy.shouldSync(
@@ -878,17 +990,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
     private func refreshWeatherIfNeeded(
         plan: HomeIngestionPlan,
         context: LocationContext?,
+        feedID: String?,
         now: Date,
         progress: HomeIngestionRunProgress
-    ) async -> HomeWeatherRefreshResult {
+    ) async -> WeatherRefreshAttempt {
         guard plan.lanes.contains(.weather) else {
             environment.logger.debug("Skipping home ingestion weather refresh reason=lane-not-requested")
-            return .skipped
+            return .init(result: .skipped, wasAttempted: false, networkSucceededAt: nil)
         }
         guard let context else {
             await progress.report(.skipped(.lane(.weather)))
             environment.logger.debug("Skipping home ingestion weather refresh reason=no-location-context")
-            return .skipped
+            return .init(result: .skipped, wasAttempted: false, networkSucceededAt: nil)
         }
         guard weatherKitRefreshPolicy.shouldSync(
             now: now,
@@ -897,7 +1010,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         ) else {
             await progress.report(.skipped(.lane(.weather)))
             environment.logger.debug("Skipping home ingestion weather refresh reason=freshness")
-            return .skipped
+            return .init(result: .skipped, wasAttempted: false, networkSucceededAt: nil)
         }
 
         let location = CLLocation(
@@ -905,11 +1018,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             longitude: context.snapshot.coordinates.longitude
         )
         await progress.report(.started(.lane(.weather)))
+        await recordWeatherFeedStart(feedID: feedID, attemptedAt: now)
         environment.logger.info("Running home ingestion weather refresh")
         let weatherResult = await environment.weatherClient.currentWeather(for: location)
+        let networkSucceededAt = isSuccessfulWeatherResult(weatherResult) ? Date() : nil
+        await recordWeatherFetchResult(
+            feedID: feedID,
+            result: weatherResult,
+            networkSucceededAt: networkSucceededAt,
+            attemptedAt: now
+        )
         switch weatherResult {
         case .success(let weather):
-            freshness.lastWeatherSyncAt = now
             if weather != nil {
                 environment.logger.debug("Finished home ingestion weather refresh result=success")
             } else {
@@ -921,7 +1041,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             environment.logger.debug("Finished home ingestion weather refresh result=skipped")
         }
         await progress.report(.completed(.lane(.weather)))
-        return weatherResult
+        return .init(result: weatherResult, wasAttempted: true, networkSucceededAt: networkSucceededAt)
     }
 
     private func refreshAirQuality(
