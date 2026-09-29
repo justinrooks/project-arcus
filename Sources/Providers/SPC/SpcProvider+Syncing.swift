@@ -438,7 +438,7 @@ extension SpcProvider: SpcSyncing {
         case .rejected:
             await record(
                 source: source,
-                failure: source == nil ? .transport : .rejected,
+                failure: source == nil || source == .cacheFallback ? .transport : .rejected,
                 feedID: feedID
             )
         case .failed:
@@ -588,7 +588,12 @@ extension SpcProvider: SpcSyncing {
 
         let convectiveOutcome: SpcMapSyncDomainOutcome
         let convectiveSource: SpcMapSourceIdentity?
-        switch batch.validation.convective {
+        if convectiveTransport == .cacheFallback {
+            logger.notice("spc_map_convective_persistence result=skipped reason=transport_fallback committed=false")
+            convectiveOutcome = .rejected
+            convectiveSource = nil
+        } else {
+            switch batch.validation.convective {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
             let succeeded = await Self.runMapProductSync(
@@ -633,6 +638,7 @@ extension SpcProvider: SpcSyncing {
             )
             convectiveOutcome = .rejected
             convectiveSource = nil
+            }
         }
         await recordMapDomain(
             outcome: convectiveOutcome,
@@ -642,7 +648,12 @@ extension SpcProvider: SpcSyncing {
 
         let fireOutcome: SpcMapSyncDomainOutcome
         let fireSource: SpcMapSourceIdentity?
-        switch batch.validation.fire {
+        if fireTransport == .cacheFallback {
+            logger.notice("spc_map_fire_persistence result=skipped reason=transport_fallback committed=false")
+            fireOutcome = .rejected
+            fireSource = nil
+        } else {
+            switch batch.validation.fire {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
             let succeeded = await Self.runMapProductSync(
@@ -683,6 +694,7 @@ extension SpcProvider: SpcSyncing {
             )
             fireOutcome = .rejected
             fireSource = nil
+            }
         }
         await recordMapDomain(
             outcome: fireOutcome,

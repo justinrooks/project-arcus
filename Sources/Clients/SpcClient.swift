@@ -70,6 +70,7 @@ struct SpcHttpClient: SpcClient {
     private let http: HTTPClient
     private let logger = Logger.providersSpcClient
     private static let baseURL = URL(string: "https://www.spc.noaa.gov")!
+    private let fallbackPolicy: HTTPFallbackPolicy = .maximumAge(10 * 60)
     
     init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http
@@ -112,7 +113,7 @@ struct SpcHttpClient: SpcClient {
     private func fetchSpcResponse(for url: URL, headers: [String: String]) async throws -> HTTPResponse {
         try Task.checkCancellation()
 
-        let resp = try await http.get(url, headers: headers)
+        let resp = try await http.get(url, headers: headers, fallbackPolicy: fallbackPolicy)
         try Task.checkCancellation()
 
         if resp.source != .live {

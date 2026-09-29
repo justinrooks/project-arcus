@@ -44,6 +44,7 @@ struct ArcusHttpClient: ArcusClient {
     private let baseURL: URL
     private let reachabilityReporter: any ArcusSignalReachabilityReporting
     private let logger = Logger.providersArcusClient
+    private let fallbackPolicy: HTTPFallbackPolicy = .maximumAge(2 * 60)
     // https://api.skyaware.app/v2/alerts?county=COC001&fire=COZ245&forecast=COZ045&h3=613167714648719359
     
     init(
@@ -124,7 +125,7 @@ struct ArcusHttpClient: ArcusClient {
         do {
             try Task.checkCancellation()
 
-            let resp = try await http.get(url, headers: requestHeaders)
+            let resp = try await http.get(url, headers: requestHeaders, fallbackPolicy: fallbackPolicy)
             try Task.checkCancellation()
 
             if resp.source != .live {

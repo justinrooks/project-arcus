@@ -133,7 +133,11 @@ private final class ForegroundActivityMockHTTPClient: HTTPClient, @unchecked Sen
         self.response = response
     }
 
-    func get(_ url: URL, headers: [String: String]) async throws -> HTTPResponse {
+    func get(
+        _ url: URL,
+        headers: [String: String],
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse {
         response
     }
 

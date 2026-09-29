@@ -645,13 +645,13 @@ struct ConvectiveOutlookRepoTests {
 }
 
 private actor SpcMockHTTPClientState {
-    var requests: [(url: URL, headers: [String: String])] = []
+    var requests: [(url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy)] = []
 
-    func record(url: URL, headers: [String: String]) {
-        requests.append((url: url, headers: headers))
+    func record(url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy) {
+        requests.append((url: url, headers: headers, fallbackPolicy: fallbackPolicy))
     }
 
-    func firstRequest() -> (url: URL, headers: [String: String])? {
+    func firstRequest() -> (url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy)? {
         requests.first
     }
 }
@@ -666,21 +666,25 @@ private final class SpcMockHTTPClient: HTTPClient, @unchecked Sendable {
         self.error = error
     }
 
-    func get(_ url: URL, headers: [String : String]) async throws -> HTTPResponse {
-        await state.record(url: url, headers: headers)
+    func get(
+        _ url: URL,
+        headers: [String : String],
+        fallbackPolicy: HTTPFallbackPolicy
+    ) async throws -> HTTPResponse {
+        await state.record(url: url, headers: headers, fallbackPolicy: fallbackPolicy)
         if let error { throw error }
         return response
     }
     
     func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
-        await state.record(url: url, headers: headers)
+        await state.record(url: url, headers: headers, fallbackPolicy: .unrestricted)
         if let error { throw error }
         return response
     }
 
     func clearCache() {}
 
-    func firstRequest() async -> (url: URL, headers: [String: String])? {
+    func firstRequest() async -> (url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy)? {
         await state.firstRequest()
     }
 }
@@ -701,6 +705,7 @@ struct SpcHttpClientTests {
         #expect(request.url.path == "/products/spcacrss.xml")
         #expect(request.headers["User-Agent"]?.isEmpty == false)
         #expect((request.headers["Accept"] ?? "").contains("application/rss+xml"))
+        #expect(request.fallbackPolicy == .maximumAge(10 * 60))
     }
 
     @Test("fetchGeoJsonData builds outlook path and geojson accept headers")

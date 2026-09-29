@@ -30,6 +30,7 @@ struct NwsHttpClient: NwsClient {
     private let http: HTTPClient
     private let logger = Logger.providersNwsClient
     private static let baseURL = URL(string: "https://api.weather.gov")!
+    private let fallbackPolicy: HTTPFallbackPolicy = .maximumAge(2 * 60)
     
     init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http
@@ -89,7 +90,7 @@ struct NwsHttpClient: NwsClient {
     private func fetch(from url: URL) async throws -> Data {
         try Task.checkCancellation()
 
-        let resp = try await http.get(url, headers: requestHeaders)
+        let resp = try await http.get(url, headers: requestHeaders, fallbackPolicy: fallbackPolicy)
         try Task.checkCancellation()
 
         if resp.source != .live {

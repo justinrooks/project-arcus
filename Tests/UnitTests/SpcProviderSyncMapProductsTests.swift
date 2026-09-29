@@ -487,6 +487,34 @@ struct SpcProviderSyncMapProductsTests {
         #expect(activeFire == .clear)
     }
 
+    @Test("Transport-fallback all-clear batch preserves active persisted risks")
+    func fallbackAllClearBatchPreservesActivePersistedRisks() async throws {
+        let container = try await makeMapSyncContainer()
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let severeRepo = SevereRiskRepo(modelContainer: container)
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+        try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+        try await fireRepo.refreshFireRisk(using: FireMockClient(fireData: makeFireData()))
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(categoricalFeatures: []),
+                transportSource: .cacheFallback
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome.convective == .rejected)
+        #expect(outcome.fire == .rejected)
+
+        let coordinate = CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        #expect(try await stormRepo.active(asOf: Date(), for: coordinate) != .allClear)
+        #expect(try await severeRepo.active(asOf: Date(), for: coordinate) != .allClear)
+        #expect(try await fireRepo.active(asOf: Date(), for: coordinate) != .clear)
+    }
+
     @Test("Map sync records domain transport only after accepted repository saves")
     func mapSync_recordsAcceptedDomainTransportAfterRepositorySave() async throws {
         let container = try await makeMapSyncContainer()
@@ -559,7 +587,8 @@ struct SpcProviderSyncMapProductsTests {
             feedStateStore: store
         )
         let fallbackOutcome = await fallbackProvider.syncMapProductsOutcome()
-        #expect(fallbackOutcome.isFullyAccepted)
+        #expect(fallbackOutcome.convective == .rejected)
+        #expect(fallbackOutcome.fire == .rejected)
         #expect(fallbackOutcome.convectiveTransportSource == .errorFallback)
         #expect(fallbackOutcome.fireTransportSource == .errorFallback)
 
