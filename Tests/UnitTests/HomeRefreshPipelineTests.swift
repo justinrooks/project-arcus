@@ -3342,6 +3342,157 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncConvectiveOutlooksCount() == 2)
     }
 
+    @Test("reopened slow feed state admits maps and outlook independently")
+    func slowProductAdmission_reopenedStateMatrix() async throws {
+        let context = makeContext()
+        let now = Date()
+        let recent = now.addingTimeInterval(-60)
+        let expired = now.addingTimeInterval(-20 * 60)
+        let cases: [(name: String, convective: Date?, fire: Date?, outlook: Date?, maps: Int, outlooks: Int)] = [
+            ("all fresh", recent, recent, recent, 0, 0),
+            ("maps expired", expired, expired, recent, 1, 0),
+            ("outlook expired", recent, recent, expired, 0, 1),
+            ("both expired", expired, expired, expired, 1, 1),
+            ("one map domain missing", recent, nil, recent, 1, 0)
+        ]
+
+        for entry in cases {
+            let directory = try makeFeedStateDirectory()
+            let store = FeedStateStore(directoryURL: directory)
+            if let date = entry.convective {
+                _ = try await store.update(.init(
+                    feedID: "spc.map.convective", attemptedAt: date, canonicalAcceptedAt: date,
+                    transportSource: .live
+                ))
+            }
+            if let date = entry.fire {
+                _ = try await store.update(.init(
+                    feedID: "spc.map.fire", attemptedAt: date, canonicalAcceptedAt: date,
+                    transportSource: .live
+                ))
+            }
+            if let date = entry.outlook {
+                _ = try await store.update(.init(
+                    feedID: "spc.outlook", attemptedAt: date, canonicalAcceptedAt: date,
+                    transportSource: .live
+                ))
+            }
+
+            let spc = FakeSpcProvider()
+            let executor = makeSlowProductExecutor(
+                spc: spc, context: context, feedStateStore: FeedStateStore(directoryURL: directory)
+            )
+            _ = try await executor.run(plan: slowProductPlan())
+            #expect(await spc.syncMapProductsCount() == entry.maps, "\(entry.name)")
+            #expect(await spc.syncConvectiveOutlooksCount() == entry.outlooks, "\(entry.name)")
+        }
+    }
+
+    @Test("failed slow feeds remain due after the other feed succeeds across reopen")
+    func slowProductAdmission_partialFailureRetriesAfterReopen() async throws {
+        let context = makeContext()
+        let acceptedAt = Date().addingTimeInterval(-60)
+        for failedFeed in ["map", "outlook"] {
+            let directory = try makeFeedStateDirectory()
+            let store = FeedStateStore(directoryURL: directory)
+            for feedID in ["spc.map.convective", "spc.map.fire", "spc.outlook"] {
+                _ = try await store.update(.init(
+                    feedID: feedID, attemptedAt: acceptedAt, canonicalAcceptedAt: acceptedAt,
+                    transportSource: .live
+                ))
+            }
+            let failureID = failedFeed == "map" ? "spc.map.fire" : "spc.outlook"
+            _ = try await store.update(.init(
+                feedID: failureID, attemptedAt: Date(), failure: .transport
+            ))
+
+            let spc = FakeSpcProvider()
+            let executor = makeSlowProductExecutor(
+                spc: spc, context: context, feedStateStore: FeedStateStore(directoryURL: directory)
+            )
+            _ = try await executor.run(plan: slowProductPlan())
+            #expect(await spc.syncMapProductsCount() == (failedFeed == "map" ? 1 : 0))
+            #expect(await spc.syncConvectiveOutlooksCount() == (failedFeed == "outlook" ? 1 : 0))
+
+            let retrySpc = FakeSpcProvider()
+            let reopened = makeSlowProductExecutor(
+                spc: retrySpc, context: context, feedStateStore: FeedStateStore(directoryURL: directory)
+            )
+            _ = try await reopened.run(plan: slowProductPlan())
+            #expect(await retrySpc.syncMapProductsCount() == (failedFeed == "map" ? 1 : 0))
+            #expect(await retrySpc.syncConvectiveOutlooksCount() == (failedFeed == "outlook" ? 1 : 0))
+        }
+    }
+
+    @Test("forced slow refresh attempts both feeds with fresh durable state")
+    func slowProductAdmission_forcedBothAfterReopen() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let store = FeedStateStore(directoryURL: directory)
+        let acceptedAt = Date().addingTimeInterval(-60)
+        for feedID in ["spc.map.convective", "spc.map.fire", "spc.outlook"] {
+            _ = try await store.update(.init(
+                feedID: feedID, attemptedAt: acceptedAt, canonicalAcceptedAt: acceptedAt,
+                transportSource: .live
+            ))
+        }
+        let spc = FakeSpcProvider()
+        let executor = makeSlowProductExecutor(
+            spc: spc, context: context, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await executor.run(plan: slowProductPlan(forced: true))
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+    }
+
+    @Test("noncanonical slow attempts remain due after reopen")
+    func slowProductAdmission_fallbackAndCancellationRetry() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let store = FeedStateStore(directoryURL: directory)
+        let acceptedAt = Date().addingTimeInterval(-60)
+        for feedID in ["spc.map.convective", "spc.map.fire", "spc.outlook"] {
+            _ = try await store.update(.init(
+                feedID: feedID, attemptedAt: acceptedAt, canonicalAcceptedAt: acceptedAt,
+                transportSource: .live
+            ))
+        }
+        _ = try await store.update(.init(
+            feedID: "spc.map.fire", attemptedAt: Date(), failure: .cancelled
+        ))
+        _ = try await store.update(.init(
+            feedID: "spc.outlook", attemptedAt: Date(), transportSource: .localCache
+        ))
+
+        let spc = FakeSpcProvider()
+        let executor = makeSlowProductExecutor(
+            spc: spc, context: context, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await executor.run(plan: slowProductPlan())
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+    }
+
+    @Test("future dated slow state fails open for admission")
+    func slowProductAdmission_futureRecordRetries() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let future = Date().addingTimeInterval(60)
+        let store = FeedStateStore(directoryURL: directory, nowProvider: { future })
+        _ = try await store.update(.init(
+            feedID: "spc.outlook", attemptedAt: future, canonicalAcceptedAt: future,
+            transportSource: .live
+        ))
+
+        let spc = FakeSpcProvider()
+        let executor = makeSlowProductExecutor(
+            spc: spc, context: context, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await executor.run(plan: slowProductPlan())
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+    }
+
     @Test("cancelling a hot sync joins both cancelled provider children")
     func hotAlertSync_cancellationJoinsBothChildren() async throws {
         let context = makeContext()
@@ -3926,7 +4077,11 @@ struct HomeRefreshPipelineTests {
         )
     }
 
-    private func makeSlowProductExecutor(spc: FakeSpcProvider, context: LocationContext) -> HomeIngestionExecutor {
+    private func makeSlowProductExecutor(
+        spc: FakeSpcProvider,
+        context: LocationContext,
+        feedStateStore: FeedStateStore? = nil
+    ) -> HomeIngestionExecutor {
         let alerts = FakeAlertProvider()
         return HomeIngestionExecutor(
             environment: .init(
@@ -3937,6 +4092,7 @@ struct HomeRefreshPipelineTests {
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
                 snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
                 projectionStore: nil,
+                feedStateStore: feedStateStore,
                 widgetSnapshotRefresher: nil
             )
         )

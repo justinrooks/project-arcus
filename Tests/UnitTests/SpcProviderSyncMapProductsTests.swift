@@ -225,22 +225,27 @@ struct SpcProviderSyncMapProductsTests {
     @Test("Cancelling the final convective outlook owner cancels the shared run")
     func cancellingFinalOutlookOwner_cancelsSharedRun() async throws {
         let container = try await makeMapSyncContainer()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
         let gate = OutlookSyncGate()
         let client = OutlookSyncClient(
             mode: .accepted,
             responseGate: gate,
             ignoresCancellationAfterGate: true
         )
-        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client, feedStateStore: store)
 
         let task = Task { await provider.syncConvectiveOutlooks() }
         await client.waitForRssResponseStart()
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: "spc.outlook")?.lastFailure == .cancelled)
         task.cancel()
 
         #expect(await task.value == .cancelled)
         await gate.open()
         await client.waitForRssResponseCompletion()
         #expect(await client.rssResponseCallCount() == 1)
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: "spc.outlook")?.lastFailure == .cancelled)
         let outlooks = try await ConvectiveOutlookRepo(modelContainer: container).fetchConvectiveOutlooks()
         #expect(outlooks.isEmpty)
         #expect(await provider.latestConvective == nil)
@@ -332,6 +337,34 @@ struct SpcProviderSyncMapProductsTests {
 
         #expect(await task.value == .accepted)
         #expect(await provider.latestConvective != nil)
+    }
+
+    @Test("Joining an outlook after acceptance preserves its durable state")
+    func joiningOutlookAfterAcceptance_preservesFeedState() async throws {
+        let container = try await makeMapSyncContainer()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
+        let publicationGate = OutlookSyncGate()
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: OutlookSyncClient(mode: .accepted),
+            feedStateStore: store,
+            beforeOutlookPublication: { await publicationGate.wait() }
+        )
+
+        let first = Task { await provider.syncConvectiveOutlooks() }
+        await publicationGate.waitForWaiter()
+        let second = Task { await provider.syncConvectiveOutlooks() }
+        await provider.waitForOutlookSyncWaiterCount(atLeast: 2)
+        await publicationGate.open()
+
+        #expect(await first.value == .live)
+        #expect(await second.value == .live)
+        let record = try #require(await FeedStateStore(directoryURL: directory).record(for: "spc.outlook"))
+        #expect(record.lastFailure == nil)
+        #expect(record.lastTransportSource == .live)
+        #expect(record.generation == 1)
     }
 
     @Test("Cancelling the final owner before commit preserves outlook rows")
@@ -472,9 +505,12 @@ struct SpcProviderSyncMapProductsTests {
         #expect(acceptedOutcome.convectiveTransportSource == .live)
         #expect(acceptedOutcome.fireTransportSource == .live)
 
+        #expect(await acceptedProvider.syncMapProductsOutcome() == .skipped)
+
         for feedID in ["spc.map.convective", "spc.map.fire"] {
             let record = try #require(await store.record(for: feedID))
             #expect(record.lastTransportSource == .live)
+            #expect(record.lastFailure == nil)
             #expect(record.lastNetworkSuccessAt != nil)
             #expect(record.lastCanonicalAcceptanceAt != nil)
             #expect(record.generation == 1)

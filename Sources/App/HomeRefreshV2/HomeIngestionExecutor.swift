@@ -442,6 +442,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
         var slowFeedSyncOutcome: SlowFeedSyncOutcome?
         if plan.lanes.contains(.slowProducts) {
+            await loadSlowFeedFreshness(now: now)
             let slowFeedAdmission = slowFeedAdmission(plan: plan, now: now)
             if slowFeedAdmission.maps || slowFeedAdmission.outlooks {
                 await progress.report(.started(.lane(.slowProducts)))
@@ -452,15 +453,19 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                     executionMode: executionMode
                 )
                 try await throwIfBackgroundDeadlineExceeded()
-                if let mapOutcome = slowFeedSyncOutcome?.map {
-                    if mapOutcome.isFullyAccepted {
-                        freshness.lastMapProductSyncAt = now
-                    } else if mapOutcome != .skipped {
-                        freshness.lastMapProductSyncAt = nil
+                if environment.feedStateStore != nil {
+                    await loadSlowFeedFreshness(now: Date())
+                } else {
+                    if let mapOutcome = slowFeedSyncOutcome?.map {
+                        if mapOutcome.isFullyAccepted {
+                            freshness.lastMapProductSyncAt = now
+                        } else if mapOutcome != .skipped {
+                            freshness.lastMapProductSyncAt = nil
+                        }
                     }
-                }
-                if let outlookOutcome = slowFeedSyncOutcome?.outlook {
-                    freshness.lastOutlookSyncAt = outlookOutcome.isCanonicalAcceptance ? now : nil
+                    if let outlookOutcome = slowFeedSyncOutcome?.outlook {
+                        freshness.lastOutlookSyncAt = outlookOutcome.isCanonicalAcceptance ? now : nil
+                    }
                 }
                 await progress.report(.completed(.lane(.slowProducts)))
                 environment.logger.debug("Finished home ingestion slow-product sync")
@@ -766,6 +771,33 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             lastSync: freshness.lastHotFeedSyncAt,
             force: plan.forcedLanes.contains(.hotAlerts)
         )
+    }
+
+    private func loadSlowFeedFreshness(now: Date) async {
+        guard let feedStateStore = environment.feedStateStore else { return }
+        do {
+            let convective = try await feedStateStore.record(for: "spc.map.convective")
+            let fire = try await feedStateStore.record(for: "spc.map.fire")
+            let outlook = try await feedStateStore.record(for: "spc.outlook")
+            let convectiveAccepted = Self.acceptedFeedDate(convective, now: now)
+            let fireAccepted = Self.acceptedFeedDate(fire, now: now)
+            freshness.lastMapProductSyncAt = convectiveAccepted.flatMap { convectiveDate in
+                fireAccepted.map { min(convectiveDate, $0) }
+            }
+            freshness.lastOutlookSyncAt = Self.acceptedFeedDate(outlook, now: now)
+        } catch {
+            freshness.lastMapProductSyncAt = nil
+            freshness.lastOutlookSyncAt = nil
+            environment.logger.error("Unable to load slow feed state: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private static func acceptedFeedDate(_ record: FeedStateRecord?, now: Date) -> Date? {
+        guard let record, record.generation > 0, record.lastFailure == nil,
+              record.lastTransportSource == .live || record.lastTransportSource == .revalidated,
+              let acceptedAt = record.lastCanonicalAcceptanceAt,
+              record.lastAttemptAt <= acceptedAt, acceptedAt <= now else { return nil }
+        return acceptedAt
     }
 
     private func slowFeedAdmission(plan: HomeIngestionPlan, now: Date) -> (maps: Bool, outlooks: Bool) {

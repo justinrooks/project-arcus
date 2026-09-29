@@ -60,6 +60,8 @@ extension SpcProvider: SpcSyncing {
             )
         }
 
+        await record(failure: .cancelled, feedID: "spc.map.convective")
+        await record(failure: .cancelled, feedID: "spc.map.fire")
         if Task.isCancelled { return .failed }
 
         let stagedBatch = await stageMapProducts(now: Date())
@@ -240,6 +242,8 @@ extension SpcProvider: SpcSyncing {
         defer {
             signposter.endInterval("Background Run", runInterval)
         }
+
+        await record(failure: .cancelled, feedID: "spc.outlook")
 
         let transport = SpcTextTransportTracker()
         let trackingClient = SourceTrackingSpcClient(client: client, transport: transport)
