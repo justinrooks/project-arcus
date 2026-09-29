@@ -1691,6 +1691,264 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.summaryWeather == nil)
     }
 
+    @Test("weather admission survives reopen and stays scoped to the projection location")
+    func weatherAdmission_reopensAcceptedStateAndIsolatesLocations() async throws {
+        let context = makeContext()
+        let movedContext = makeContext(latitude: 39.76, h3Cell: 654_321, timestamp: 200)
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let firstWeather = FakeWeatherClient(weather: sampleWeather())
+        let first = makeWeatherExecutor(
+            weather: firstWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        let firstSnapshot = try await first.run(plan: weatherPlan(for: context, forced: true))
+
+        let feedID = "home.weather.\(HomeProjection.projectionKey(for: context))"
+        let accepted = try #require(await FeedStateStore(directoryURL: directory).record(for: feedID))
+        #expect(accepted.generation == 1)
+        #expect(accepted.lastFailure == nil)
+        #expect(accepted.lastCanonicalAcceptanceAt != nil)
+        #expect(firstSnapshot.freshness.lastWeatherSyncAt == accepted.lastCanonicalAcceptanceAt)
+
+        let reopenedWeather = FakeWeatherClient()
+        let reopened = makeWeatherExecutor(
+            weather: reopenedWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: weatherPlan(for: context))
+        #expect(await reopenedWeather.callCount() == 0)
+
+        let movedWeather = FakeWeatherClient()
+        let moved = makeWeatherExecutor(
+            weather: movedWeather,
+            context: movedContext,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await moved.run(plan: weatherPlan(for: movedContext))
+        #expect(await movedWeather.callCount() == 1)
+    }
+
+    @Test("weather fetch failure preserves the projection and remains due after reopen")
+    func weatherAdmission_failedFetchRemainsRetryEligible() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let first = makeWeatherExecutor(
+            weather: FakeWeatherClient(weather: sampleWeather()),
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await first.run(plan: weatherPlan(for: context, forced: true))
+
+        let failure = makeWeatherExecutor(
+            weather: FakeWeatherClient(result: .failure),
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await failure.run(plan: weatherPlan(for: context, forced: true))
+        let feedID = "home.weather.\(HomeProjection.projectionKey(for: context))"
+        let failedRecord = try #require(await FeedStateStore(directoryURL: directory).record(for: feedID))
+        let retainedProjection = try #require(await projectionStore.projection(for: context))
+        #expect(failedRecord.generation == 1)
+        #expect(failedRecord.lastFailure == .transport)
+        #expect(retainedProjection.weather == sampleWeather())
+
+        let retryWeather = FakeWeatherClient(weather: sampleWeather())
+        let reopened = makeWeatherExecutor(
+            weather: retryWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: weatherPlan(for: context))
+        #expect(await retryWeather.callCount() == 1)
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: feedID)?.generation == 2)
+    }
+
+    @Test("weather projection save failure does not advance acceptance and retries after reopen")
+    func weatherAdmission_projectionFailureRemainsRetryEligible() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let feedID = "home.weather.\(HomeProjection.projectionKey(for: context))"
+        let previousNetworkSuccessAt = Date().addingTimeInterval(-120)
+        let store = FeedStateStore(directoryURL: directory)
+        _ = try await store.update(.init(
+            feedID: feedID,
+            attemptedAt: previousNetworkSuccessAt,
+            networkSucceededAt: previousNetworkSuccessAt,
+            canonicalAcceptedAt: previousNetworkSuccessAt,
+            transportSource: .live
+        ))
+        _ = try await projectionStore.commitCore(
+            .init(weather: sampleWeather()),
+            for: context,
+            loadedAt: previousNetworkSuccessAt
+        )
+        await projectionStore.failNextSaveForTesting()
+
+        let failed = makeWeatherExecutor(
+            weather: FakeWeatherClient(weather: sampleWeather()),
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        let failedSnapshot = try await failed.run(plan: weatherPlan(for: context, forced: true))
+        let failedRecord = try #require(await FeedStateStore(directoryURL: directory).record(for: feedID))
+        let retainedProjection = try #require(await projectionStore.projection(for: context))
+        #expect(failedRecord.generation == 1)
+        #expect(failedRecord.lastFailure == .persistence)
+        #expect(try #require(failedRecord.lastNetworkSuccessAt) > previousNetworkSuccessAt)
+        #expect(failedSnapshot.freshness.lastWeatherSyncAt == nil)
+        #expect(retainedProjection.weather == sampleWeather())
+
+        let retryWeather = FakeWeatherClient(weather: sampleWeather())
+        let reopened = makeWeatherExecutor(
+            weather: retryWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: weatherPlan(for: context))
+        #expect(await retryWeather.callCount() == 1)
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: feedID)?.generation == 2)
+    }
+
+    @Test("interrupted weather attempt remains due after snapshot loading throws and the store reopens")
+    func weatherAdmission_interruptedAttemptRetriesAfterReopen() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let initial = makeWeatherExecutor(
+            weather: FakeWeatherClient(weather: sampleWeather()),
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await initial.run(plan: weatherPlan(for: context, forced: true))
+
+        let interruptedWeather = FakeWeatherClient(weather: sampleWeather())
+        let interrupted = makeWeatherExecutor(
+            weather: interruptedWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory),
+            snapshotStore: FailingHomeSnapshotReader()
+        )
+        await #expect(throws: TestFailure.self) {
+            _ = try await interrupted.run(plan: weatherPlan(for: context, forced: true))
+        }
+
+        let feedID = "home.weather.\(HomeProjection.projectionKey(for: context))"
+        let interruptedRecord = try #require(await FeedStateStore(directoryURL: directory).record(for: feedID))
+        #expect(interruptedRecord.generation == 1)
+        #expect(interruptedRecord.lastFailure == .cancelled)
+        #expect(await interruptedWeather.callCount() == 1)
+
+        let retryWeather = FakeWeatherClient(weather: sampleWeather())
+        let reopened = makeWeatherExecutor(
+            weather: retryWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: weatherPlan(for: context))
+        #expect(await retryWeather.callCount() == 1)
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: feedID)?.generation == 2)
+    }
+
+    @Test("cancelled weather request remains due after the feed-state store reopens")
+    func weatherAdmission_cancelledAttemptRetriesAfterReopen() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let initial = makeWeatherExecutor(
+            weather: FakeWeatherClient(weather: sampleWeather()),
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await initial.run(plan: weatherPlan(for: context, forced: true))
+
+        let gate = AsyncGate()
+        let interruptedWeather = FakeWeatherClient(result: .success(sampleWeather()), gate: gate)
+        let interrupted = makeWeatherExecutor(
+            weather: interruptedWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        let task = Task {
+            try await interrupted.run(plan: weatherPlan(for: context, forced: true))
+        }
+        #expect(await waitUntil { await interruptedWeather.callCount() == 1 })
+        task.cancel()
+        await gate.open()
+        _ = try? await task.value
+
+        let feedID = "home.weather.\(HomeProjection.projectionKey(for: context))"
+        let cancelledRecord = try #require(await FeedStateStore(directoryURL: directory).record(for: feedID))
+        #expect(cancelledRecord.generation == 1)
+        #expect(cancelledRecord.lastFailure == .cancelled)
+
+        let retryWeather = FakeWeatherClient(weather: sampleWeather())
+        let reopened = makeWeatherExecutor(
+            weather: retryWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: weatherPlan(for: context))
+        #expect(await retryWeather.callCount() == 1)
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: feedID)?.generation == 2)
+    }
+
+    @Test("successful nil weather is accepted only after the projection acknowledges the clear")
+    func weatherAdmission_successfulNilIsAuthoritative() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        _ = try await projectionStore.commitCore(
+            .init(weather: sampleWeather()),
+            for: context,
+            loadedAt: Date().addingTimeInterval(-60)
+        )
+
+        let weather = FakeWeatherClient(result: .success(nil))
+        let executor = makeWeatherExecutor(
+            weather: weather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await executor.run(plan: weatherPlan(for: context, forced: true))
+
+        let feedID = "home.weather.\(HomeProjection.projectionKey(for: context))"
+        let accepted = try #require(await FeedStateStore(directoryURL: directory).record(for: feedID))
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(accepted.generation == 1)
+        #expect(accepted.lastCanonicalAcceptanceAt != nil)
+        #expect(projection.weather == nil)
+
+        let skippedWeather = FakeWeatherClient()
+        let reopened = makeWeatherExecutor(
+            weather: skippedWeather,
+            context: context,
+            projectionStore: projectionStore,
+            feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: weatherPlan(for: context))
+        #expect(await skippedWeather.callCount() == 0)
+    }
+
     @Test("timer refresh preserves stale weather when weather lane is skipped")
     func timerRefresh_preservesStaleWeatherWhenWeatherLaneIsSkipped() async {
         let context = makeContext()
@@ -4118,6 +4376,35 @@ struct HomeRefreshPipelineTests {
         ))
     }
 
+    private func makeWeatherExecutor(
+        weather: FakeWeatherClient,
+        context: LocationContext,
+        projectionStore: HomeProjectionStore,
+        feedStateStore: FeedStateStore,
+        snapshotStore: (any HomeSnapshotReading)? = nil
+    ) -> HomeIngestionExecutor {
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        return HomeIngestionExecutor(environment: .init(
+            logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+            spcSync: spc,
+            arcusAlertSync: alerts,
+            weatherClient: weather,
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+            snapshotStore: snapshotStore ?? HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+            projectionStore: projectionStore,
+            feedStateStore: feedStateStore,
+            widgetSnapshotRefresher: nil
+        ))
+    }
+
+    private func weatherPlan(for context: LocationContext, forced: Bool = false) -> HomeIngestionPlan {
+        var plan = HomeIngestionPlan(request: .init(trigger: .sessionTick, locationContext: context))
+        plan.lanes = [.weather]
+        plan.forcedLanes = forced ? [.weather] : []
+        return plan
+    }
+
     private func makeFeedStateDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeHotAdmissionTests")
@@ -4796,23 +5083,38 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
 
 private actor FakeWeatherClient: HomeWeatherQuerying {
     private let result: HomeWeatherRefreshResult
+    private let gate: AsyncGate?
     private var calls: [CLLocation] = []
 
-    init(weather: SummaryWeather? = nil) {
+    init(weather: SummaryWeather? = nil, gate: AsyncGate? = nil) {
         self.result = .success(weather)
+        self.gate = gate
     }
 
-    init(result: HomeWeatherRefreshResult) {
+    init(result: HomeWeatherRefreshResult, gate: AsyncGate? = nil) {
         self.result = result
+        self.gate = gate
     }
 
     func currentWeather(for location: CLLocation) async -> HomeWeatherRefreshResult {
         calls.append(location)
+        if let gate { await gate.wait() }
+        if Task.isCancelled { return .failure }
         return result
     }
 
     func callCount() -> Int {
         calls.count
+    }
+}
+
+private struct FailingHomeSnapshotReader: HomeSnapshotReading {
+    func loadSnapshot(
+        for context: LocationContext?,
+        weather: SummaryWeather?,
+        freshness: HomeFreshnessState
+    ) async throws -> HomeSnapshot {
+        throw TestFailure.failedRead
     }
 }
 
