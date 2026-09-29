@@ -3587,6 +3587,66 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncConvectiveOutlooksCount() == 1)
     }
 
+    @Test("failed map sync retains accepted risk while an accepted outlook remains available")
+    func slowProductRefresh_failedMapsRetainAcceptedRiskAndPublishOutlook() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let previousLoad = Date(timeIntervalSince1970: 200)
+        _ = try await projectionStore.updateWeather(sampleWeather(), for: context, loadedAt: previousLoad)
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            convectiveSource: testMapSource(revision: 1),
+            fireSource: testMapSource(revision: 1),
+            for: context,
+            loadedAt: previousLoad
+        )
+        let cached = try #require(await projectionStore.projection(for: context))
+        let outlooks = sampleOutlooks()
+        let spc = FakeSpcProvider(
+            outlooks: outlooks,
+            mapSyncOutcome: .failed,
+            outlookSyncOutcome: .accepted,
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(environment: .init(
+            logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+            spcSync: spc,
+            arcusAlertSync: alerts,
+            weatherClient: FakeWeatherClient(),
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+            projectionStore: projectionStore,
+            widgetSnapshotRefresher: nil
+        ))
+
+        let snapshot = try await executor.run(plan: slowProductPlan(forced: true))
+        let persisted = try #require(await projectionStore.projection(for: context))
+        let visible = HomeVisibleRevision.derive(
+            previous: HomeVisibleRevision.derive(previous: nil, observed: cached, projectionKey: cached.projectionKey),
+            observed: persisted,
+            projectionKey: persisted.projectionKey
+        )
+
+        #expect(snapshot.stormRisk == .slight)
+        #expect(snapshot.severeRisk == .tornado(probability: 0.15))
+        #expect(snapshot.fireRisk == .critical)
+        #expect(snapshot.outlooks == outlooks)
+        #expect(snapshot.freshness.lastMapProductSyncAt == nil)
+        #expect(snapshot.freshness.lastOutlookSyncAt != nil)
+        #expect(persisted.lastSlowProductsLoadAt == previousLoad)
+        #expect(visible?.core == cached)
+
+        _ = try await executor.run(plan: slowProductPlan())
+        #expect(await spc.syncMapProductsCount() == 2)
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+    }
+
     @Test("forced slow refresh invokes both fresh feeds")
     func forcedSlowProductRefresh_invokesBothFeeds() async throws {
         let context = makeContext()
