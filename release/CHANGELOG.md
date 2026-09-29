@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## v1.3.0(228)
+
+### UI / UX
+- Open alert details now keep the initially opened cached alert visible, then update when a newer accepted revision for the same alert arrives.
+<!-- evidence: 66e0899 -->
+- Convective Outlooks now preserve an accepted empty Day 1 result after restarting the app.
+<!-- evidence: fced60b -->
+
+### Background & Notifications
+- Hot-feed, Map, Outlook, and WeatherKit refresh scheduling now use durable accepted feed state across app launches, while interrupted or failed attempts remain eligible for retry.
+<!-- evidence: b25ebd3, c1ff35d, d382aee -->
+
+### Reliability
+- Outlook and risk content remain visible when one SPC provider path fails while another succeeds, and only the failed feed is retried.
+<!-- evidence: a16f854 -->
+- HTTP cache fallbacks now use feed-specific freshness policies for Arcus, NWS, SPC, Storm Setup, and AQI data, rejecting stale, missing-date, or future-date fallbacks before they can become authoritative.
+<!-- evidence: a44fcc0 -->
+- SPC cache-fallback map batches no longer clear persisted risk data when the fallback is not authoritative.
+<!-- evidence: a44fcc0 -->
+
+### Tests / QA
+- Regression coverage now covers Outlook accepted-empty persistence, open alert-detail revision reconciliation, durable refresh scheduling for hot feeds, Map, Outlook, and WeatherKit, HTTP fallback freshness policies, SPC map fallback retention, and partial-provider cache retention.
+<!-- evidence: fced60b, 66e0899, b25ebd3, c1ff35d, d382aee, a44fcc0, a16f854 -->
+
+### Maintenance / Cleanup
+- Release metadata, build-number project settings, and App Store listing documentation were refreshed for this build.
+<!-- evidence: dbdad80, f4a64f8 -->
+
 ## v1.3.0(219)
 
 ### UI / UX

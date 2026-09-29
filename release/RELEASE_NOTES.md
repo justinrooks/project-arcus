@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v1.3.0(228)
+
+## Overview
+This build improves refresh recovery and restart behavior across alert details, Outlook, hot feeds, Map, WeatherKit, and HTTP cache fallbacks. It keeps accepted risk and outlook content visible when only part of a provider refresh succeeds, and it tightens stale fallback handling before cached network responses can become authoritative.
+
+## Highlights
+- Open alert details keep the cached alert visible immediately, then update when a newer accepted revision for the same alert arrives.
+- Convective Outlooks preserve an accepted empty Day 1 result after restarting the app.
+- Hot-feed, Map, Outlook, and WeatherKit refresh scheduling use durable accepted feed state across app launches, while failed or interrupted attempts remain retry eligible.
+- Outlook and risk content remain visible when one SPC provider path fails while another succeeds, and only the failed feed is retried.
+- HTTP cache fallbacks now use feed-specific freshness policies for Arcus, NWS, SPC, Storm Setup, and AQI data.
+- SPC cache-fallback map batches no longer clear persisted risk data when the fallback is not authoritative.
+
 ## v1.3.0(219)
 
 ## Overview

@@ -1,4 +1,20 @@
 Unreleased
+SkyAware v1.3.0(228)
+Highlights:
+- Open alert details keep the cached alert visible immediately, then update when a newer accepted revision for the same alert arrives.
+- Convective Outlooks preserve an accepted empty Day 1 result after restarting the app.
+- Hot-feed, Map, Outlook, and WeatherKit refresh scheduling use durable accepted feed state across app launches, while failed or interrupted attempts remain retry eligible.
+- Outlook and risk content remain visible when one SPC provider path fails while another succeeds, and only the failed feed is retried.
+- HTTP cache fallbacks use feed-specific freshness policies and reject stale, missing-date, or future-date fallbacks.
+- SPC cache-fallback map batches no longer clear persisted risk data when the fallback is not authoritative.
+
+What to test:
+- Open an alert detail from cached content, then refresh alerts; confirm the detail stays visible and updates only when a newer accepted revision for the same alert arrives.
+- Restart the app after an accepted empty Day 1 Outlook and confirm Outlook still presents the empty result as accepted.
+- Restart with recently accepted hot-feed, Map, Outlook, or WeatherKit data and confirm refresh scheduling does not repeat unnecessary work, while failed or interrupted attempts can retry.
+- Exercise a partial SPC provider failure where outlook data succeeds but map data fails; confirm accepted Outlook and risk content remain visible and only the failed map feed retries.
+- Exercise stale, missing-date, or future-date HTTP cache fallback responses where feasible; confirm they do not replace authoritative data or clear persisted SPC risks.
+
 SkyAware v1.3.0(219)
 Highlights:
 - Home keeps the last accepted weather and risk content visible while refreshes fail or partial updates complete, and accepted replacements appear atomically.
