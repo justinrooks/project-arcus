@@ -238,13 +238,7 @@ struct ActiveAlertSummaryView: View {
 
     @ViewBuilder
     private var innerContent: some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 12) {
-                contentStateContainer
-            }
-        } else {
-            contentStateContainer
-        }
+        contentStateContainer
     }
 
     private var contentStateContainer: some View {
