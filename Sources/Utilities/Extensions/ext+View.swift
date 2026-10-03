@@ -206,6 +206,13 @@ extension View {
         }
     }
 
+    func skyAwareContentSurface(cornerRadius: CGFloat = SkyAwareRadius.card) -> some View {
+        self.background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.skyAwareContentSurface)
+        )
+    }
+
     @ViewBuilder
     func glassCardBackground(
         cornerRadius: CGFloat = SkyAwareRadius.hero,
