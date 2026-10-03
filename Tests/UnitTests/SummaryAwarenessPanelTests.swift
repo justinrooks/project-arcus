@@ -41,7 +41,14 @@ struct SummaryAwarenessPanelTests {
             todayContentState: .current, isStormRiskResolving: false, isSevereRiskResolving: false,
             isFireRiskResolving: false, isOffline: false
         )
-        #expect(primary == .alert(title: "Tornado Warning", detail: "Take shelter"))
+        guard case let .alert(title, detail, timing, instruction) = primary else {
+            Issue.record("The active warning should remain the primary state.")
+            return
+        }
+        #expect(title == "Tornado Warning")
+        #expect(detail == "Take shelter")
+        #expect(timing.hasPrefix("Until "))
+        #expect(instruction == nil)
         #expect(intensity.displayed(for: .tornado(probability: 0.10), contentState: .current) == intensity)
     }
 
@@ -112,6 +119,42 @@ struct SummaryAwarenessPanelTests {
         }
     }
 
+    @Test("warning hero renders with supporting risk in both appearances and accessibility text")
+    @MainActor
+    func warningHeroRenderEvidence() throws {
+        for (name, scheme, size) in [
+            ("light", ColorScheme.light, DynamicTypeSize.large),
+            ("dark", .dark, .large),
+            ("light-accessibility", .light, .accessibility3),
+            ("dark-accessibility", .dark, .accessibility3)
+        ] {
+            let panel = PrimaryAwarenessPanel(
+                stormRisk: .moderate,
+                severeRisk: .tornado(probability: 0.10),
+                fireRisk: .critical,
+                alerts: [makeAlert(
+                    title: "Tornado Warning",
+                    headline: "Radar indicated tornado.",
+                    instruction: "Move to an interior room on the lowest floor."
+                )],
+                todayContentState: .current,
+                resolutionState: SummaryResolutionState(),
+                showsOfflineToken: false,
+                onOpenMapLayer: { _ in },
+                onOpenAlerts: {}
+            )
+            .environment(\.dynamicTypeSize, size)
+            .padding(16)
+            .frame(width: 390)
+            .background(Color.skyAwareBackground)
+            .environment(\.colorScheme, scheme)
+
+            let renderer = ImageRenderer(content: panel)
+            let data = try #require(renderer.uiImage?.pngData())
+            try data.write(to: URL(fileURLWithPath: "/private/tmp/620-warning-hero-\(name).png"))
+        }
+    }
+
     @Test("Late intensity results cannot leak across locations or survive expiry")
     @MainActor
     func intensityResultIdentity() throws {
@@ -161,12 +204,73 @@ struct SummaryAwarenessPanelTests {
             isOffline: false
         )
 
-        #expect(
-            selected == .alert(
+        guard case let .alert(title, detail, timing, _) = selected else {
+            Issue.record("The active warning should outrank forecast risk.")
+            return
+        }
+        #expect(title == "Tornado Warning")
+        #expect(detail == "A tornado warning is active for your area.")
+        #expect(timing.hasPrefix("Until "))
+    }
+
+    @Test("warning hero keeps only alert supplied guidance")
+    func warningHeroUsesAlertInstructionWhenPresent() {
+        let primary = SummaryAwarenessPrimaryState.resolve(
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            alerts: [makeAlert(
                 title: "Tornado Warning",
-                detail: "A tornado warning is active for your area."
-            )
+                headline: "Radar indicated tornado.",
+                instruction: "Move to an interior room on the lowest floor."
+            )],
+            todayContentState: .current,
+            isStormRiskResolving: false,
+            isSevereRiskResolving: false,
+            isFireRiskResolving: false,
+            isOffline: false
         )
+
+        guard case let .alert(_, _, _, instruction) = primary else {
+            Issue.record("The active warning should produce an alert hero.")
+            return
+        }
+
+        #expect(instruction == "Move to an interior room on the lowest floor.")
+        #expect(primary.accessibilityContract.value.contains(instruction ?? ""))
+    }
+
+    @Test("warning timing uses the established alert end across differing expiry fields")
+    func warningTimingUsesAlertValidEnd() {
+        let now = Date.now
+        let cases = [
+            (expires: now.addingTimeInterval(10_800), ends: now.addingTimeInterval(3_600)),
+            (expires: now.addingTimeInterval(3_600), ends: now.addingTimeInterval(14_400))
+        ]
+
+        for (expires, ends) in cases {
+            let primary = SummaryAwarenessPrimaryState.resolve(
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil,
+                alerts: [makeAlert(title: "Tornado Warning", headline: "Warning active.", expires: expires, ends: ends)],
+                todayContentState: .current,
+                isStormRiskResolving: false,
+                isSevereRiskResolving: false,
+                isFireRiskResolving: false,
+                isOffline: false
+            )
+
+            guard case let .alert(_, _, timing, _) = primary else {
+                Issue.record("The active warning should produce an alert hero.")
+                return
+            }
+
+            let establishedEnd = SummaryAwarenessPrimaryState.watchHeroDetail(expires: ends)
+                .replacingOccurrences(of: "In effect until ", with: "Until ")
+            #expect(timing == establishedEnd)
+            #expect(timing.contains("Active now") == false)
+        }
     }
 
     @Test("watch outranks storm severe and fire when no warning is active")
@@ -188,14 +292,13 @@ struct SummaryAwarenessPanelTests {
             isOffline: false
         )
 
-        let expectedDetail = SummaryAwarenessPrimaryState.watchHeroDetail(expires: alert.expires)
-
-        #expect(
-            selected == .alert(
-                title: "Severe Thunderstorm Watch",
-                detail: expectedDetail
-            )
-        )
+        guard case let .alert(title, detail, timing, _) = selected else {
+            Issue.record("The active watch should remain the primary state.")
+            return
+        }
+        #expect(title == "Severe Thunderstorm Watch")
+        #expect(detail == "Watch currently in effect")
+        #expect(timing == SummaryAwarenessPrimaryState.watchHeroDetail(expires: alert.expires))
     }
 
     @Test("watch subtitle uses a concise same-day expiration time")
@@ -514,11 +617,13 @@ struct SummaryAwarenessPanelTests {
     func alertHeroAccessibilityContract_keepsWeatherTextIntact() {
         let contract = SummaryAwarenessPrimaryState.alert(
             title: "Severe Thunderstorm Watch",
-            detail: "In effect until 9:00 PM CDT"
+            detail: "Watch currently in effect",
+            timing: "In effect until 9:00 PM CDT",
+            instruction: "Move indoors."
         ).accessibilityContract
 
         #expect(contract.label == "Severe Thunderstorm Watch")
-        #expect(contract.value == "In effect until 9:00 PM CDT")
+        #expect(contract.value == "In effect until 9:00 PM CDT. Watch currently in effect. Move indoors.")
         #expect(contract.hint == "Opens the alert center.")
     }
 
@@ -541,7 +646,13 @@ struct SummaryAwarenessPanelTests {
         #expect(quiet.hint == nil)
     }
 
-    private func makeAlert(title: String, headline: String) -> AlertDTO {
+    private func makeAlert(
+        title: String,
+        headline: String,
+        instruction: String? = nil,
+        expires: Date = .now.addingTimeInterval(3_600),
+        ends: Date? = nil
+    ) -> AlertDTO {
         AlertDTO(
             id: UUID().uuidString,
             messageId: nil,
@@ -549,15 +660,15 @@ struct SummaryAwarenessPanelTests {
             title: title,
             headline: headline,
             issued: .now,
-            expires: .now.addingTimeInterval(3_600),
-            ends: .now.addingTimeInterval(3_600),
+            expires: expires,
+            ends: ends ?? expires,
             messageType: "alert",
             sender: nil,
             severity: "Severe",
             urgency: "Immediate",
             certainty: "Likely",
             description: headline,
-            instruction: nil,
+            instruction: instruction,
             response: nil,
             areaSummary: "Test Area",
             geometryData: nil,

@@ -36,7 +36,7 @@ struct SummaryAwarenessAccessibilityContract: Equatable, Sendable {
 }
 
 enum SummaryAwarenessPrimaryState: Equatable, Sendable {
-    case alert(title: String, detail: String)
+    case alert(title: String, detail: String, timing: String, instruction: String?)
     case severe(SevereWeatherThreat)
     case storm(StormRiskLevel)
     case fire(FireRiskLevel)
@@ -55,7 +55,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         isOffline: Bool
     ) -> SummaryAwarenessPrimaryState {
         if let alert = Self.activeAlert(from: alerts) {
-            return .alert(title: alert.title, detail: alert.detail)
+            return .alert(title: alert.title, detail: alert.detail, timing: alert.timing, instruction: alert.instruction)
         }
 
         if let severeRisk, severeRisk != .allClear {
@@ -121,7 +121,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         level != .clear
     }
 
-    private static func activeAlert(from alerts: [AlertDTO]) -> (title: String, detail: String)? {
+    private static func activeAlert(from alerts: [AlertDTO]) -> (title: String, detail: String, timing: String, instruction: String?)? {
         let ordered = AlertPresentationOrdering.ordered(alerts)
 
         guard let alert = ordered.first(where: { Self.isWarningOrWatch(title: $0.title) }) else {
@@ -131,7 +131,9 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         if Self.isWatch(title: alert.title) {
             return (
                 title: alert.title.trimmingCharacters(in: .whitespacesAndNewlines),
-                detail: Self.watchHeroDetail(expires: alert.expires)
+                detail: "Watch currently in effect",
+                timing: Self.watchHeroDetail(expires: alert.validEnd),
+                instruction: Self.nonEmpty(alert.instruction)
             )
         }
 
@@ -139,8 +141,28 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         let fallback = alert.areaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         return (
             title: alert.title.trimmingCharacters(in: .whitespacesAndNewlines),
-            detail: detail.isEmpty ? fallback : detail
+            detail: detail.isEmpty ? fallback : detail,
+            timing: Self.expirationTime(alert.validEnd),
+            instruction: Self.nonEmpty(alert.instruction)
         )
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              value.isEmpty == false else { return nil }
+        return value
+    }
+
+    private static func expirationTime(_ expires: Date, now: Date = .now) -> String {
+        let timeZone = TimeZone.autoupdatingCurrent
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.calendar = calendar
+        formatter.dateFormat = calendar.isDate(expires, inSameDayAs: now) ? "h:mm a zzz" : "MMM d, h:mm a zzz"
+        return "Until \(formatter.string(from: expires))"
     }
 
     private static func isWarningOrWatch(title: String) -> Bool {
@@ -178,7 +200,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case let .alert(title, _):
+        case let .alert(title, _, _, _):
             title
         case let .severe(threat):
             threat.message
@@ -195,7 +217,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     var detail: String {
         switch self {
-        case let .alert(_, detail):
+        case let .alert(_, detail, _, _):
             detail
         case let .severe(threat):
             threat.dynamicSummary.isEmpty ? threat.summary : threat.dynamicSummary
@@ -212,7 +234,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     var symbolName: String {
         switch self {
-        case let .alert(title, _):
+        case let .alert(title, _, _, _):
             styleForType(.watch, title).0
         case let .severe(threat):
             threat.iconName
@@ -229,7 +251,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     func background(for colorScheme: ColorScheme) -> LinearGradient {
         switch self {
-        case let .alert(title, _):
+        case let .alert(title, _, _, _):
             return styleForType(.watch, title).1.tileGradient(for: colorScheme)
         case let .severe(threat):
             return threat.iconColor(for: colorScheme)
@@ -300,7 +322,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     private var accessibilityLabel: String {
         switch self {
-        case .alert(let title, _):
+        case .alert(let title, _, _, _):
             title
         case .severe:
             "Severe Risk"
@@ -317,8 +339,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     private var accessibilityValue: String {
         switch self {
-        case let .alert(_, detail):
-            detail
+        case let .alert(_, detail, timing, instruction):
+            ([timing, detail] + [instruction].compactMap { $0 }).joined(separator: ". ")
         case .severe, .storm, .fire:
             accessibilityCurrentValue(title: title, detail: detail)
         case let .loading(_, detail, _):

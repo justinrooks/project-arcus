@@ -11,6 +11,9 @@ struct PrimaryAwarenessHeroView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    private let iconColumnWidth: CGFloat = 32
+    private let heroColumnSpacing: CGFloat = 14
+
     let primary: SummaryAwarenessPrimaryState
     let action: SummaryAwarenessDestination
     let onOpenMapLayer: (MapLayer) -> Void
@@ -51,77 +54,146 @@ struct PrimaryAwarenessHeroView: View {
     }
 
     private var heroContent: some View {
-        let iconSize: CGFloat = adaptiveLayout.usesStackedHeroTiles ? 34 : 42
-        let titleFont: Font = adaptiveLayout.usesStackedHeroTiles ? .headline.weight(.semibold) : .title3.weight(.semibold)
-        let detailFont: Font = adaptiveLayout.usesStackedHeroTiles ? .subheadline : .subheadline
-
-        return VStack(alignment: .leading, spacing: adaptiveLayout.usesStackedHeroTiles ? 10 : 12) {
-            if adaptiveLayout.usesStackedHeroTiles {
-                Image(systemName: primary.symbolName)
-                    .font(.system(size: iconSize, weight: .semibold))
-                    .foregroundColor(RiskBadgeVisualStyle.iconForeground(for: colorScheme))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(alignment: .center, spacing: 14) {
-                    Image(systemName: primary.symbolName)
-                        .font(.system(size: iconSize, weight: .semibold))
-                        .foregroundColor(RiskBadgeVisualStyle.iconForeground(for: colorScheme))
-                        .frame(width: 52, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(primary.title)
-                            .font(titleFont)
-                            .foregroundColor(RiskBadgeVisualStyle.messageForeground(for: colorScheme))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text(primary.detail)
-                            .font(detailFont)
-                            .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 0)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            if let timing = alertTiming {
+                timingRow(timing)
             }
 
-            if adaptiveLayout.usesStackedHeroTiles {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: heroColumnSpacing) {
+                Image(systemName: primary.symbolName)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(accentColor)
+                    .padding(.leading, usesInsetAccentTreatment ? 11 : 0)
+                    .frame(width: iconColumnWidth, alignment: .leading)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 5) {
                     Text(primary.title)
-                        .font(titleFont)
-                        .foregroundColor(RiskBadgeVisualStyle.messageForeground(for: colorScheme))
-                        .lineLimit(2)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(primary.detail)
-                        .font(detailFont)
-                        .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
-                        .lineLimit(3)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let instruction = alertInstruction {
+                Rectangle()
+                    .fill(.separator.opacity(0.55))
+                    .frame(height: 0.5)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("GUIDANCE")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .tracking(0.5)
+
+                    Text(instruction)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, iconColumnWidth + heroColumnSpacing)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
+        .padding(18)
+        .background {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .fill(primary.background(for: colorScheme))
-        )
+                .fill(Color.cardBackground)
+        }
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(accentColor)
+                .frame(width: 4)
+                .padding(.vertical, 16)
+                .padding(.leading, usesInsetAccentTreatment ? 14 : 0)
+                .accessibilityHidden(true)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .strokeBorder(.white.opacity(primary.isQuiet ? 0.10 : 0.16), lineWidth: 0.8)
+                .strokeBorder(
+                    isAlert ? accentColor.opacity(colorScheme == .dark ? 0.48 : 0.38) : .primary.opacity(colorScheme == .dark ? 0.08 : 0.06),
+                    lineWidth: isAlert ? 1 : 0.7
+                )
                 .allowsHitTesting(false)
         }
-        .shadow(
-            color: .black.opacity(primary.isQuiet ? 0.08 : 0.16),
-            radius: primary.isQuiet ? 5 : 8,
-            x: 0,
-            y: primary.isQuiet ? 2 : 4
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(primary.title)
-        .accessibilityValue(primary.detail)
+    }
+
+    @ViewBuilder
+    private func timingRow(_ timing: String) -> some View {
+        if adaptiveLayout.usesStackedHeroTiles {
+            timingText(timing)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Spacer(minLength: 4)
+                timingText(timing)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+    }
+
+    private func timingText(_ timing: String) -> some View {
+        Text(timing)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var isAlert: Bool {
+        if case .alert = primary { return true }
+        return false
+    }
+
+    private var usesInsetAccentTreatment: Bool {
+        isAlert || primary == .quiet
+    }
+
+    private var alertTiming: String? {
+        guard case let .alert(_, _, timing, _) = primary else { return nil }
+        return timing
+    }
+
+    private var alertInstruction: String? {
+        guard case let .alert(_, _, _, instruction) = primary else { return nil }
+        return instruction
+    }
+
+    private var accentColor: Color {
+        switch primary {
+        case let .alert(title, _, _, _):
+            styleForType(.watch, title).1
+        case let .severe(threat):
+            switch threat {
+            case .allClear: .riskAllClear
+            case .wind: .windTeal
+            case .hail: .hailBlue
+            case .tornado: .tornadoRed
+            }
+        case let .storm(level):
+            switch level {
+            case .allClear: .riskAllClear
+            case .thunderstorm: .riskThunderstorm
+            case .marginal: .riskMarginal
+            case .slight: .riskSlight
+            case .enhanced: .riskEnhanced
+            case .moderate: .riskModerate
+            case .high: .riskHigh
+            }
+        case let .fire(level):
+            level.tint
+        case .loading:
+            .secondary
+        case .quiet:
+            .riskAllClear
+        }
     }
 
     private func handle(action: SummaryAwarenessDestination) {
@@ -134,7 +206,6 @@ struct PrimaryAwarenessHeroView: View {
             break
         }
     }
-
 }
 
 private extension View {
