@@ -138,6 +138,7 @@ struct CompactMapLegendTrigger: View {
             cornerRadius: SkyAwareRadius.section,
             tint: .skyAwareAccent.opacity(0.12),
             interactive: true,
+            allowsGlass: true,
             shadowOpacity: 0.14,
             shadowRadius: 8,
             shadowY: 4
