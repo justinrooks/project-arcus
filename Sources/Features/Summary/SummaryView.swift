@@ -293,7 +293,7 @@ struct SummaryView: View {
     var body: some View {
         let _ = recordPerformanceRenderIfNeeded()
         let now = Date()
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             summaryContent(now: now)
                 .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
 
