@@ -478,6 +478,8 @@ Conditional-intensity information should remain a modifier of the severe risk ra
 
 The map is weather content first.
 
+The Map is an awareness surface, not a general-purpose weather explorer.
+
 Map overlays should remain visually dominant over app controls.
 
 Floating controls may use native Liquid Glass where supported.

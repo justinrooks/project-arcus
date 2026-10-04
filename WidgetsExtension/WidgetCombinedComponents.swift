@@ -17,82 +17,20 @@ struct WidgetCombinedMediumView: View {
         }
         .containerBackground(for: .widget) {
             ZStack {
-                LinearGradient(
-                    colors: backgroundGradientColors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                // Full-surface semantic wash from the strongest current signal.
+                WidgetSurfaceStyle.baseColor(isDark: colorScheme == .dark)
                 LinearGradient(
                     colors: [
-                        semanticTint.opacity(combinedEmphasis.washStart),
-                        semanticTint.opacity(combinedEmphasis.washEnd)
+                        semanticTint.opacity(WidgetSurfaceStyle.semanticWashOpacity(
+                            severity: semanticSeverity,
+                            isDark: colorScheme == .dark
+                        )),
+                        .clear
                     ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                // Primary signal glow, biased toward the upper trailing risk group.
-                RadialGradient(
-                    colors: [
-                        semanticTint.opacity(combinedEmphasis.glowStart),
-                        semanticTint.opacity(combinedEmphasis.glowMid),
-                        semanticTint.opacity(0.0)
-                    ],
-                    center: UnitPoint(x: 0.82, y: 0.22),
-                    startRadius: 12,
-                    endRadius: colorScheme == .dark ? 280 : 230
-                )
-
-                // Storm-side warmth so the left risk group feels integrated.
-                RadialGradient(
-                    colors: [
-                        stormTint.opacity(combinedEmphasis.bodyGlow),
-                        stormTint.opacity(0.0)
-                    ],
-                    center: UnitPoint(x: 0.18, y: 0.18),
-                    startRadius: 10,
-                    endRadius: colorScheme == .dark ? 240 : 190
-                )
-
-                // Soft top highlight for the Apple-like surface depth.
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(colorScheme == .dark ? 0.050 : 0.15),
-                        Color.white.opacity(0.0)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .center
-                )
-
-                // Bottom vignette to anchor the large surface.
-                LinearGradient(
-                    colors: [
-                        Color.clear,
-                        Color.black.opacity(colorScheme == .dark ? 0.24 : 0.040)
-                    ],
-                    startPoint: .center,
-                    endPoint: .bottomTrailing
+                    startPoint: .topTrailing,
+                    endPoint: .bottomLeading
                 )
             }
         }
-    }
-
-    private var backgroundGradientColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                Color(red: 0.065, green: 0.095, blue: 0.135),
-                Color(red: 0.055, green: 0.060, blue: 0.095),
-                Color(red: 0.030, green: 0.045, blue: 0.075)
-            ]
-        }
-
-        return [
-            Color(red: 0.910, green: 0.930, blue: 0.970),
-            Color(red: 0.860, green: 0.890, blue: 0.940),
-            Color(red: 0.800, green: 0.850, blue: 0.920)
-        ]
     }
 
     private var semanticTint: Color {
@@ -108,27 +46,12 @@ struct WidgetCombinedMediumView: View {
         return Color(red: 0.25, green: 0.38, blue: 0.50)
     }
 
-    private var stormTint: Color {
-        guard snapshot.stormRisk.severity > 0 else {
-            return Color(red: 0.25, green: 0.38, blue: 0.50)
-        }
-        return WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
-    }
-
-    private var combinedEmphasis: WidgetSemanticEmphasis {
-        guard widgetFamily == .systemMedium, snapshot.selectedAlert == nil else {
-            return WidgetSemanticEmphasis(
-                washStart: colorScheme == .dark ? 0.055 : 0.022,
-                washEnd: colorScheme == .dark ? 0.16 : 0.052,
-                glowStart: colorScheme == .dark ? 0.34 : 0.14,
-                glowMid: colorScheme == .dark ? 0.17 : 0.065,
-                bodyGlow: colorScheme == .dark ? 0.18 : 0.070
-            )
-        }
-
-        let kind: WidgetRiskKind = snapshot.severeRisk.severity > 0 ? .severe : .storm
-        let severity = kind == .severe ? snapshot.severeRisk.severity : snapshot.stormRisk.severity
-        return WidgetSemanticEmphasis.style(for: kind, severity: severity, isDark: colorScheme == .dark)
+    private var semanticSeverity: Int {
+        WidgetSurfaceStyle.semanticSeverity(
+            selectedAlertSeverity: snapshot.selectedAlert?.severity,
+            stormSeverity: snapshot.stormRisk.severity,
+            severeSeverity: snapshot.severeRisk.severity
+        )
     }
 }
 
@@ -349,19 +272,18 @@ private struct WidgetCombinedRiskSummaryGroup: View {
                 .lineLimit(1)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: colorScheme == .dark ? 25 : 23, weight: .regular))
+                        .foregroundStyle(accent.opacity(colorScheme == .dark ? 0.92 : 0.78))
+                        .accessibilityHidden(true)
+                }
+
                 Text(primary)
                     .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.78)
-
-                if let icon {
-                    Image(systemName: icon)
-                        .font(.system(size: colorScheme == .dark ? 25 : 23, weight: .regular))
-                        .foregroundStyle(accent.opacity(colorScheme == .dark ? 0.58 : 0.22))
-                        .lineLimit(1)
-                        .accessibilityHidden(true)
-                }
             }
 
             if let secondary {

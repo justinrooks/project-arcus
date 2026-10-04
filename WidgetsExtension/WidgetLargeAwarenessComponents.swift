@@ -89,47 +89,15 @@ struct WidgetLargeAwarenessView: View {
 
     private var atmosphericBackground: some View {
         ZStack {
-            LinearGradient(
-                colors: backgroundGradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            WidgetSurfaceStyle.baseColor(isDark: colorScheme == .dark)
 
             if let primaryAlertTint {
                 LinearGradient(
-                    colors: [
-                        primaryAlertTint.opacity(alertSurfaceEmphasis),
-                        primaryAlertTint.opacity(0)
-                    ],
+                    colors: [primaryAlertTint.opacity(alertSurfaceEmphasis), .clear],
                     startPoint: .topTrailing,
-                    endPoint: .center
+                    endPoint: .bottomLeading
                 )
             }
-
-            RadialGradient(
-                colors: [
-                    Color(red: 0.30, green: 0.54, blue: 0.72).opacity(colorScheme == .dark ? 0.22 : 0.16),
-                    .clear
-                ],
-                center: UnitPoint(x: 0.78, y: 0.12),
-                startRadius: 12,
-                endRadius: 260
-            )
-
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(colorScheme == .dark ? 0.05 : 0.16),
-                    .clear
-                ],
-                startPoint: .topLeading,
-                endPoint: .center
-            )
-
-            LinearGradient(
-                colors: [.clear, Color.black.opacity(colorScheme == .dark ? 0.20 : 0.04)],
-                startPoint: .center,
-                endPoint: .bottomTrailing
-            )
         }
     }
 
@@ -207,21 +175,7 @@ struct WidgetLargeAwarenessView: View {
         return trimmed.flatMap { $0.isEmpty ? nil : $0 } ?? "Location unavailable"
     }
 
-    private var backgroundGradientColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                Color(red: 0.055, green: 0.105, blue: 0.150),
-                Color(red: 0.040, green: 0.075, blue: 0.120),
-                Color(red: 0.025, green: 0.050, blue: 0.085)
-            ]
-        }
 
-        return [
-            Color(red: 0.835, green: 0.895, blue: 0.950),
-            Color(red: 0.760, green: 0.835, blue: 0.910),
-            Color(red: 0.685, green: 0.775, blue: 0.860)
-        ]
-    }
 }
 
 private struct WidgetLargeAlertRailStack: View {

@@ -21,162 +21,61 @@ struct WidgetStormRiskSmallView: View {
 
     private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity)
-        let emphasis = WidgetSemanticEmphasis.style(
-            for: .storm,
-            severity: snapshot.stormRisk.severity,
-            isDark: colorScheme == .dark
-        )
-        let isQuiet = snapshot.stormRisk.severity == 0
-
         return ZStack {
-            LinearGradient(
-                colors: stormBaseColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            // Full-surface semantic wash. Keeps the whole widget warm without creating an inner panel.
+            WidgetSurfaceStyle.baseColor(isDark: colorScheme == .dark)
             LinearGradient(
                 colors: [
-                    style.tint.opacity(emphasis.washStart),
-                    style.tint.opacity(emphasis.washEnd)
+                    style.tint.opacity(WidgetSurfaceStyle.semanticWashOpacity(
+                        severity: snapshot.stormRisk.severity,
+                        isDark: colorScheme == .dark
+                    )),
+                    .clear
                 ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            // Option A-style lower trailing glow behind the decorative icon.
-            RadialGradient(
-                colors: [
-                    style.tint.opacity(emphasis.glowStart),
-                    style.tint.opacity(emphasis.glowMid),
-                    style.tint.opacity(0.0)
-                ],
-                center: UnitPoint(x: 0.86, y: 0.62),
-                startRadius: 4,
-                endRadius: isQuiet ? 88 : (colorScheme == .dark ? 118 : 104)
-            )
-
-            // Subtle warm body glow through the middle of the card.
-            RadialGradient(
-                colors: [
-                    style.tint.opacity(emphasis.bodyGlow),
-                    style.tint.opacity(0.0)
-                ],
-                center: UnitPoint(x: 0.58, y: 0.58),
-                startRadius: 10,
-                endRadius: colorScheme == .dark ? 190 : 150
-            )
-
-            // Soft top highlight to keep the surface Apple-like instead of flat.
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(
-                        colorScheme == .dark ? 0.055 : (isQuiet ? 0.06 : 0.16)
-                    ),
-                    Color.white.opacity(0.0)
-                ],
-                startPoint: .topLeading,
-                endPoint: .center
-            )
-
-            // Bottom vignette like the selected rendering, but restrained.
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035)
-                ],
-                startPoint: .center,
-                endPoint: .bottomTrailing
+                startPoint: .topTrailing,
+                endPoint: .bottomLeading
             )
         }
     }
 
-    private var stormBaseColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                Color(red: 0.065, green: 0.095, blue: 0.135),
-                Color(red: 0.105, green: 0.075, blue: 0.060),
-                Color(red: 0.030, green: 0.045, blue: 0.075)
-            ]
-        }
-
-        if snapshot.stormRisk.severity == 0 {
-            return [
-                Color(red: 0.780, green: 0.840, blue: 0.930),
-                Color(red: 0.720, green: 0.790, blue: 0.890),
-                Color(red: 0.640, green: 0.730, blue: 0.850)
-            ]
-        }
-
-        return [
-            Color(red: 0.910, green: 0.930, blue: 0.970),
-            Color(red: 0.860, green: 0.890, blue: 0.940),
-            Color(red: 0.800, green: 0.850, blue: 0.920)
-        ]
-    }
 }
 
 private struct WidgetStormRiskBadgeCard: View {
     let state: WidgetRiskDisplayState
-    @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetRiskVisualStyle {
         WidgetRiskVisualStyle.style(for: .storm, severity: state.severity)
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                iconGlow
-                    .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.62)
+        VStack(alignment: .leading, spacing: 17) {
+            HStack(alignment: .center, spacing: 8) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(style.tint.opacity(0.78))
+                    .frame(width: 3, height: 20)
+                    .accessibilityHidden(true)
 
-                decorativeIcon
-                    .position(x: proxy.size.width * 0.74, y: proxy.size.height * 0.30)
+                Image(systemName: style.icon)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(style.tint)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Storm Risk")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                Text("Storm Risk")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
-                    Spacer(minLength: 10)
-
-                    riskValueText
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                Spacer(minLength: 0)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
+
+            riskValueText
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
-    }
-
-    private var decorativeIcon: some View {
-        Image(systemName: style.icon)
-            .font(.system(size: colorScheme == .dark ? 62 : 56, weight: .regular))
-            .foregroundStyle(
-                style.tint.opacity(
-                    state.severity == 0
-                        ? (colorScheme == .dark ? 0.08 : 0.22)
-                        : (colorScheme == .dark ? 0.88 : 0.22)
-                )
-            )
-            .accessibilityHidden(true)
-    }
-
-    private var iconGlow: some View {
-        Circle()
-            .fill(style.tint.opacity(state.severity == 0 ? 0.06 : (colorScheme == .dark ? 0.34 : 0.12)))
-            .frame(width: colorScheme == .dark ? 210 : 190, height: colorScheme == .dark ? 210 : 190)
-            .blur(radius: colorScheme == .dark ? 58 : 50)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 
     @ViewBuilder
