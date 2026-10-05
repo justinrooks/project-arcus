@@ -145,15 +145,15 @@ private struct MapLayerMenuLabel: View {
 
     var body: some View {
         labelBody(title: layer.title)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .frame(minHeight: 44)
             .contentShape(Capsule())
     }
 
     @ViewBuilder
     private func labelBody(title: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: layer.symbol)
                 .imageScale(.medium)
                 .fontWeight(.semibold)
@@ -161,7 +161,7 @@ private struct MapLayerMenuLabel: View {
                 .frame(width: 18)
 
             Text(title)
-                .font(adaptiveLayout.usesAccessibilityLayout ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
+                .font(adaptiveLayout.usesAccessibilityLayout ? .headline.weight(.semibold) : .subheadline.weight(.medium))
                 .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
                 .minimumScaleFactor(0.85)
                 .layoutPriority(1)
