@@ -40,6 +40,7 @@
         "SkyAwareUITests\/testStormSetupDiagnosticsForceDisplayOverridesDisabledFeature()",
         "SkyAwareUITests\/testStormSetupRemainsUsableAtAccessibilityTextSize()",
         "SkyAwareUITests\/testStormSetupSummaryOpensDetail()",
+        "SkyAwareUITests\/testTodayOutlookSummaryOpensDetail()",
         "SkyAwareUITests\/testSummaryAlertTapShowsSheetAndAlertTabTapShowsWatchDetailView()",
         "SkyAwareUITests\/testSummaryDoesNotShowLocationRequiredBlocksWhenLocationIsAuthorized()",
         "SkyAwareUITests\/testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses()",
