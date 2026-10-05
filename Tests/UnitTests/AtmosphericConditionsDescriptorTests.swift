@@ -41,6 +41,16 @@ struct AtmosphericConditionsDescriptorTests {
         #expect(AirQualityPresentation(aqi: 301, primaryPollutant: nil)?.shortCategory == "Hazardous")
     }
 
+    @Test("AQI retains semantic accents for every supported severity")
+    func aqiSeverityAccentsRemainSemantic() {
+        #expect(AirQualityPresentation(aqi: 40, primaryPollutant: nil)?.semanticAccent == .good)
+        #expect(AirQualityPresentation(aqi: 70, primaryPollutant: nil)?.semanticAccent == .moderate)
+        #expect(AirQualityPresentation(aqi: 120, primaryPollutant: nil)?.semanticAccent == .caution)
+        #expect(AirQualityPresentation(aqi: 175, primaryPollutant: nil)?.semanticAccent == .unhealthy)
+        #expect(AirQualityPresentation(aqi: 240, primaryPollutant: nil)?.semanticAccent == .veryUnhealthy)
+        #expect(AirQualityPresentation(aqi: 301, primaryPollutant: nil)?.semanticAccent == .hazardous)
+    }
+
     @Test("missing and invalid AQI are hidden")
     func missingAndInvalidAQIAreHidden() {
         #expect(AirQualityPresentation(aqi: nil, primaryPollutant: nil) == nil)
@@ -74,6 +84,8 @@ struct AtmosphericConditionsDescriptorTests {
 
         #expect(model.secondaryMetrics.map(\.kind) == [.humidity, .wind, .pressure, .aqi])
         #expect(model.secondaryMetrics.last?.detail == "USG")
+        #expect(model.secondaryMetrics.last?.iconName == "circle.hexagongrid.fill")
+        #expect(model.secondaryMetrics.last?.semanticAccent == .caution)
     }
 
     @Test("dew points below 50 are dry air")

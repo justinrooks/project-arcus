@@ -357,6 +357,7 @@ private extension SkyAwareApp {
                 HomeView(
                     initialStormRisk: fixture.stormRisk ?? .enhanced,
                     initialSevereRisk: .tornado(probability: 0.10),
+                    initialFireRisk: .elevated,
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupCurrentResponse: fixture.currentResponse,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
@@ -369,6 +370,7 @@ private extension SkyAwareApp {
                 HomeView(
                     initialStormRisk: .enhanced,
                     initialSevereRisk: .tornado(probability: 0.10),
+                    initialFireRisk: .elevated,
                     initialMesos: Self.uiTestLaunchMesos,
                     initialAlerts: Self.uiTestLaunchWatches,
                     initialOutlooks: ConvectiveOutlook.sampleOutlookDtos

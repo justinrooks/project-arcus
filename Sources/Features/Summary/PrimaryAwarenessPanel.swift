@@ -116,15 +116,20 @@ struct PrimaryAwarenessPanel: View {
 
     private var fireRow: some View {
         riskRow(
-            title: fireTitle,
+            title: fireValue,
             detail: fireDetail,
             symbolName: fireSymbolName,
-            background: fireBackground,
+            background: neutralSupportBackground,
+            category: "Fire Risk",
+            accent: fireAccent,
+            categorySymbolName: fireSymbolName,
             isQuiet: fireIsQuiet,
-            presentationMode: firePresentation.presentationMode,
+            isCompact: true,
+            presentationMode: fireIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(.fire)
-            }
+            },
+            showsChevron: true
         )
         .summaryResolving(fireResolving, todayContentState: todayContentState, style: .subtle)
         .accessibilityHint("Opens the fire risk map.")
@@ -141,6 +146,7 @@ struct PrimaryAwarenessPanel: View {
         categorySymbolName: String? = nil,
         isQuiet: Bool,
         intensity: SevereIntensityPresentation? = nil,
+        isCompact: Bool = false,
         presentationMode: SupportingRiskRowPresentationMode = .normal,
         action: @escaping () -> Void,
         showsChevron: Bool = false
@@ -156,6 +162,7 @@ struct PrimaryAwarenessPanel: View {
                 categorySymbolName: categorySymbolName,
                 intensity: intensity,
                 isQuiet: isQuiet,
+                isCompact: isCompact,
                 presentationMode: presentationMode,
                 showsChevron: showsChevron
             )
@@ -333,25 +340,26 @@ struct PrimaryAwarenessPanel: View {
         }
     }
 
-    private var fireTitle: String {
-        if fireUnavailable {
-            return "Unavailable"
-        }
+    private var fireValue: String {
+        if fireUnavailable { return "Unavailable" }
+        if fireRisk == nil, fireResolving { return "Getting risk…" }
+        guard let fireRisk else { return "Unavailable" }
+        return fireRisk == .clear ? "None" : fireRisk.status
+    }
 
+    private var fireSymbolName: String {
+        if fireUnavailable { return "exclamationmark.circle" }
         if fireRisk == nil, fireResolving {
-            return "Fire Risk"
+            return "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
         }
-
-        guard fireRisk != nil else {
-            return "No Fire Risk"
-        }
-
-        return firePresentation.title
+        return fireRisk?.symbol ?? "checkmark.seal.fill"
     }
 
     private var fireDetail: String {
         if fireUnavailable {
-            return "No saved fire risk data is available offline."
+            return showsOfflineToken
+                ? "No saved fire risk data is available offline."
+                : "Fire risk data is unavailable."
         }
 
         if fireRisk == nil, fireResolving {
@@ -365,32 +373,13 @@ struct PrimaryAwarenessPanel: View {
         return "No elevated fire weather risk"
     }
 
-    private var fireSymbolName: String {
-        if fireUnavailable {
-            return "exclamationmark.circle"
-        }
-
-        if fireRisk == nil, fireResolving {
-            return "flame"
-        }
-
-        return fireRisk?.symbol ?? "checkmark.seal.fill"
-    }
-
     private var fireIsQuiet: Bool {
-        fireUnavailable ? true : (fireRisk == nil ? fireResolving == false : fireRisk == .clear)
+        !fireUnavailable && !fireResolving && fireRisk == .clear
     }
 
-    private var fireBackground: LinearGradient {
-        if fireUnavailable {
-            return neutralSupportBackground
-        }
-
-        if fireRisk != nil, firePresentation.presentationMode == .subdued {
-            return RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
-        }
-
-        return fireRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
+    private var fireAccent: Color {
+        guard !fireUnavailable, let fireRisk else { return .secondary }
+        return fireRisk == .clear ? .riskAllClear : fireRisk.tint
     }
 
     private var firePresentation: SupportingRiskRowDisplayModel {
@@ -417,7 +406,7 @@ struct PrimaryAwarenessPanel: View {
     }
 
     private var fireUnavailable: Bool {
-        showsOfflineToken && fireRisk == nil && fireResolving == false
+        fireRisk == nil && fireResolving == false
     }
 
     private var neutralSupportBackground: LinearGradient {
