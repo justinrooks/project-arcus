@@ -49,6 +49,22 @@ import ArcusCore
     }
 }
 
+#Preview("Summary – Supporting Risks Dark") {
+    NavigationStack {
+        ScrollView {
+            SummaryPreviewContent(
+                stormRisk: .moderate,
+                severeRisk: .tornado(probability: 0.15),
+                fireRisk: .clear,
+                weather: SummaryPreviewData.weather,
+                alerts: []
+            )
+        }
+        .preferredColorScheme(.dark)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 #Preview("Summary – Quiet Weather") {
     NavigationStack {
         SummaryPreviewContent(

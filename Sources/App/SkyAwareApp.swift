@@ -355,7 +355,8 @@ private extension SkyAwareApp {
         } else if isUITestStaticHome {
             if let fixture = Self.uiTestStormSetupFixture {
                 HomeView(
-                    initialStormRisk: fixture.stormRisk,
+                    initialStormRisk: fixture.stormRisk ?? .enhanced,
+                    initialSevereRisk: .tornado(probability: 0.10),
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupCurrentResponse: fixture.currentResponse,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
@@ -366,6 +367,8 @@ private extension SkyAwareApp {
                 )
             } else {
                 HomeView(
+                    initialStormRisk: .enhanced,
+                    initialSevereRisk: .tornado(probability: 0.10),
                     initialMesos: Self.uiTestLaunchMesos,
                     initialAlerts: Self.uiTestLaunchWatches,
                     initialOutlooks: ConvectiveOutlook.sampleOutlookDtos

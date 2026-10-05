@@ -47,9 +47,17 @@ struct PrimaryAwarenessPanel: View {
                 onOpenAlerts: onOpenAlerts
             )
 
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 10) {
+                    stormRow
+                    severeRow
+                }
+                VStack(spacing: 10) {
+                    stormRow
+                    severeRow
+                }
+            }
             VStack(spacing: 10) {
-                stormRow
-                severeRow
                 fireRow
             }
         }
@@ -72,10 +80,13 @@ struct PrimaryAwarenessPanel: View {
 
     private var stormRow: some View {
         riskRow(
-            title: stormTitle,
+            title: stormCardValue,
             detail: stormDetail,
             symbolName: stormSymbolName,
             background: stormBackground,
+            category: "Storm Risk",
+            accent: stormAccent,
+            categorySymbolName: stormSymbolName,
             isQuiet: stormIsQuiet,
             action: {
                 onOpenMapLayer(.categorical)
@@ -87,10 +98,12 @@ struct PrimaryAwarenessPanel: View {
 
     private var severeRow: some View {
         riskRow(
-            title: severeTitle,
+            title: severeCardValue,
             detail: severeDetail,
             symbolName: severeSymbolName,
             background: severeBackground,
+            category: "Severe Risk",
+            accent: severeAccent,
             isQuiet: severeIsQuiet,
             intensity: severeIntensity?.displayed(for: severeRisk, contentState: todayContentState),
             action: {
@@ -123,6 +136,9 @@ struct PrimaryAwarenessPanel: View {
         detail: String,
         symbolName: String,
         background: LinearGradient,
+        category: String? = nil,
+        accent: Color? = nil,
+        categorySymbolName: String? = nil,
         isQuiet: Bool,
         intensity: SevereIntensityPresentation? = nil,
         presentationMode: SupportingRiskRowPresentationMode = .normal,
@@ -135,6 +151,9 @@ struct PrimaryAwarenessPanel: View {
                 detail: detail,
                 symbolName: symbolName,
                 background: background,
+                category: category,
+                accent: accent,
+                categorySymbolName: categorySymbolName,
                 intensity: intensity,
                 isQuiet: isQuiet,
                 presentationMode: presentationMode,
@@ -174,23 +193,11 @@ struct PrimaryAwarenessPanel: View {
         )
     }
 
-    private var stormTitle: String {
-        if stormUnavailable {
-            return "Unavailable"
-        }
-
-        if stormRisk == nil, stormResolving {
-            return "Storm Risk"
-        }
-
-        guard let stormRisk else {
-            return "Storm Risk"
-        }
-
-        return SupportingRiskRowDisplayModel.storm(
-            level: stormRisk,
-            primarySource: primaryState.source
-        ).title
+    private var stormCardValue: String {
+        if stormUnavailable { return "Unavailable" }
+        if stormRisk == nil, stormResolving { return "Getting risk…" }
+        guard let stormRisk else { return "All Clear" }
+        return stormRisk == .allClear ? "All Clear" : stormRisk.message
     }
 
     private var stormDetail: String {
@@ -236,6 +243,19 @@ struct PrimaryAwarenessPanel: View {
         return stormRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
     }
 
+    private var stormAccent: Color {
+        guard !stormUnavailable, let stormRisk else { return .secondary }
+        return switch stormRisk {
+        case .allClear: Color.riskAllClear
+        case .thunderstorm: Color.riskThunderstorm
+        case .marginal: Color.riskMarginal
+        case .slight: Color.riskSlight
+        case .enhanced: Color.riskEnhanced
+        case .moderate: Color.riskModerate
+        case .high: Color.riskHigh
+        }
+    }
+
     private var severeMapLayer: MapLayer {
         switch severeRisk ?? .allClear {
         case .allClear:
@@ -249,29 +269,17 @@ struct PrimaryAwarenessPanel: View {
         }
     }
 
-    private var severeTitle: String {
-        if severeUnavailable {
-            return "Unavailable"
-        }
-
-        if severeRisk == nil, severeResolving {
-            return "Severe Risk"
-        }
-
-        guard let severeRisk else {
-            return "Severe Risk"
-        }
-
-        return SupportingRiskRowDisplayModel.severe(
-            threat: severeRisk,
-            primarySource: primaryState.source
-        ).title
+    private var severeCardValue: String {
+        if severeUnavailable { return "Unavailable" }
+        if severeRisk == nil, severeResolving { return "Getting risk…" }
+        guard let severeRisk else { return "All Clear" }
+        return severeRisk == .allClear ? "All Clear" : severeRisk.message
     }
 
     private var severeDetail: String {
         if primaryState.source == .severeRisk,
            severeIntensity?.displayed(for: severeRisk, contentState: todayContentState) != nil {
-            return ""
+            return severeRisk?.dynamicSummary ?? ""
         }
         if severeUnavailable {
             return "No saved severe risk data is available offline."
@@ -313,6 +321,16 @@ struct PrimaryAwarenessPanel: View {
         }
 
         return severeRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
+    }
+
+    private var severeAccent: Color {
+        guard !severeUnavailable, let severeRisk else { return .secondary }
+        return switch severeRisk {
+        case .allClear: Color.riskAllClear
+        case .wind: Color.windTeal
+        case .hail: Color.hailBlue
+        case .tornado: Color.tornadoRed
+        }
     }
 
     private var fireTitle: String {
