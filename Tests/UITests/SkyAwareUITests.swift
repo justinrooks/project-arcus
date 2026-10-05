@@ -597,8 +597,13 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(localAlert.waitForExistence(timeout: 10), "Expected seeded local alert to appear in Summary.")
         XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to appear in Summary.")
         XCTAssertLessThan(localAlert.frame.minY, stormSetupCard.frame.minY, "Expected local alerts to appear before Storm Setup.")
+        let fireRiskRow = app.buttons["Fire Risk"]
+        scrollUntilHittable(fireRiskRow, in: summaryScrollView)
+        XCTAssertTrue((fireRiskRow.value as? String ?? "").contains("Elevated"))
+
+        let atmosphericConditions = app.otherElements["summary-atmospheric-conditions"]
         XCTAssertTrue(
-            app.otherElements["summary-atmospheric-conditions"].exists,
+            atmosphericConditions.exists,
             "Expected Atmospheric Conditions to remain available alongside Storm Setup."
         )
         XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))

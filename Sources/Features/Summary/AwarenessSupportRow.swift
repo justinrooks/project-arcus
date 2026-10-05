@@ -20,6 +20,7 @@ struct AwarenessSupportRow: View {
     var categorySymbolName: String? = nil
     var intensity: SevereIntensityPresentation? = nil
     var isQuiet: Bool = false
+    var isCompact: Bool = false
     var presentationMode: SupportingRiskRowPresentationMode = .normal
     var showsChevron: Bool = false
 
@@ -79,23 +80,23 @@ struct AwarenessSupportRow: View {
     private func content(_ rowMetrics: Metrics) -> some View {
         if let category, accent != nil {
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: isCompact ? 3 : 5) {
                     HStack(spacing: 7) {
                         Image(systemName: categorySymbolName ?? symbolName)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: isCompact ? 14 : 15, weight: .semibold))
                             .foregroundStyle(accent ?? .secondary)
                             .frame(width: 17)
                             .accessibilityHidden(true)
                         Text(category)
-                            .font(.subheadline.weight(.medium))
+                            .font(isCompact ? .footnote.weight(.medium) : .subheadline.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                     Text(title)
-                        .font(.title3.weight(.bold))
+                        .font(isCompact ? .headline.weight(.semibold) : .title3.weight(.bold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(detail)
-                        .font(.footnote)
+                        .font(isCompact ? .caption : .footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let intensity {
@@ -123,7 +124,7 @@ struct AwarenessSupportRow: View {
                     .accessibilityHidden(true)
             }
             .padding(.leading, 18)
-            .frame(minHeight: 118, alignment: .leading)
+            .frame(minHeight: isCompact ? 78 : 118, alignment: .leading)
         } else {
             legacyContent(rowMetrics)
         }
