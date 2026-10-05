@@ -173,6 +173,47 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testMapAwarenessSummaryCompactsAndCoordinatesWithLegendAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+
+        let mapTab = app.tabBars.buttons["Map"]
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10), "Expected Map tab to exist.")
+        mapTab.tap()
+
+        let awareness = app.buttons["map-awareness-summary-compact"]
+        let layerMenu = app.buttons["Map layers"]
+        XCTAssertTrue(awareness.waitForExistence(timeout: 10), "Expected the oversized active warning to use its compact presentation.")
+        XCTAssertTrue(awareness.label.localizedCaseInsensitiveContains("warning"), "Expected the compact control to identify the active warning.")
+        XCTAssertTrue(layerMenu.waitForExistence(timeout: 10), "Expected the map layer menu to remain available.")
+        XCTAssertFalse(awareness.frame.intersects(layerMenu.frame), "Expected awareness content and map controls to remain separate.")
+
+        awareness.tap()
+        XCTAssertTrue(app.navigationBars["Awareness Summary"].waitForExistence(timeout: 10), "Expected the full awareness summary to expand in its sheet.")
+        let expandedAwareness = app.staticTexts["map-awareness-summary"]
+        XCTAssertTrue(expandedAwareness.waitForExistence(timeout: 10), "Expected the full warning content in the expanded presentation.")
+        XCTAssertTrue(
+            (expandedAwareness.value as? String)?.contains("Until") == true,
+            "Expected the active warning expiration to remain available to VoiceOver."
+        )
+        app.buttons["Close"].tap()
+        XCTAssertTrue(awareness.waitForExistence(timeout: 10), "Closing the expanded warning should retain its compact map control.")
+
+        let legendButton = app.buttons["Map legend"]
+        XCTAssertTrue(legendButton.waitForExistence(timeout: 10), "Expected the legend control to remain available beside the compact warning.")
+        legendButton.tap()
+        XCTAssertTrue(app.navigationBars["Legend"].waitForExistence(timeout: 10), "Expected the legend to expand in its existing sheet.")
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(awareness.waitForExistence(timeout: 10), "Opening and closing the legend should leave the warning visible in its compact presentation.")
+    }
+
+    @MainActor
     func testMapLegendCompactTriggerOpensSheetWithNativeCancellationAction() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

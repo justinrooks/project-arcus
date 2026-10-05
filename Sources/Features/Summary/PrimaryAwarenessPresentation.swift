@@ -312,6 +312,59 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         }
     }
 
+    var mapSummaryIsVisible: Bool {
+        switch self {
+        case .loading:
+            false
+        default:
+            isQuiet == false
+        }
+    }
+
+    var mapSummaryDetail: String {
+        switch self {
+        case let .alert(_, detail, _, _):
+            detail
+        default:
+            detail
+        }
+    }
+
+    var mapSummaryTiming: String? {
+        guard case let .alert(_, _, timing, _) = self else { return nil }
+        return timing
+    }
+
+    var accentColor: Color {
+        switch self {
+        case let .alert(title, _, _, _):
+            styleForType(.watch, title).1
+        case let .severe(threat):
+            switch threat {
+            case .allClear: .riskAllClear
+            case .wind: .windTeal
+            case .hail: .hailBlue
+            case .tornado: .tornadoRed
+            }
+        case let .storm(level):
+            switch level {
+            case .allClear: .riskAllClear
+            case .thunderstorm: .riskThunderstorm
+            case .marginal: .riskMarginal
+            case .slight: .riskSlight
+            case .enhanced: .riskEnhanced
+            case .moderate: .riskModerate
+            case .high: .riskHigh
+            }
+        case let .fire(level):
+            level.tint
+        case .loading:
+            .secondary
+        case .quiet:
+            .riskAllClear
+        }
+    }
+
     var accessibilityContract: SummaryAwarenessAccessibilityContract {
         SummaryAwarenessAccessibilityContract(
             label: accessibilityLabel,

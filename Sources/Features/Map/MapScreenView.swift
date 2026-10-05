@@ -22,8 +22,14 @@ struct MapScreenView: View {
     @State private var model = MapFeatureModel()
     @State private var reloadCoordinator = MapReloadCoordinator()
 
-    init(selectedLayer: Binding<MapLayer> = .constant(.categorical)) {
+    private let primaryAwareness: SummaryAwarenessPrimaryState
+
+    init(
+        selectedLayer: Binding<MapLayer> = .constant(.categorical),
+        primaryAwareness: SummaryAwarenessPrimaryState = .quiet
+    ) {
         _selected = selectedLayer
+        self.primaryAwareness = primaryAwareness
     }
 
     private var viewportCoordinate: ViewportCoordinate? {
@@ -36,7 +42,8 @@ struct MapScreenView: View {
             selected: $selected,
             showsWarningGeometry: $showsWarningGeometry,
             scene: model.activeScene,
-            locationCoordinate: locationSession.currentSnapshot?.coordinates
+            locationCoordinate: locationSession.currentSnapshot?.coordinates,
+            primaryAwareness: primaryAwareness
         )
         .onChange(of: selected, initial: true) { _, newValue in
             model.selectLayer(newValue)
@@ -88,8 +95,9 @@ private struct MapScreenContent: View {
 
     let scene: MapLayerScene
     let locationCoordinate: CLLocationCoordinate2D?
+    let primaryAwareness: SummaryAwarenessPrimaryState
 
-    @State private var showsLegendSheet = false
+    @State private var activeMapSheet: MapOverlaySheet?
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -114,17 +122,8 @@ private struct MapScreenContent: View {
                 .padding(.leading, 8)
                 .zIndex(1)
 
-            VStack(alignment: .trailing) {
-                MapLayerMenu(
-                    selection: $selected,
-                    showsWarningGeometry: $showsWarningGeometry
-                )
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .zIndex(3)
+            mapTopSurfaces
+                .zIndex(3)
 
             VStack {
                 Spacer()
@@ -133,12 +132,52 @@ private struct MapScreenContent: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(legendAllowsHitTesting)
         }
-        .sheet(isPresented: $showsLegendSheet) {
-            MapLegendSheet(
-                warningItems: warningLegendItems,
-                legendState: scene.legendState
-            )
+        .sheet(item: $activeMapSheet) { sheet in
+            Group {
+                switch sheet {
+                case .legend:
+                    MapLegendSheet(
+                        warningItems: warningLegendItems,
+                        legendState: scene.legendState
+                    )
+                case .awareness:
+                    MapAwarenessSheet(primary: primaryAwareness)
+                }
+            }
             .presentationDetents([.medium, .large])
+        }
+    }
+
+    private var layerMenu: some View {
+        MapLayerMenu(
+            selection: $selected,
+            showsWarningGeometry: $showsWarningGeometry
+        )
+    }
+
+    @ViewBuilder
+    private func awarenessSummary(maximumHeight: CGFloat) -> some View {
+        if primaryAwareness.mapSummaryIsVisible {
+            MapAwarenessDisclosure(
+                primary: primaryAwareness,
+                maximumHeight: maximumHeight,
+                onExpand: { activeMapSheet = .awareness }
+            )
+            .animation(SkyAwareMotion.disclosure(reduceMotion), value: maximumHeight)
+        }
+    }
+
+    private var mapTopSurfaces: some View {
+        GeometryReader { geometry in
+            VStack(alignment: .trailing, spacing: 12) {
+                layerMenu
+                    .padding(.horizontal, 14)
+
+                awarenessSummary(maximumHeight: max(120, geometry.size.height * 0.36))
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 
@@ -212,7 +251,7 @@ private struct MapScreenContent: View {
             subtitle: compactLegendSubtitle,
             accessibilityValue: scene.legendState.voiceOverText
         ) {
-            showsLegendSheet = true
+            activeMapSheet = .legend
         }
         .transition(.opacity)
         .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
@@ -256,6 +295,27 @@ private struct ViewportCoordinate: Equatable {
     }
 }
 
+private enum MapOverlaySheet: String, Identifiable {
+    case legend
+    case awareness
+
+    var id: Self { self }
+}
+
+private struct MapAwarenessDisclosure: View {
+    let primary: SummaryAwarenessPrimaryState
+    let maximumHeight: CGFloat
+    let onExpand: () -> Void
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            MapAwarenessSummary(primary: primary)
+            CompactMapAwarenessSummary(primary: primary, onExpand: onExpand)
+        }
+        .frame(maxHeight: maximumHeight, alignment: .top)
+    }
+}
+
 private struct MapLegendSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -291,19 +351,48 @@ private struct MapLegendSheet: View {
     }
 }
 
+private struct MapAwarenessSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let primary: SummaryAwarenessPrimaryState
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                MapAwarenessSummary(primary: primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+            .navigationTitle("Awareness Summary")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", role: .cancel) {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct MapScreenContentPreview: View {
     let legendState: MapLegendState
     let selectedLayer: MapLayer
     let warningOverlays: [MapOverlayEntry]
+    let primaryAwareness: SummaryAwarenessPrimaryState
 
     init(
         legendState: MapLegendState = .loading(for: .categorical),
         selectedLayer: MapLayer = .categorical,
-        warningOverlays: [MapOverlayEntry] = []
+        warningOverlays: [MapOverlayEntry] = [],
+        primaryAwareness: SummaryAwarenessPrimaryState = .quiet
     ) {
         self.legendState = legendState
         self.selectedLayer = selectedLayer
         self.warningOverlays = warningOverlays
+        self.primaryAwareness = primaryAwareness
     }
 
     var body: some View {
@@ -319,8 +408,129 @@ private struct MapScreenContentPreview: View {
                 legendState: legendState,
                 warningLegendItems: WarningLegendItem.rendered(from: warningOverlays)
             ),
-            locationCoordinate: CLLocationCoordinate2D(latitude: 39.75, longitude: -104.44)
+            locationCoordinate: CLLocationCoordinate2D(latitude: 39.75, longitude: -104.44),
+            primaryAwareness: primaryAwareness
         )
+    }
+}
+
+private struct MapAwarenessSummary: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let primary: SummaryAwarenessPrimaryState
+
+    var body: some View {
+        cardContent
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(primary.accessibilityContract.label)
+            .accessibilityValue(primary.accessibilityContract.value)
+            .accessibilityAddTraits(.isStaticText)
+            .accessibilityIdentifier("map-awareness-summary")
+    }
+
+    private var cardContent: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: primary.symbolName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(primary.accentColor)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(primary.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                }
+
+                if let timing = primary.mapSummaryTiming {
+                    Text(timing)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text(primary.mapSummaryDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.leading, 25)
+        .padding(.trailing, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(primary.accentColor)
+                .frame(width: 3)
+                .padding(.vertical, 10)
+                .padding(.leading, 12)
+                .accessibilityHidden(true)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(.primary.opacity(colorScheme == .dark ? 0.08 : 0.06), lineWidth: 0.7)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+private struct CompactMapAwarenessSummary: View {
+    let primary: SummaryAwarenessPrimaryState
+    let onExpand: () -> Void
+
+    var body: some View {
+        Button(action: onExpand) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: primary.symbolName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(primary.accentColor)
+                    .accessibilityHidden(true)
+
+                Text(primary.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.leading, 25)
+            .padding(.trailing, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: 320, alignment: .leading)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(primary.accentColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 10)
+                    .padding(.leading, 12)
+                    .accessibilityHidden(true)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.08), lineWidth: 0.7)
+                    .allowsHitTesting(false)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(primary.accessibilityContract.label)
+        .accessibilityValue(primary.accessibilityContract.value)
+        .accessibilityHint("Opens the full awareness summary.")
+        .accessibilityIdentifier("map-awareness-summary-compact")
     }
 }
 
@@ -446,6 +656,32 @@ private enum MapScreenPreviewLegendState {
         warningOverlays: MapScreenPreviewWarningLegend.overlays
     )
     .environment(\.dynamicTypeSize, .accessibility5)
+}
+
+#Preview("Map Awareness - Active Warning Narrow") {
+    MapScreenContentPreview(
+        primaryAwareness: .alert(
+            title: "Severe Thunderstorm Warning",
+            detail: "Destructive winds and very large hail are possible across the area.",
+            timing: "Until 9:00 PM MDT",
+            instruction: "Seek shelter immediately."
+        )
+    )
+    .environment(\.dynamicTypeSize, .large)
+    .frame(width: 320, height: 568)
+}
+
+#Preview("Map Awareness - AX3 Active Warning Narrow") {
+    MapScreenContentPreview(
+        primaryAwareness: .alert(
+            title: "Severe Thunderstorm Warning",
+            detail: "Destructive winds and very large hail are possible across the area.",
+            timing: "Until 9:00 PM MDT",
+            instruction: "Seek shelter immediately."
+        )
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .frame(width: 320, height: 568)
 }
 
 private enum MapScreenPreviewWarningLegend {

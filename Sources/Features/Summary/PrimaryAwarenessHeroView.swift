@@ -167,33 +167,7 @@ struct PrimaryAwarenessHeroView: View {
     }
 
     private var accentColor: Color {
-        switch primary {
-        case let .alert(title, _, _, _):
-            styleForType(.watch, title).1
-        case let .severe(threat):
-            switch threat {
-            case .allClear: .riskAllClear
-            case .wind: .windTeal
-            case .hail: .hailBlue
-            case .tornado: .tornadoRed
-            }
-        case let .storm(level):
-            switch level {
-            case .allClear: .riskAllClear
-            case .thunderstorm: .riskThunderstorm
-            case .marginal: .riskMarginal
-            case .slight: .riskSlight
-            case .enhanced: .riskEnhanced
-            case .moderate: .riskModerate
-            case .high: .riskHigh
-            }
-        case let .fire(level):
-            level.tint
-        case .loading:
-            .secondary
-        case .quiet:
-            .riskAllClear
-        }
+        primary.accentColor
     }
 
     private func handle(action: SummaryAwarenessDestination) {

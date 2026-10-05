@@ -170,7 +170,7 @@ struct WidgetCombinedMediumView: View {
     }
 
     private func riskSummary(title: String, value: String, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: 10) {
             Capsule()
                 .fill(tint)
                 .frame(width: 3)
