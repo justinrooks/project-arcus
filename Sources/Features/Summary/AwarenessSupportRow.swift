@@ -15,6 +15,9 @@ struct AwarenessSupportRow: View {
     let detail: String
     let symbolName: String
     let background: LinearGradient
+    var category: String? = nil
+    var accent: Color? = nil
+    var categorySymbolName: String? = nil
     var intensity: SevereIntensityPresentation? = nil
     var isQuiet: Bool = false
     var presentationMode: SupportingRiskRowPresentationMode = .normal
@@ -22,7 +25,111 @@ struct AwarenessSupportRow: View {
 
     var body: some View {
         let rowMetrics = metrics
+        content(rowMetrics)
+        .padding(.horizontal, rowMetrics.horizontalPadding)
+        .padding(.vertical, category == nil ? rowMetrics.verticalPadding : 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                .fill(category == nil ? Color.clear : Color(uiColor: .secondarySystemBackground))
+                .overlay {
+                    if category == nil {
+                        RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                            .fill(background)
+                    }
+                }
+                .overlay(alignment: .leading) {
+                    if let intensity, category == nil {
+                        SevereIntensityTexture(level: intensity.level)
+                            .frame(width: 44)
+                            .clipped()
+                    }
+                }
+                .overlay(alignment: .leading) {
+                    if let accent, category != nil {
+                        GeometryReader { proxy in
+                            Capsule()
+                                .fill(accent)
+                                .frame(width: 5, height: max(0, proxy.size.height - 24))
+                                .position(x: 14.5, y: proxy.size.height / 2)
+                        }
+                        .allowsHitTesting(false)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                .strokeBorder(.white.opacity(strokeOpacity), lineWidth: 0.8)
+                .allowsHitTesting(false)
+        }
+        .shadow(color: .black.opacity(isQuiet ? 0.06 : 0.10), radius: shadowRadius, x: 0, y: shadowY)
+        .opacity(rowOpacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(category ?? title)
+        .accessibilityValue(intensity.map {
+            [category == nil ? nil : title, detail, $0.title, $0.detail]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: ". ")
+        } ?? (category == nil ? detail : [title, detail].filter { !$0.isEmpty }.joined(separator: ". ")))
+    }
 
+    @ViewBuilder
+    private func content(_ rowMetrics: Metrics) -> some View {
+        if let category, accent != nil {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 7) {
+                        Image(systemName: categorySymbolName ?? symbolName)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(accent ?? .secondary)
+                            .frame(width: 17)
+                            .accessibilityHidden(true)
+                        Text(category)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let intensity {
+                        HStack(alignment: .top, spacing: 8) {
+                            SevereIntensityTexture(level: intensity.level)
+                                .frame(width: 30, height: 26)
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(intensity.title)
+                                    .font(.footnote.weight(.semibold))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(intensity.detail)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.top, 3)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.leading, 18)
+            .frame(minHeight: 118, alignment: .leading)
+        } else {
+            legacyContent(rowMetrics)
+        }
+    }
+
+    private func legacyContent(_ rowMetrics: Metrics) -> some View {
             HStack(spacing: rowMetrics.horizontalSpacing) {
             Image(systemName: symbolName)
                 .font(.system(size: rowMetrics.iconSize, weight: .semibold))
@@ -67,39 +174,6 @@ struct AwarenessSupportRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, rowMetrics.horizontalPadding)
-        .padding(.vertical, rowMetrics.verticalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .fill(background)
-                .overlay {
-                    if let intensity {
-                        SevereIntensityTexture(level: intensity.level)
-                            .frame(width: 44)
-                            .clipped()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .strokeBorder(.white.opacity(strokeOpacity), lineWidth: 0.8)
-                .allowsHitTesting(false)
-        }
-        .shadow(
-            color: .black.opacity(isQuiet ? 0.06 : 0.10),
-            radius: shadowRadius,
-            x: 0,
-            y: shadowY
-        )
-        .opacity(rowOpacity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-        .accessibilityValue(intensity.map {
-            [detail, $0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: ". ")
-        } ?? detail)
     }
 
     private var metrics: Metrics {
