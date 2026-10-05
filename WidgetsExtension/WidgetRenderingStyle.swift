@@ -119,3 +119,24 @@ struct WidgetAlertVisualStyle {
         }
     }
 }
+
+struct WidgetFireRiskVisualStyle {
+    let icon: String
+    let tint: Color
+
+    static func style(for severity: Int) -> WidgetFireRiskVisualStyle {
+        switch severity {
+        case 10...:
+            return WidgetFireRiskVisualStyle(icon: "flame.circle.fill", tint: .pink)
+        case 8...:
+            return WidgetFireRiskVisualStyle(icon: "flame.fill", tint: .red)
+        case 5...:
+            return WidgetFireRiskVisualStyle(icon: "flame", tint: .orange)
+        default:
+            return WidgetFireRiskVisualStyle(
+                icon: "checkmark.seal.fill",
+                tint: Color(red: 0.40, green: 0.75, blue: 0.40)
+            )
+        }
+    }
+}

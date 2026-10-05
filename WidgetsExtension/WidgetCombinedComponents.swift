@@ -4,61 +4,7 @@ import WidgetKit
 struct WidgetCombinedMediumView: View {
     let snapshot: WidgetSnapshot
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.widgetFamily) private var widgetFamily
-
-    var body: some View {
-        Group {
-            if case let .unavailable(message) = snapshot.availability {
-                WidgetUnavailableStateView(message: message)
-                    .padding(12)
-            } else {
-                WidgetCombinedLargeCard(snapshot: snapshot)
-            }
-        }
-        .containerBackground(for: .widget) {
-            ZStack {
-                WidgetSurfaceStyle.baseColor(isDark: colorScheme == .dark)
-                LinearGradient(
-                    colors: [
-                        semanticTint.opacity(WidgetSurfaceStyle.semanticWashOpacity(
-                            severity: semanticSeverity,
-                            isDark: colorScheme == .dark
-                        )),
-                        .clear
-                    ],
-                    startPoint: .topTrailing,
-                    endPoint: .bottomLeading
-                )
-            }
-        }
-    }
-
-    private var semanticTint: Color {
-        if let selectedAlert = snapshot.selectedAlert {
-            return WidgetAlertVisualStyle.style(for: selectedAlert).tint
-        }
-        if snapshot.severeRisk.severity > 0 {
-            return WidgetRiskVisualStyle.style(for: .severe, severity: snapshot.severeRisk.severity).tint
-        }
-        if snapshot.stormRisk.severity > 0 {
-            return WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
-        }
-        return Color(red: 0.25, green: 0.38, blue: 0.50)
-    }
-
-    private var semanticSeverity: Int {
-        WidgetSurfaceStyle.semanticSeverity(
-            selectedAlertSeverity: snapshot.selectedAlert?.severity,
-            stormSeverity: snapshot.stormRisk.severity,
-            severeSeverity: snapshot.severeRisk.severity
-        )
-    }
-}
-
-private struct WidgetCombinedLargeCard: View {
-    let snapshot: WidgetSnapshot
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.widgetFamily) private var widgetFamily
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var stormStyle: WidgetRiskVisualStyle {
         WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity)
@@ -69,328 +15,202 @@ private struct WidgetCombinedLargeCard: View {
     }
 
     private var alertStyle: WidgetAlertVisualStyle? {
-        guard let selectedAlert = snapshot.selectedAlert else { return nil }
-        return WidgetAlertVisualStyle.style(for: selectedAlert)
+        snapshot.selectedAlert.map(WidgetAlertVisualStyle.style(for:))
     }
 
-    private var locationSummaryLine: String {
-        let trimmed = snapshot.locationSummary?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmed, !trimmed.isEmpty else { return "Location unavailable" }
-        return trimmed
+    private var location: String {
+        let value = snapshot.locationSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value?.isEmpty == false ? value : nil) ?? "Location unavailable"
     }
 
-    private var isMediumFamily: Bool {
-        widgetFamily == .systemMedium
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                decorativeGlowLayer(in: proxy.size)
-
-                VStack(alignment: .leading, spacing: isMediumFamily ? 6 : 14) {
-                    if isMediumFamily, let selectedAlert = snapshot.selectedAlert {
-                        WidgetCombinedIntegratedAlertRow(
-                            alert: selectedAlert,
-                            hiddenAlertCount: snapshot.hiddenAlertCount
-                        )
-                        WidgetCombinedRiskPairRow(
-                            stormState: snapshot.stormRisk,
-                            severeState: snapshot.severeRisk
-                        )
-                    } else {
-                        WidgetCombinedRiskPairRow(
-                            stormState: snapshot.stormRisk,
-                            severeState: snapshot.severeRisk
-                        )
-
-                        if let selectedAlert = snapshot.selectedAlert {
-                            WidgetCombinedIntegratedAlertRow(
-                                alert: selectedAlert,
-                                hiddenAlertCount: snapshot.hiddenAlertCount
-                            )
-                        } else {
-                            WidgetCombinedIntegratedNoAlertRow(stormSeverity: snapshot.stormRisk.severity)
-                        }
-                    }
-
-                    if !isMediumFamily {
-                        Spacer(minLength: 0)
-                    }
-
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Label(locationSummaryLine, systemImage: "mappin.and.ellipse")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-
-                        Spacer(minLength: 8)
-
-                        if WidgetFreshnessFormatter.lineSuppressingStaleState(for: combinedFreshness) != nil {
-                            WidgetFreshnessLineView(freshness: combinedFreshness)
-                                .font(.caption2.weight(.medium))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .padding(.horizontal, isMediumFamily ? 14 : 16)
-                .padding(.top, isMediumFamily ? 12 : 16)
-                .padding(.bottom, 18)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilitySummary)
-    }
-
-    @ViewBuilder
-    private func decorativeGlowLayer(in size: CGSize) -> some View {
-        let signalTint = alertStyle?.tint ?? severeStyle.tint
-        Circle()
-            .fill(signalTint.opacity(colorScheme == .dark ? 0.22 : 0.10))
-            .frame(width: colorScheme == .dark ? 260 : 220, height: colorScheme == .dark ? 260 : 220)
-            .blur(radius: colorScheme == .dark ? 72 : 56)
-            .position(x: size.width * 0.78, y: size.height * 0.26)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-
-        Circle()
-            .fill(stormStyle.tint.opacity(colorScheme == .dark ? 0.14 : 0.07))
-            .frame(width: colorScheme == .dark ? 220 : 180, height: colorScheme == .dark ? 220 : 180)
-            .blur(radius: colorScheme == .dark ? 68 : 52)
-            .position(x: size.width * 0.20, y: size.height * 0.10)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-
-    private var accessibilitySummary: String {
-        var parts: [String] = []
-        var alertParts: [String] = []
-        if let selectedAlert = snapshot.selectedAlert {
-            alertParts.append("Alert \(selectedAlert.title)")
-            if snapshot.hiddenAlertCount > 0 {
-                alertParts.append("Plus \(snapshot.hiddenAlertCount) more")
-            }
-        }
-
-        if isMediumFamily {
-            parts.append(contentsOf: alertParts)
-        }
-
-        parts.append("Storm Risk \(snapshot.stormRisk.label)")
-        if snapshot.severeRisk.severity == 0 {
-            parts.append("Severe Risk no active threats")
-        } else {
-            parts.append("Severe Risk \(snapshot.severeRisk.label)")
-        }
-
-        if !isMediumFamily {
-            parts.append(contentsOf: alertParts)
-        }
-
-        if snapshot.selectedAlert == nil {
-            parts.append("No local alerts")
-        }
-
-        parts.append(locationSummaryLine)
-
-        if let freshnessLine = WidgetFreshnessFormatter.lineSuppressingStaleState(for: combinedFreshness) {
-            parts.append(freshnessLine)
-        }
-        return parts.joined(separator: ". ")
-    }
-
-    private var combinedFreshness: WidgetFreshnessState {
+    private var freshness: WidgetFreshnessState {
         snapshot.alertFreshness ?? snapshot.freshness
     }
-}
 
-private struct WidgetCombinedRiskPairRow: View {
-    let stormState: WidgetRiskDisplayState
-    let severeState: WidgetRiskDisplayState
-    @Environment(\.colorScheme) private var colorScheme
+    private var visibleFreshnessLine: String? {
+        WidgetFreshnessFormatter.lineSuppressingStaleState(for: freshness)
+    }
+
+    private var isMaximumAccessibilitySize: Bool {
+        dynamicTypeSize >= .accessibility3
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            WidgetCombinedRiskSummaryGroup(
-                title: "Storm Risk",
-                primary: stormState.label,
-                accent: stormStyle.tint,
-                icon: stormStyle.icon
-            )
-
-            Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.14))
-                .frame(width: 1, height: 46)
-                .padding(.top, 2)
-                .accessibilityHidden(true)
-
-            WidgetCombinedRiskSummaryGroup(
-                title: "Severe Risk",
-                primary: severePrimaryLabel,
-                secondary: severeSecondaryLabel,
-                accent: severeStyle.tint,
-                icon: severeStyle.icon
-            )
+        Group {
+            if case let .unavailable(message) = snapshot.availability {
+                WidgetUnavailableStateView(message: message)
+                    .padding(12)
+            } else {
+                if dynamicTypeSize.isAccessibilitySize {
+                    accessibleContent
+                        .padding(12)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(accessibilitySummary)
+                } else {
+                    content
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(accessibilitySummary)
+                }
+            }
+        }
+        .containerBackground(for: .widget) {
+            WidgetSurfaceStyle.baseColor(isDark: colorScheme == .dark)
         }
     }
 
-    private var stormStyle: WidgetRiskVisualStyle {
-        WidgetRiskVisualStyle.style(for: .storm, severity: stormState.severity)
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            contextRow
+            primaryAwareness
+                .frame(maxHeight: .infinity, alignment: .top)
+
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.2 : 0.14))
+                .frame(height: 1)
+                .accessibilityHidden(true)
+
+            HStack(alignment: .top, spacing: 9) {
+                riskSummary(title: "Storm Risk", value: snapshot.stormRisk.label, tint: stormStyle.tint)
+                riskSummary(title: "Severe Risk", value: snapshot.severeRisk.label, tint: severeStyle.tint)
+                riskSummary(
+                    title: "Fire Risk",
+                    value: snapshot.fireRisk?.label ?? "--",
+                    tint: snapshot.fireRisk.map { WidgetFireRiskVisualStyle.style(for: $0.severity).tint } ?? Color.secondary
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var severeStyle: WidgetRiskVisualStyle {
-        WidgetRiskVisualStyle.style(for: .severe, severity: severeState.severity)
-    }
-
-    private var severePrimaryLabel: String {
-        severeState.label
-    }
-
-    private var severeSecondaryLabel: String? {
-        nil
-    }
-}
-
-private struct WidgetCombinedRiskSummaryGroup: View {
-    let title: String
-    let primary: String
-    var secondary: String? = nil
-    let accent: Color
-    var icon: String? = nil
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
+    private var contextRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("SkyAware")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+            Text("·")
+                .foregroundStyle(.tertiary)
+            Text(location)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Spacer(minLength: 2)
+        }
+    }
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if let icon {
-                    Image(systemName: icon)
-                        .font(.system(size: colorScheme == .dark ? 25 : 23, weight: .regular))
-                        .foregroundStyle(accent.opacity(colorScheme == .dark ? 0.92 : 0.78))
-                        .accessibilityHidden(true)
+    private var accessibleContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(snapshot.selectedAlert?.title ?? "No local alerts")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(isMaximumAccessibilitySize ? 3 : 2)
+                .minimumScaleFactor(isMaximumAccessibilitySize ? 0.8 : 1)
+
+            if !isMaximumAccessibilitySize {
+                Text("Storm: \(snapshot.stormRisk.label) · Severe: \(snapshot.severeRisk.label) · Fire: \(snapshot.fireRisk?.label ?? "--")")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var primaryAwareness: some View {
+        let title = snapshot.selectedAlert?.title ?? "No local alerts"
+        let tint = alertStyle?.tint ?? (snapshot.stormRisk.severity > 0 ? stormStyle.tint : severeStyle.tint)
+        let icon = alertStyle?.icon ?? (snapshot.stormRisk.severity > 0 ? stormStyle.icon : "checkmark.shield")
+
+        return HStack(alignment: .center, spacing: 9) {
+            Capsule()
+                .fill(tint)
+                .frame(width: 3)
+                .accessibilityHidden(true)
+            Image(systemName: icon)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                if let subtitle = primarySubtitle {
+                    Text(subtitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(primary)
-                    .font(.system(size: 21, weight: .bold))
+            if snapshot.hiddenAlertCount > 0 {
+                Text("+\(snapshot.hiddenAlertCount) more")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var primarySubtitle: String? {
+        if let alert = snapshot.selectedAlert {
+            guard let issuedAt = alert.issuedAt else { return alert.typeLabel }
+            if let end = alert.validEnd {
+                return "\(alert.typeLabel) · Ends \(Self.relativeFormatter.localizedString(for: end, relativeTo: .now))"
+            }
+            return "\(alert.typeLabel) · Issued \(Self.relativeFormatter.localizedString(for: issuedAt, relativeTo: .now))"
+        }
+        return snapshot.stormRisk.severity > 0 ? "Storm risk remains elevated" : nil
+    }
+
+    private func riskSummary(title: String, value: String, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Capsule()
+                .fill(tint)
+                .frame(width: 3)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(value)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.78)
+                    .minimumScaleFactor(0.68)
             }
-
-            if let secondary {
-                Text(secondary)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(accent)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.9)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
 
-private struct WidgetCombinedIntegratedAlertRow: View {
-    let alert: WidgetSelectedAlertRowDisplayState
-    let hiddenAlertCount: Int
-    @Environment(\.colorScheme) private var colorScheme
+    private var accessibilitySummary: String {
+        var parts = ["SkyAware", location]
+        if let alert = snapshot.selectedAlert {
+            parts.append("Alert \(alert.title)")
+            if snapshot.hiddenAlertCount > 0 { parts.append("Plus \(snapshot.hiddenAlertCount) more alerts") }
+        } else {
+            parts.append("No local alerts")
+            if let primarySubtitle { parts.append(primarySubtitle) }
+        }
+        parts.append("Storm Risk \(snapshot.stormRisk.label)")
+        parts.append("Severe Risk \(snapshot.severeRisk.label)")
+        parts.append("Fire Risk \(snapshot.fireRisk?.label ?? "unavailable")")
+        if let visibleFreshnessLine { parts.append(visibleFreshnessLine) }
+        return parts.joined(separator: ". ")
+    }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter
     }()
-
-    private var style: WidgetAlertVisualStyle {
-        WidgetAlertVisualStyle.style(for: alert)
-    }
-
-    private var subtitle: String {
-        guard let validEnd = alert.validEnd else {
-            guard let issuedAt = alert.issuedAt else {
-                return alert.typeLabel
-            }
-            return "\(alert.typeLabel) • Issued \(Self.relativeFormatter.localizedString(for: issuedAt, relativeTo: .now))"
-        }
-        return "\(alert.typeLabel) • Ends \(Self.relativeFormatter.localizedString(for: validEnd, relativeTo: .now))"
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(style.tint.opacity(colorScheme == .dark ? 0.92 : 0.82))
-                .frame(width: 3, height: 46)
-                .accessibilityHidden(true)
-
-            Image(systemName: style.icon)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(style.tint)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(alert.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                Text(subtitle)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-
-            Spacer(minLength: 0)
-
-            if hiddenAlertCount > 0 {
-                Text("+\(hiddenAlertCount) more")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-        }
-    }
-}
-
-private struct WidgetCombinedIntegratedNoAlertRow: View {
-    let stormSeverity: Int
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(Color.secondary.opacity(0.45))
-                .frame(width: 3, height: 44)
-                .accessibilityHidden(true)
-
-            Image(systemName: "checkmark.shield")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Color(red: 0.40, green: 0.75, blue: 0.40).opacity(0.72))
-                .frame(width: 22)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("No local alerts")
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-                if stormSeverity > 0 {
-                    Text("Storm risk remains elevated")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-    }
 }

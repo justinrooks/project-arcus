@@ -3963,6 +3963,7 @@ struct HomeRefreshPipelineTests {
         #expect(projection.fireRisk == .clear)
         #expect(projection.lastSlowProductsLoadAt != previousTimestamp)
         #expect(widgetRecorder.refreshCallCount() == 1)
+        #expect(widgetRecorder.lastInput()?.fireRisk == .clear)
     }
 
     @Test("prime success followed by full failure does not resolve the location scope")

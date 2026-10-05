@@ -1,10 +1,40 @@
 import SwiftUI
 import WidgetKit
 
-#Preview("Storm / Normal", as: .systemSmall) {
+#Preview("Storm / Enhanced", as: .systemSmall) {
     SkyAwareStormRiskWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Storm / Thunderstorms", as: .systemSmall) {
+    SkyAwareStormRiskWidget()
+} timeline: {
+    Entry(
+        date: .now,
+        snapshot: WidgetSnapshot(
+            generatedAt: WidgetPreviewFixtures.now,
+            stormRisk: WidgetRiskDisplayState(label: "Thunderstorms", severity: 1),
+            severeRisk: WidgetPreviewFixtures.severeQuiet.severeRisk,
+            selectedAlert: nil,
+            hiddenAlertCount: 0,
+            freshness: WidgetPreviewFixtures.normal.freshness,
+            availability: .available,
+            destination: .summary
+        )
+    )
+}
+
+#Preview("Storm / Marginal", as: .systemSmall) {
+    SkyAwareStormRiskWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.severeRiskPlaceholder)
+}
+
+#Preview("Storm / Slight", as: .systemSmall) {
+    SkyAwareStormRiskWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormRiskPlaceholder)
 }
 
 #Preview("Storm / High", as: .systemSmall) {
@@ -31,7 +61,7 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.stormQuiet)
 }
 
-#Preview("Storm / Stale", as: .systemSmall) {
+#Preview("Storm / Moderate / Stale", as: .systemSmall) {
     SkyAwareStormRiskWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.stale)
@@ -89,6 +119,12 @@ import WidgetKit
     SkyAwareSevereRiskWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Severe / Unavailable", as: .systemSmall) {
+    SkyAwareSevereRiskWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)
 }
 
 #Preview("Combined Medium / Normal", as: .systemMedium) {

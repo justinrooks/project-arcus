@@ -15,6 +15,7 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.35),
+            fireRisk: .critical,
             alerts: [makeAlert(id: "w1", title: "Tornado Warning", issued: iso("2026-05-01T11:45:00Z"), validEnd: iso("2026-05-01T12:15:00Z"))],
             mesos: [],
             locationSummary: "Bennett, CO"
@@ -24,6 +25,7 @@ struct WidgetSnapshotBuilderTests {
 
         #expect(snapshot.stormRisk == .init(label: "Slight Risk", severity: 3))
         #expect(snapshot.severeRisk == .init(label: "Tornado", severity: 3))
+        #expect(snapshot.fireRisk == .init(label: "Critical Fire Risk", severity: 8))
         #expect(snapshot.selectedAlert?.title == "Tornado Warning")
         #expect(snapshot.activeAlerts.map(\.title) == ["Tornado Warning"])
         #expect(snapshot.hiddenAlertCount == 0)
@@ -41,6 +43,7 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .allClear,
             severeRisk: .allClear,
+            fireRisk: .clear,
             alerts: [],
             mesos: []
         )
@@ -52,6 +55,7 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.hiddenAlertCount == 0)
         #expect(snapshot.stormRisk.label == "No Severe Storm Risk")
         #expect(snapshot.severeRisk.label == "No Active Threats")
+        #expect(snapshot.fireRisk == .init(label: "No Elevated Fire Risk", severity: 0))
     }
 
     @Test("multiple alerts produce selected alert plus hidden count")

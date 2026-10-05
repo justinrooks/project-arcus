@@ -22,6 +22,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: generatedAt,
                 stormRisk: .enhanced,
                 severeRisk: .tornado(probability: 0.1),
+                fireRisk: .extreme,
                 alerts: [],
                 mesos: [],
                 locationSummary: "Denver, CO"
@@ -30,6 +31,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
 
         #expect(store.load().snapshot?.freshness.timestamp == generatedAt)
         #expect(store.load().snapshot?.locationSummary == "Denver, CO")
+        #expect(store.load().snapshot?.fireRisk == .init(label: "Extreme Fire Risk", severity: 10))
         #expect(reloadedKinds.values() == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
