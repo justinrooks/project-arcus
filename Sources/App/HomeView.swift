@@ -356,9 +356,35 @@ struct HomeView: View {
         .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
 
-    private var mapTab: some View {
-        MapScreenView(selectedLayer: $selectedMapLayer)
+    private func mapTab(
+        presentation: HomePresentationSnapshot,
+        todayContentState: TodayContentState
+    ) -> some View {
+        MapScreenView(
+            selectedLayer: $selectedMapLayer,
+            primaryAwareness: primaryAwarenessState(
+                presentation: presentation,
+                todayContentState: todayContentState
+            )
+        )
             .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private func primaryAwarenessState(
+        presentation: HomePresentationSnapshot,
+        todayContentState: TodayContentState
+    ) -> SummaryAwarenessPrimaryState {
+        SummaryAwarenessPrimaryState.resolve(
+            stormRisk: presentation.stormRisk,
+            severeRisk: presentation.severeRisk,
+            fireRisk: presentation.fireRisk,
+            alerts: presentation.alerts,
+            todayContentState: todayContentState,
+            isStormRiskResolving: refreshPipeline.resolutionState.isResolving(.stormRisk),
+            isSevereRiskResolving: refreshPipeline.resolutionState.isResolving(.severeRisk),
+            isFireRiskResolving: refreshPipeline.resolutionState.isResolving(.fireRisk),
+            isOffline: runtimeConnectivityState.isOffline
+        )
     }
 
     private var outlooksTab: some View {
@@ -414,7 +440,7 @@ struct HomeView: View {
                 .badge(presentation.mesos.count + presentation.alerts.count)
 
                 Tab("Map", systemImage: "map", value: .map) {
-                    mapTab
+                    mapTab(presentation: presentation, todayContentState: todayContentState)
                 }
 
                 Tab("Outlooks", systemImage: "list.clipboard.fill", value: .outlooks) {

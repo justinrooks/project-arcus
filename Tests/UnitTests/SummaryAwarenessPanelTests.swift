@@ -646,6 +646,41 @@ struct SummaryAwarenessPanelTests {
         #expect(quiet.hint == nil)
     }
 
+    @Test("Map summary appears only for active alert and risk presentations")
+    func mapSummaryVisibility_tracksMeaningfulAwareness() {
+        #expect(SummaryAwarenessPrimaryState.alert(
+            title: "Tornado Warning",
+            detail: "Take shelter now",
+            timing: "Until 9:00 PM MDT",
+            instruction: nil
+        ).mapSummaryIsVisible)
+        #expect(SummaryAwarenessPrimaryState.severe(.tornado(probability: 0.10)).mapSummaryIsVisible)
+        #expect(SummaryAwarenessPrimaryState.storm(.moderate).mapSummaryIsVisible)
+        #expect(SummaryAwarenessPrimaryState.fire(.critical).mapSummaryIsVisible)
+        #expect(SummaryAwarenessPrimaryState.loading(
+            title: "Storm Risk",
+            detail: "Getting storm risk…",
+            symbolName: "clock"
+        ).mapSummaryIsVisible == false)
+        #expect(SummaryAwarenessPrimaryState.quiet.mapSummaryIsVisible == false)
+        #expect(SummaryAwarenessPrimaryState.storm(.allClear).mapSummaryIsVisible == false)
+        #expect(SummaryAwarenessPrimaryState.severe(.allClear).mapSummaryIsVisible == false)
+        #expect(SummaryAwarenessPrimaryState.fire(.clear).mapSummaryIsVisible == false)
+    }
+
+    @Test("Map alert summary includes expiration context")
+    func mapSummaryDetail_includesAlertTiming() {
+        let alert = SummaryAwarenessPrimaryState.alert(
+            title: "Tornado Warning",
+            detail: "Take shelter now",
+            timing: "Until 9:00 PM MDT",
+            instruction: nil
+        )
+
+        #expect(alert.mapSummaryDetail == "Take shelter now")
+        #expect(alert.mapSummaryTiming == "Until 9:00 PM MDT")
+    }
+
     private func makeAlert(
         title: String,
         headline: String,

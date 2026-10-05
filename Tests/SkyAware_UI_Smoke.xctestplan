@@ -24,6 +24,7 @@
         "SkyAwareUITests\/testLaunchPresentsDisclaimerBeforeRestrictedLocationWhenBothApply()",
         "SkyAwareUITests\/testLaunchPresentsDisclaimerOnlyWhenDisclaimerIsStale()",
         "SkyAwareUITests\/testLaunchPresentsRestrictedLocationOnlyWhenDisclaimerIsCurrent()",
+        "SkyAwareUITests\/testMapAwarenessSummaryCompactsAndCoordinatesWithLegendAtAccessibilityTextSize()",
         "SkyAwareUITests\/testMapLayerMenuKeepsWarningToggleReachableAndFunctional()",
         "SkyAwareUITests\/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes()",
         "SkyAwareUITests\/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection()",

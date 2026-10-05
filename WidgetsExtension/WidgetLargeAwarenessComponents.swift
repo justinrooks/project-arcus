@@ -334,7 +334,7 @@ private struct WidgetLargeRiskContextColumn: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 7) {
+        HStack(alignment: .top, spacing: 10) {
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                 .fill(accent)
                 .frame(width: 3, height: 24)
