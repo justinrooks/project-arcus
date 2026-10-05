@@ -10,7 +10,7 @@ struct MapLegend: View {
     let state: MapLegendState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             switch state.layer {
             case .categorical:
                 Text(state.headlineText)
@@ -86,15 +86,11 @@ struct MapLegend: View {
                 }
             }
         }
-        .padding(SkyAwareSpacing.contentInset)
+        .padding(12)
         .frame(minWidth: 144, maxWidth: 260, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.row,
-            shadowOpacity: 0.10,
-            shadowRadius: 8,
-            shadowY: 3
-        )
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 
     private var hatchingExplanationTransition: AnyTransition {
@@ -153,7 +149,7 @@ struct WarningLegend: View {
     let items: [WarningLegendItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Active Warnings")
                 .font(.caption.weight(.semibold))
 
@@ -161,14 +157,10 @@ struct WarningLegend: View {
                 WarningLegendRow(item: item)
             }
         }
-        .padding(SkyAwareSpacing.contentInset)
+        .padding(12)
         .frame(width: 160, alignment: .leading)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.row,
-            shadowOpacity: 0.10,
-            shadowRadius: 8,
-            shadowY: 3
-        )
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 }
 
