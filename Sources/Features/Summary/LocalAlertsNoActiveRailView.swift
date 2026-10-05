@@ -8,42 +8,18 @@
 import SwiftUI
 
 struct LocalAlertsNoActiveRailView: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @ScaledMetric(relativeTo: .subheadline) private var verticalPadding: CGFloat = 8
-
-    private var background: LinearGradient {
-        let leadingOpacity = colorScheme == .dark ? 0.11 : 0.06
-        let trailingOpacity = colorScheme == .dark ? 0.07 : 0.035
-
-        return LinearGradient(
-            colors: [
-                Color.primary.opacity(leadingOpacity),
-                Color.primary.opacity(trailingOpacity)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("No active alerts for your location")
-                .font(.headline.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
 
             Text("We'll continue watching nearby watches, warnings, and discussions.")
-                .font(.subheadline)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, verticalPadding)
-        .railStyle(
-            background: background,
-            minHeight: 84,
-            shadowOpacity: 0.10,
-            shadowRadius: 6,
-            shadowY: 3
-        )
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("summary-local-alerts-no-active-rail")
     }

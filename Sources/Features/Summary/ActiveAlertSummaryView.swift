@@ -205,8 +205,6 @@ struct ActiveAlertSummaryView: View {
 
             innerContent
         }
-        .padding(contentState == .empty ? 0 : 18)
-        .modifier(LocalAlertsSurfaceChrome(contentState: contentState))
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
@@ -370,24 +368,6 @@ struct ActiveAlertSummaryView: View {
     }
 }
 
-private struct LocalAlertsSurfaceChrome: ViewModifier {
-    let contentState: ActiveAlertSummaryView.ContentState
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if contentState == .empty {
-            content
-        } else {
-            content.cardBackground(
-                cornerRadius: SkyAwareRadius.card,
-                shadowOpacity: 0.08,
-                shadowRadius: 8,
-                shadowY: 3
-            )
-        }
-    }
-}
-
 private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -415,9 +395,19 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                     Button {
                         onSelect(item)
                     } label: {
-                        row(item)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(Rectangle())
+                        HStack(spacing: 8) {
+                            row(item)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .skyAwareContentSurface(cornerRadius: SkyAwareRadius.row)
+                        .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous))
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
@@ -440,9 +430,10 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                             Image(systemName: isExpanded ? "arrow.up" : "arrow.right")
                                 .font(.caption.weight(.semibold))
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
+                        .frame(minHeight: 44, alignment: .leading)
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
@@ -474,11 +465,13 @@ private struct MesoRowView: View {
                 HStack {
                     Text("Meso \(meso.number.formatted(.number.grouping(.never)))")
                         .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     VStack(alignment: .trailing) {
                         Text("Ends \(meso.validEnd, style: .time)")
                             .monospacedDigit()
                             .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -524,12 +517,14 @@ private struct WatchRowView: View {
                 HStack {
                     Text("\(alert.title)")
                         .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     VStack(alignment: .trailing) {
                         let txt = buildDisplay(alert: alert)
                         Text("Until \(txt) \(alert.validEnd, style: .time)")
                             .monospacedDigit()
                             .font(.caption.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
