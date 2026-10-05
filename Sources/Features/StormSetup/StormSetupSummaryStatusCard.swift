@@ -18,7 +18,7 @@ struct StormSetupSummaryStatusCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Label("Storm Setup", systemImage: "cloud.bolt.fill")
                 .symbolVariant(.fill)
                 .sectionLabel()
@@ -40,12 +40,12 @@ struct StormSetupSummaryStatusCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(14)
         .cardBackground(
             cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: colorScheme == .dark ? 0.06 : 0.10,
-            shadowRadius: colorScheme == .dark ? 6 : 8,
-            shadowY: colorScheme == .dark ? 2 : 3
+            shadowOpacity: colorScheme == .dark ? 0.03 : 0.05,
+            shadowRadius: 4,
+            shadowY: 1
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Storm Setup")

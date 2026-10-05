@@ -9,183 +9,63 @@ import SwiftUI
 
 struct StormSetupSummaryCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let presentation: StormSetupSummaryPresentation
 
-    private var adaptiveLayout: SkyAwareAdaptiveLayout {
-        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
-    }
-
-    private var atmosphereBackground: LinearGradient {
-        let colors: [Color] = colorScheme == .dark
-        ? [
-            Color(red: 0.14, green: 0.20, blue: 0.26).opacity(0.95),
-            Color(red: 0.09, green: 0.13, blue: 0.17).opacity(0.95)
-        ]
-        : [
-            Color(red: 0.92, green: 0.96, blue: 0.98),
-            Color(red: 0.87, green: 0.92, blue: 0.95)
-        ]
-
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-
     var body: some View {
-        cardContent
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
-            .cardBackground(
-                cornerRadius: SkyAwareRadius.section,
-                shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
-                shadowRadius: colorScheme == .dark ? 8 : 10,
-                shadowY: colorScheme == .dark ? 3 : 4
-            )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(presentation.accessibilityLabel)
-        .accessibilityValue(presentation.accessibilityValue)
-        .accessibilityHint(presentation.accessibilityHint)
-    }
-
-    private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header
-
-            summaryCopy
-
-            detailSurface
-        }
-    }
-
-    private var header: some View {
-        Label("Storm Setup", systemImage: "cloud.bolt.fill")
-            .symbolVariant(.fill)
-            .sectionLabel()
-    }
-
-    private var summaryCopy: some View {
-        VStack(alignment: .leading, spacing: 4) {
             Text(presentation.overallTitle)
-                .font(.title3.weight(.semibold))
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let summaryProse = presentation.summaryProse {
                 Text(summaryProse)
-                    .font(.body)
-                    .lineSpacing(4)
-                    .lineLimit(4)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Guidance summary unavailable.")
-                    .font(.body)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineSpacing(4)
-                    .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
 
-    private var detailSurface: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ingredientRows
-                .padding(.bottom, 6)
-
-            if presentation.limiterText != nil || presentation.freshnessText != nil {
-                Divider()
-                    .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.07))
-                    .padding(.vertical, 4)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                if let limiterText = presentation.limiterText {
-                    Text("What limits the setup: \(limiterText)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let freshnessText = presentation.freshnessText {
-                    Text(freshnessText)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Text(presentation.sourceLine)
+            if let freshnessText = presentation.freshnessText {
+                Text(freshnessText)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background {
-            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                .fill(atmosphereBackground)
-                .overlay {
-                    RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 0.8)
-                        .allowsHitTesting(false)
-                }
-        }
+        .padding(16)
+        .frame(minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: colorScheme == .dark ? 0.04 : 0.06,
+            shadowRadius: 5,
+            shadowY: 2
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityValue(presentation.accessibilityValue)
+        .accessibilityHint(presentation.accessibilityHint)
     }
 
-    init(presentation: StormSetupSummaryPresentation) {
-        self.presentation = presentation
-    }
-
-    @ViewBuilder
-    private var ingredientRows: some View {
-        if adaptiveLayout.usesStackedHeroTiles {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(presentation.ingredientRows) { row in
-                    stackedRow(row)
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(presentation.ingredientRows) { row in
-                    horizontalRow(row)
-                }
-            }
-        }
-    }
-
-    private func horizontalRow(_ row: StormSetupSummaryPresentation.IngredientRow) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(row.title)
-                .font(.subheadline.weight(.semibold))
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "cloud.bolt.fill")
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            Spacer(minLength: 10)
-
-            Text(row.value)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func stackedRow(_ row: StormSetupSummaryPresentation.IngredientRow) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(row.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            Text(row.value)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.primary)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
+            Text("Storm Setup")
+                .sectionLabel()
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
     }
 

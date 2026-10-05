@@ -249,6 +249,37 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testTodayOutlookSummaryOpensDetail() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let todayTab = app.tabBars.buttons["Today"]
+        XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist.")
+        todayTab.tap()
+
+        let summaryScrollView = app.scrollViews["summary-scroll"]
+        XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Today summary to load.")
+
+        let allOutlooksButton = app.buttons["summary-all-outlooks-button"]
+        scrollUntilHittable(allOutlooksButton, in: summaryScrollView)
+        XCTAssertTrue(allOutlooksButton.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(allOutlooksButton.frame.size.height, 44)
+
+        let outlookCard = app.buttons["summary-outlook-card"]
+        scrollUntilHittable(outlookCard, in: summaryScrollView)
+        XCTAssertTrue(outlookCard.waitForExistence(timeout: 10), "Expected the Outlook summary to appear.")
+        XCTAssertGreaterThanOrEqual(outlookCard.frame.size.height, 44)
+        attachScreenshot(app, named: "today-outlook-summary")
+        outlookCard.tap()
+
+        XCTAssertTrue(app.navigationBars["Day 1 Outlook"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testOutlookDetailOpensFromTheLatestOutlookRowAtAccessibilityTextSize() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

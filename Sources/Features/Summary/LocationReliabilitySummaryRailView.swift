@@ -1,34 +1,10 @@
 import SwiftUI
 
 struct LocationReliabilitySummaryRailView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .body) private var railVerticalPadding = 10
 
     let onOpen: () -> Void
     let onDismiss: () -> Void
-
-    private var background: LinearGradient {
-        if colorScheme == .dark {
-            return LinearGradient(
-                colors: [
-                    Color.orange.opacity(0.52),
-                    Color.red.opacity(0.30)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-
-        return LinearGradient(
-            colors: [
-                Color.orange.opacity(0.35),
-                Color.red.opacity(0.18)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
 
     var body: some View {
         Group {
@@ -38,8 +14,13 @@ struct LocationReliabilitySummaryRailView: View {
                 compactContent
             }
         }
-        .padding(.vertical, railVerticalPadding)
-        .railStyle(background: background)
+        .padding(14)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
+        )
     }
 
     private var compactContent: some View {
@@ -64,8 +45,8 @@ struct LocationReliabilitySummaryRailView: View {
         Button(action: onOpen) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "location.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -82,13 +63,7 @@ struct LocationReliabilitySummaryRailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(
-            SkyAwarePressableButtonStyle(
-                cornerRadius: SkyAwareRadius.large,
-                pressedScale: 0.985,
-                pressedOverlayOpacity: 0.08
-            )
-        )
+        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .accessibilityIdentifier("summary-reliability-rail")
         .accessibilityHint("Opens location reliability details.")
@@ -99,17 +74,10 @@ struct LocationReliabilitySummaryRailView: View {
             Text("Not Now")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
-        }
-        .buttonStyle(
-            SkyAwarePressableButtonStyle(
-                cornerRadius: SkyAwareRadius.chipCompact,
-                pressedScale: 0.985,
-                pressedOverlayOpacity: 0.08
-            )
-        )
+            }
+        .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44, alignment: .center)
         .accessibilityIdentifier("summary-reliability-not-now")
         .accessibilityHint("Dismisses this reliability prompt for today.")

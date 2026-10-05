@@ -15,8 +15,6 @@ struct OutlookSummaryCard: View {
     let todayContentState: TodayContentState
     let onBrowseAllOutlooks: (() -> Void)?
     
-    @State private var navigateToFull = false
-
     init(
         outlook: ConvectiveOutlookDTO?,
         presentationState: ConvectiveOutlookPresentationState? = nil,
@@ -57,44 +55,47 @@ struct OutlookSummaryCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             headerRow
 
-            Text(summaryText)
-                .font(.body)
-                .lineSpacing(4)
-                .lineLimit(5)
-                .fixedSize(horizontal: false, vertical: true)
+            if let outlook {
+                NavigationLink {
+                    ConvectiveOutlookDetailView(outlook: outlook)
+                } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        Text(summaryText)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .lineSpacing(4)
+                            .lineLimit(5)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("summary-outlook-card")
+            } else {
+                Text(summaryText)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .lineLimit(5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let statusText = Self.statusText(for: presentationState) {
                 Text(statusText)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
-            
-            Button(action: {
-                guard outlook != nil else { return }
-                navigateToFull = true
-            }) {
-                HStack(spacing: 8) {
-                    Text("Read full outlook")
-                    .font(.subheadline.weight(.semibold))
-                    Image(systemName: "arrow.right")
-                        .font(.caption.weight(.semibold))
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .skyAwareGlassButtonStyle()
-            .disabled(outlook == nil)
         }
-        .padding(18)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .padding(16)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.05, shadowRadius: 5, shadowY: 2)
         .placeholder(presentationState == .loading && todayContentState.showsResolvingSurface, animated: true)
-        .navigationDestination(isPresented: $navigateToFull) {
-            if let outlook {
-                ConvectiveOutlookDetailView(outlook: outlook)
-            }
-        }
     }
 
     private var headerRow: some View {
@@ -116,17 +117,11 @@ struct OutlookSummaryCard: View {
                     }
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(
-                    SkyAwarePressableButtonStyle(
-                        cornerRadius: SkyAwareRadius.chipCompact,
-                        pressedScale: 0.985,
-                        pressedOverlayOpacity: 0.08
-                    )
-                )
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("summary-all-outlooks-button")
                 .accessibilityHint("Opens the full outlook list.")
             }
         }
