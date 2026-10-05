@@ -119,8 +119,8 @@ private struct MapScreenContent: View {
                     selection: $selected,
                     showsWarningGeometry: $showsWarningGeometry
                 )
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -156,8 +156,8 @@ private struct MapScreenContent: View {
             Spacer(minLength: 0)
             legendControlsContent
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
     }
 
     @ViewBuilder
