@@ -73,6 +73,41 @@ struct TodayResolvingSurfaceStateTests {
         )
 
         #expect(status.secondaryStatusMessage == "Updating your conditions…")
+        #expect(status.headerStatusMessage == "Updating your conditions…")
+    }
+
+    @Test("offline status takes priority over transient activity in the header")
+    func offlineToken_suppressesHeaderActivityMessage() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .weather, sections: [.conditions])
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .quietRefreshing,
+            showsOfflineToken: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == "Updating your conditions…")
+        #expect(status.headerStatusMessage == nil)
+    }
+
+    @Test("location unavailable suppresses the relocated activity message")
+    func locationUnavailable_suppressesHeaderActivityMessage() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .weather, sections: [.conditions])
+        let status = SummaryStatus(
+            statusText: "Location not available",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .quietRefreshing,
+            showsOfflineToken: false,
+            isLocationUnavailable: true
+        )
+
+        #expect(status.secondaryStatusMessage == "Updating your conditions…")
+        #expect(status.headerStatusMessage == nil)
     }
 
     @Test("manual refresh uses native progress without a duplicate status line")
