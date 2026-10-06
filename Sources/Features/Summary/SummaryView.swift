@@ -478,6 +478,7 @@ struct SummaryView: View {
                 preferences: stormSetupPreferences,
                 forecastLocationTimeZone: locationTimeZone,
                 profileAnalysisResponse: stormSetupProfileAnalysisResponse,
+                dewPointFahrenheit: currentDewPointFahrenheit,
                 now: now
             )
         }
@@ -503,8 +504,15 @@ struct SummaryView: View {
             preferences: stormSetupPreferences,
             forecastLocationTimeZone: locationTimeZone,
             profileAnalysisResponse: stormSetupProfileAnalysisResponse,
+            dewPointFahrenheit: currentDewPointFahrenheit,
             now: now
         )
+    }
+
+    private var currentDewPointFahrenheit: Double? {
+        guard let weather else { return nil }
+        let value = weather.dewPoint.converted(to: .fahrenheit).value
+        return value.isFinite ? value : nil
     }
 
     private func stormSetupSlotState(now: Date) -> StormSetupSlotState {
