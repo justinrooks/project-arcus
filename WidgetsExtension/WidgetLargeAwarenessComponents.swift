@@ -43,7 +43,8 @@ struct WidgetLargeAwarenessView: View {
 
             WidgetLargeRiskContextFooter(
                 stormState: snapshot.stormRisk,
-                severeState: snapshot.severeRisk
+                severeState: snapshot.severeRisk,
+                fireState: snapshot.fireRisk
             )
             .padding(.top, 10)
         }
@@ -51,38 +52,13 @@ struct WidgetLargeAwarenessView: View {
     }
 
     private var metadata: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 3) {
-                    locationLabel
-                    if WidgetFreshnessFormatter.lineSuppressingStaleState(for: freshness) != nil {
-                        freshnessLabel
-                    }
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    locationLabel
-
-                    Spacer(minLength: 8)
-
-                    if WidgetFreshnessFormatter.lineSuppressingStaleState(for: freshness) != nil {
-                        freshnessLabel
-                    }
-                }
-            }
-        }
-        .font(.caption2.weight(.medium))
-        .foregroundStyle(.secondary)
+        locationLabel
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
     }
 
     private var locationLabel: some View {
         Label(locationSummaryLine, systemImage: "mappin")
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-            .minimumScaleFactor(0.8)
-    }
-
-    private var freshnessLabel: some View {
-        WidgetFreshnessLineView(freshness: freshness)
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             .minimumScaleFactor(0.8)
     }
@@ -148,28 +124,6 @@ struct WidgetLargeAwarenessView: View {
         snapshot.activeAlerts.isEmpty ? [snapshot.selectedAlert].compactMap { $0 } : snapshot.activeAlerts
     }
 
-    private var freshness: WidgetFreshnessState {
-        guard let alertFreshness = snapshot.alertFreshness else {
-            return snapshot.freshness
-        }
-
-        guard snapshot.freshness.state == .fresh else {
-            return snapshot.freshness
-        }
-
-        guard alertFreshness.state == .fresh else {
-            return alertFreshness
-        }
-
-        guard let riskTimestamp = snapshot.freshness.timestamp,
-              let alertTimestamp = alertFreshness.timestamp
-        else {
-            return snapshot.freshness
-        }
-
-        return riskTimestamp <= alertTimestamp ? snapshot.freshness : alertFreshness
-    }
-
     private var locationSummaryLine: String {
         let trimmed = snapshot.locationSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.flatMap { $0.isEmpty ? nil : $0 } ?? "Location unavailable"
@@ -180,6 +134,7 @@ struct WidgetLargeAwarenessView: View {
 
 private struct WidgetLargeAlertRailStack: View {
     fileprivate static let rowMinimumHeight: CGFloat = 46
+    fileprivate static let primaryRowMinimumHeight: CGFloat = 56
     private static let rowSpacing: CGFloat = 6
 
     let alerts: [WidgetSelectedAlertRowDisplayState]
@@ -209,7 +164,7 @@ private struct WidgetLargeAlertRailStack: View {
             } else {
                 VStack(alignment: .leading, spacing: Self.rowSpacing) {
                     ForEach(visibleAlerts) { item in
-                        WidgetLargeAlertRailRow(alert: item.alert)
+                        WidgetLargeAlertRailRow(alert: item.alert, isPrimary: item.position == 0)
                     }
 
                     if overflowCount > 0 {
@@ -248,7 +203,9 @@ private struct WidgetLargeAlertRailStack: View {
         let capacity = WidgetLargeAlertPresentation.visibleAlertCapacity(
             isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
         )
-        return (Self.rowMinimumHeight * CGFloat(capacity))
+        let secondaryCapacity = max(capacity - 1, 0)
+        return Self.primaryRowMinimumHeight
+            + (Self.rowMinimumHeight * CGFloat(secondaryCapacity))
             + (Self.rowSpacing * CGFloat(capacity - 1))
     }
 }
@@ -276,6 +233,7 @@ private struct WidgetLargeQuietAwarenessState: View {
 private struct WidgetLargeRiskContextFooter: View {
     let stormState: WidgetRiskDisplayState
     let severeState: WidgetRiskDisplayState
+    let fireState: WidgetRiskDisplayState?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -305,67 +263,94 @@ private struct WidgetLargeRiskContextFooter: View {
     private var columns: some View {
         WidgetLargeRiskContextColumn(
             title: "Storm Risk",
-            state: stormState,
-            style: .style(for: .storm, severity: stormState.severity)
+            value: stormState.label,
+            accessibilityValue: stormState.label,
+            tint: stormState == .placeholder
+                ? .secondary
+                : WidgetRiskVisualStyle.style(for: .storm, severity: stormState.severity).tint
         )
 
         WidgetLargeRiskContextColumn(
             title: "Severe Risk",
-            state: severeState,
-            style: .style(for: .severe, severity: severeState.severity)
+            value: severeState.label,
+            accessibilityValue: severeState.label,
+            tint: severeState == .placeholder
+                ? .secondary
+                : WidgetRiskVisualStyle.style(for: .severe, severity: severeState.severity).tint
+        )
+
+        WidgetLargeRiskContextColumn(
+            title: "Fire Risk",
+            value: fireState?.label ?? "--",
+            accessibilityValue: fireState?.label ?? "unavailable",
+            tint: fireState.map { WidgetFireRiskVisualStyle.style(for: $0.severity).tint } ?? .secondary
         )
     }
 }
 
 private struct WidgetLargeRiskContextColumn: View {
     let title: String
-    let state: WidgetRiskDisplayState
-    let style: WidgetRiskVisualStyle
+    let value: String
+    let accessibilityValue: String
+    let tint: Color
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private static let regularValueRowHeight: CGFloat = 30
-
-    private var accent: Color {
-        state == .placeholder ? .secondary : style.tint
-    }
-
-    private var icon: String {
-        state == .placeholder ? "minus.circle" : style.icon
-    }
-
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(accent)
-                .frame(width: 3, height: 24)
-                .padding(.top, 1)
+        HStack(alignment: .center, spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 10) {
+            Capsule()
+                .fill(tint)
+                .frame(width: 3)
                 .accessibilityHidden(true)
 
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(accent.opacity(0.72))
-                .frame(width: 16)
-                .padding(.top, 2)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Text(state.label)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : Self.regularValueRowHeight,
-                        alignment: .top
-                    )
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    accessibilityContent
+                } else {
+                    regularContent
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(state.label)")
+        .accessibilityLabel("\(title), \(accessibilityValue)")
+    }
+
+    private var regularContent: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+        }
+    }
+
+    private var accessibilityContent: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+
+            Spacer(minLength: 0)
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .multilineTextAlignment(.trailing)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        }
     }
 }
 
@@ -378,6 +363,7 @@ private struct WidgetLargeAlertRailItem: Identifiable {
 
 private struct WidgetLargeAlertRailRow: View {
     let alert: WidgetSelectedAlertRowDisplayState
+    var isPrimary = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -419,6 +405,14 @@ private struct WidgetLargeAlertRailRow: View {
         }
     }
 
+    private var rowSurfaceOpacity: Double {
+        min(surfaceOpacity * (isPrimary ? 1.2 : 1), 0.22)
+    }
+
+    private var lifecycleFont: Font {
+        isPrimary ? .caption : .caption2
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
@@ -427,19 +421,19 @@ private struct WidgetLargeAlertRailRow: View {
                 .accessibilityHidden(true)
 
             Image(systemName: style.icon)
-                .font(.caption.weight(.bold))
+                .font(isPrimary ? .subheadline.weight(.bold) : .caption.weight(.bold))
                 .foregroundStyle(style.tint)
-                .frame(width: 16)
+                .frame(width: isPrimary ? 20 : 16)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(alert.title)
-                    .font(.subheadline.weight(.bold))
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                    .minimumScaleFactor(0.78)
+                    .font(isPrimary ? .headline.weight(.bold) : .subheadline.weight(.bold))
+                    .lineLimit(isPrimary || dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .minimumScaleFactor(isPrimary ? 0.85 : 0.78)
 
                 Text(lifecycleLine)
-                    .font(.caption2.weight(.medium))
+                    .font(lifecycleFont.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
@@ -448,11 +442,15 @@ private struct WidgetLargeAlertRailRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .frame(minHeight: WidgetLargeAlertRailStack.rowMinimumHeight)
+        .padding(.vertical, isPrimary ? 8 : 6)
+        .frame(
+            minHeight: isPrimary
+                ? WidgetLargeAlertRailStack.primaryRowMinimumHeight
+                : WidgetLargeAlertRailStack.rowMinimumHeight
+        )
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(style.tint.opacity(surfaceOpacity))
+                .fill(style.tint.opacity(rowSurfaceOpacity))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)

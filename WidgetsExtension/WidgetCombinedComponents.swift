@@ -23,14 +23,6 @@ struct WidgetCombinedMediumView: View {
         return (value?.isEmpty == false ? value : nil) ?? "Location unavailable"
     }
 
-    private var freshness: WidgetFreshnessState {
-        snapshot.alertFreshness ?? snapshot.freshness
-    }
-
-    private var visibleFreshnessLine: String? {
-        WidgetFreshnessFormatter.lineSuppressingStaleState(for: freshness)
-    }
-
     private var isMaximumAccessibilitySize: Bool {
         dynamicTypeSize >= .accessibility3
     }
@@ -204,7 +196,6 @@ struct WidgetCombinedMediumView: View {
         parts.append("Storm Risk \(snapshot.stormRisk.label)")
         parts.append("Severe Risk \(snapshot.severeRisk.label)")
         parts.append("Fire Risk \(snapshot.fireRisk?.label ?? "unavailable")")
-        if let visibleFreshnessLine { parts.append(visibleFreshnessLine) }
         return parts.joined(separator: ". ")
     }
 

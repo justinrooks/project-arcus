@@ -512,6 +512,9 @@ Widgets should belong to the same visual family as the app without reproducing t
 
 They should prioritize glanceability.
 
+Do not show an “as of” update time in any widget, including its accessibility label. Keep freshness
+timestamps internal to widget state and presentation decisions.
+
 Hierarchy changes by widget size.
 
 ### Small
