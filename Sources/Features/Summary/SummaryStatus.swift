@@ -68,6 +68,11 @@ struct SummaryStatus: View {
         adaptiveLayout.usesStackedHeroTiles || dynamicTypeSize >= .xxxLarge
     }
 
+    var headerStatusMessage: String? {
+        guard showsOfflineToken == false, isLocationUnavailable == false else { return nil }
+        return secondaryStatusMessage
+    }
+
     var secondaryStatusMessage: String? {
         let showsNativeManualRefreshProgress = todayContentState == .cachedRefreshing
             || todayContentState == .staleRefreshing
@@ -113,34 +118,59 @@ struct SummaryStatus: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("Current Conditions")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 12)
-
-            if showsOfflineToken {
-                Button {
-                    showsOfflineExplanation = true
-                } label: {
-                    SummaryOfflineToken()
+        Group {
+            if usesStackedConditionsLayout {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerTitle
+                    headerTrailingStatus(isTrailing: false)
                 }
-                .buttonStyle(
-                    SkyAwarePressableButtonStyle(
-                        cornerRadius: SkyAwareRadius.chipCompact,
-                        pressedScale: 0.985,
-                        pressedOverlayOpacity: 0.08
-                    )
-                )
-                .popover(isPresented: $showsOfflineExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                    OfflineExplanationView()
-                        .presentationCompactAdaptation(.popover)
+            } else {
+                HStack(spacing: 10) {
+                    headerTitle
+                    Spacer(minLength: 12)
+                    headerTrailingStatus(isTrailing: true)
                 }
-                .transition(.opacity)
             }
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: showsOfflineToken)
+    }
+
+    private var headerTitle: some View {
+        Text("Current Conditions")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func headerTrailingStatus(isTrailing: Bool) -> some View {
+        if showsOfflineToken {
+            Button {
+                showsOfflineExplanation = true
+            } label: {
+                SummaryOfflineToken()
+            }
+            .buttonStyle(
+                SkyAwarePressableButtonStyle(
+                    cornerRadius: SkyAwareRadius.chipCompact,
+                    pressedScale: 0.985,
+                    pressedOverlayOpacity: 0.08
+                )
+            )
+            .popover(isPresented: $showsOfflineExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                OfflineExplanationView()
+                    .presentationCompactAdaptation(.popover)
+            }
+            .padding(.top, isTrailing ? 0 : 6)
+            .transition(.opacity)
+        } else {
+            SummaryStatusSecondaryLine(
+                message: headerStatusMessage,
+                recentCompletedDeadline: secondaryStatusDeadline,
+                allowsWrapping: usesStackedConditionsLayout,
+                isTrailing: isTrailing
+            )
+        }
     }
 
     private var contentRow: some View {
@@ -169,11 +199,6 @@ struct SummaryStatus: View {
                 .lineLimit(usesStackedConditionsLayout ? nil : 1)
                 .truncationMode(.tail)
 
-            SummaryStatusSecondaryLine(
-                message: secondaryStatusMessage,
-                recentCompletedDeadline: secondaryStatusDeadline,
-                allowsWrapping: usesStackedConditionsLayout
-            )
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -295,6 +320,7 @@ private struct SummaryStatusSecondaryLine: View {
     let message: String?
     let recentCompletedDeadline: Date?
     let allowsWrapping: Bool
+    let isTrailing: Bool
     @State private var displayedMessage: String?
 
     private struct TaskIdentity: Equatable {
@@ -314,24 +340,22 @@ private struct SummaryStatusSecondaryLine: View {
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
+        ZStack(alignment: isTrailing ? .trailing : .leading) {
             if let displayedMessage {
                 Text(displayedMessage)
                     .id(displayedMessage)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: isTrailing ? .trailing : .leading)
                     .transition(messageTransition)
             } else {
-                Text(" ")
-                    .foregroundStyle(.clear)
-                    .accessibilityHidden(true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                EmptyView()
             }
         }
         .font(.footnote.weight(.medium))
         .lineLimit(allowsWrapping ? nil : 1)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: isTrailing ? .trailing : .leading)
         .frame(minHeight: allowsWrapping ? 0 : 18, alignment: .leading)
+        .padding(.top, isTrailing || displayedMessage == nil ? 0 : 6)
         .animation(SkyAwareMotion.message(reduceMotion), value: displayedMessage)
         .task(id: taskIdentity) {
             await setDisplayedMessage(message)
