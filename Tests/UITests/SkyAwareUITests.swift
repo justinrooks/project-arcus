@@ -1062,7 +1062,7 @@ final class SkyAwareUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected second alert tap to push detail.")
         XCTAssertTrue(
-            app.staticTexts["UI Test Fire Weather Watch"].waitForExistence(timeout: 10),
+            app.staticTexts["Fire Weather Watch"].waitForExistence(timeout: 10),
             "Expected detail to show the second alert, not a stale first alert selection."
         )
 

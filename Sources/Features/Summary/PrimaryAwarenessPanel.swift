@@ -88,6 +88,7 @@ struct PrimaryAwarenessPanel: View {
             accent: stormAccent,
             categorySymbolName: stormSymbolName,
             isQuiet: stormIsQuiet,
+            presentationMode: stormIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(.categorical)
             }
@@ -106,6 +107,7 @@ struct PrimaryAwarenessPanel: View {
             accent: severeAccent,
             isQuiet: severeIsQuiet,
             intensity: severeIntensity?.displayed(for: severeRisk, contentState: todayContentState),
+            presentationMode: severeIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(severeMapLayer)
             }
@@ -124,12 +126,10 @@ struct PrimaryAwarenessPanel: View {
             accent: fireAccent,
             categorySymbolName: fireSymbolName,
             isQuiet: fireIsQuiet,
-            isCompact: true,
             presentationMode: fireIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(.fire)
-            },
-            showsChevron: true
+            }
         )
         .summaryResolving(fireResolving, todayContentState: todayContentState, style: .subtle)
         .accessibilityHint("Opens the fire risk map.")
@@ -146,7 +146,6 @@ struct PrimaryAwarenessPanel: View {
         categorySymbolName: String? = nil,
         isQuiet: Bool,
         intensity: SevereIntensityPresentation? = nil,
-        isCompact: Bool = false,
         presentationMode: SupportingRiskRowPresentationMode = .normal,
         action: @escaping () -> Void,
         showsChevron: Bool = false
@@ -162,7 +161,6 @@ struct PrimaryAwarenessPanel: View {
                 categorySymbolName: categorySymbolName,
                 intensity: intensity,
                 isQuiet: isQuiet,
-                isCompact: isCompact,
                 presentationMode: presentationMode,
                 showsChevron: showsChevron
             )

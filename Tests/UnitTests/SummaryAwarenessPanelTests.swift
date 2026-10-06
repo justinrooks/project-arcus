@@ -155,6 +155,54 @@ struct SummaryAwarenessPanelTests {
         }
     }
 
+    @Test("quiet and elevated supporting risk rails share compact geometry")
+    @MainActor
+    func supportingRiskRailsShareCompactGeometry() throws {
+        let background = LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom)
+        let intensity = try #require(SevereIntensityPresentation(hazard: .tornado, level: 1))
+        let rows = [
+            AwarenessSupportRow(
+                title: "All Clear", detail: "No severe storms expected", symbolName: "cloud.sun.fill",
+                background: background, category: "Storm Risk", accent: .riskAllClear, isQuiet: true
+            ),
+            AwarenessSupportRow(
+                title: "Enhanced Risk", detail: "Several severe storms are possible", symbolName: "cloud.bolt.fill",
+                background: background, category: "Storm Risk", accent: .riskEnhanced
+            ),
+            AwarenessSupportRow(
+                title: "All Clear", detail: "No active severe threat", symbolName: "checkmark.seal.fill",
+                background: background, category: "Severe Risk", accent: .riskAllClear, isQuiet: true
+            ),
+            AwarenessSupportRow(
+                title: "Tornado", detail: "10% chance of tornadoes", symbolName: "tornado",
+                background: background, category: "Severe Risk", accent: .tornadoRed
+            ),
+            AwarenessSupportRow(
+                title: "Tornado", detail: "10% chance of tornadoes", symbolName: "tornado",
+                background: background, category: "Severe Risk", accent: .tornadoRed, intensity: intensity
+            ),
+            AwarenessSupportRow(
+                title: "None", detail: "No elevated fire weather risk", symbolName: "leaf.fill",
+                background: background, category: "Fire Risk", accent: .riskAllClear, isQuiet: true
+            ),
+            AwarenessSupportRow(
+                title: "Critical",
+                detail: "Dry fuels, strong winds, and very low humidity could allow any fire that starts to spread rapidly.",
+                symbolName: "flame.fill",
+                background: background, category: "Fire Risk", accent: .riskEnhanced
+            )
+        ]
+
+        let widths: [CGFloat] = [175, 175, 175, 175, 360, 360, 360]
+        let heights = try zip(rows, widths).map { row, width -> CGFloat in
+            let renderer = ImageRenderer(content: row.frame(width: width))
+            renderer.scale = 1
+            return try #require(renderer.uiImage?.size.height)
+        }
+
+        #expect(heights.allSatisfy { $0 == 90 }, "Rendered compact rail heights: \(heights)")
+    }
+
     @Test("Late intensity results cannot leak across locations or survive expiry")
     @MainActor
     func intensityResultIdentity() throws {

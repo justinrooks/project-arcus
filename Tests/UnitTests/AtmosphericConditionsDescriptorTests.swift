@@ -43,8 +43,8 @@ struct AtmosphericConditionsDescriptorTests {
 
     @Test("AQI retains semantic accents for every supported severity")
     func aqiSeverityAccentsRemainSemantic() {
-        #expect(AirQualityPresentation(aqi: 40, primaryPollutant: nil)?.semanticAccent == .good)
-        #expect(AirQualityPresentation(aqi: 70, primaryPollutant: nil)?.semanticAccent == .moderate)
+        #expect(AirQualityPresentation(aqi: 40, primaryPollutant: nil, alwaysShow: true)?.semanticAccent == .good)
+        #expect(AirQualityPresentation(aqi: 70, primaryPollutant: nil, alwaysShow: true)?.semanticAccent == .moderate)
         #expect(AirQualityPresentation(aqi: 120, primaryPollutant: nil)?.semanticAccent == .caution)
         #expect(AirQualityPresentation(aqi: 175, primaryPollutant: nil)?.semanticAccent == .unhealthy)
         #expect(AirQualityPresentation(aqi: 240, primaryPollutant: nil)?.semanticAccent == .veryUnhealthy)

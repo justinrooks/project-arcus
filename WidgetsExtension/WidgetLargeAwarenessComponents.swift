@@ -24,7 +24,7 @@ struct WidgetLargeAwarenessView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            metadata
+            contextRow
 
             Text(awarenessHeading)
                 .font(.title2.weight(.bold))
@@ -51,10 +51,26 @@ struct WidgetLargeAwarenessView: View {
         .padding(16)
     }
 
-    private var metadata: some View {
-        locationLabel
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
+    private var contextRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text("SkyAware")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+            locationLabel
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+//            Image(systemName: "mappin")
+//                .font(.caption2.weight(.semibold))
+//                .foregroundStyle(.secondary)
+//                .accessibilityHidden(true)
+//            Text(location)
+//                .font(.caption.weight(.medium))
+//                .foregroundStyle(.secondary)
+//                .lineLimit(1)
+//                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 8)
     }
 
     private var locationLabel: some View {

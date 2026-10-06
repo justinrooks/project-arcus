@@ -127,7 +127,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         )
 
         let snapshot = try #require(store.load().snapshot)
-        #expect(snapshot.selectedAlert?.title == "UI Test Severe Thunderstorm Warning")
+        #expect(snapshot.selectedAlert?.title == "Severe Thunderstorm Warning")
         #expect(snapshot.stormRisk.label == "Enhanced Risk")
         #expect(snapshot.severeRisk.label == "Tornado")
         #expect(snapshot.availability == .available)

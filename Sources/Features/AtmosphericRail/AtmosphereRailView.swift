@@ -493,29 +493,38 @@ private struct AtmosphericMetricColumn: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
 
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            if metric.kind == .aqi {
+                if let detail = metric.detail {
+                    Text(detail)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(valueColor)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                }
+
                 if let iconName = metric.iconName {
                     Image(systemName: iconName)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(iconColor)
                         .accessibilityHidden(true)
                 }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    if let iconName = metric.iconName {
+                        Image(systemName: iconName)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(iconColor)
+                            .accessibilityHidden(true)
+                    }
 
-                Text(metric.title)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity)
-
-            if let detail = metric.detail {
-                Text(detail)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(valueColor)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity)
+                    Text(metric.title)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)

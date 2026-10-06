@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct AwarenessSupportRow: View {
+    @ScaledMetric(relativeTo: .caption2) private var compactIntensityDetailSize = 10.0
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -20,7 +21,6 @@ struct AwarenessSupportRow: View {
     var categorySymbolName: String? = nil
     var intensity: SevereIntensityPresentation? = nil
     var isQuiet: Bool = false
-    var isCompact: Bool = false
     var presentationMode: SupportingRiskRowPresentationMode = .normal
     var showsChevron: Bool = false
 
@@ -79,54 +79,79 @@ struct AwarenessSupportRow: View {
     @ViewBuilder
     private func content(_ rowMetrics: Metrics) -> some View {
         if let category, accent != nil {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: isCompact ? 3 : 5) {
-                    HStack(spacing: 7) {
-                        Image(systemName: categorySymbolName ?? symbolName)
-                            .font(.system(size: isCompact ? 14 : 15, weight: .semibold))
-                            .foregroundStyle(accent ?? .secondary)
-                            .frame(width: 17)
-                            .accessibilityHidden(true)
-                        Text(category)
-                            .font(isCompact ? .footnote.weight(.medium) : .subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
+            Group {
+                if usesAccessibilityLayout {
+                    VStack(alignment: .leading, spacing: 3) {
+                        categoryDetails(category)
+                        if let intensity { intensityDetails(intensity) }
                     }
-                    Text(title)
-                        .font(isCompact ? .headline.weight(.semibold) : .title3.weight(.bold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(detail)
-                        .font(isCompact ? .caption : .footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let intensity {
-                        HStack(alignment: .top, spacing: 8) {
-                            SevereIntensityTexture(level: intensity.level)
-                                .frame(width: 30, height: 26)
-                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(intensity.title)
-                                    .font(.footnote.weight(.semibold))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text(intensity.detail)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                    .padding(.leading, 18)
+                    .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+                } else {
+                    HStack(alignment: .top, spacing: 12) {
+                        categoryDetails(category)
+                            .frame(width: intensity == nil ? nil : 165, alignment: .leading)
+                        if let intensity {
+                            intensityDetails(intensity)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .layoutPriority(1)
                         }
-                        .padding(.top, 3)
+                        Spacer(minLength: 0)
+                        if showsChevron {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
                     }
+                    .padding(.leading, 18)
+                    .frame(minHeight: 78, alignment: .leading)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
             }
-            .padding(.leading, 18)
-            .frame(minHeight: isCompact ? 78 : 118, alignment: .leading)
         } else {
             legacyContent(rowMetrics)
+        }
+    }
+
+    private func categoryDetails(_ category: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 7) {
+                Image(systemName: categorySymbolName ?? symbolName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(accent ?? .secondary)
+                    .frame(width: 17)
+                    .accessibilityHidden(true)
+                Text(category)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func intensityDetails(_ intensity: SevereIntensityPresentation) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 5) {
+                SevereIntensityTexture(level: intensity.level)
+                    .frame(width: 14, height: 14)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                Text(intensity.title)
+                    .font(.caption2.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(intensity.detail)
+                .font(.system(size: compactIntensityDetailSize, weight: .regular, design: .default))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(-2)
         }
     }
 
