@@ -1,4 +1,5 @@
 import ArcusCore
+import Foundation
 
 enum StormSetupDetailIngredientRowsBuilder {
     static func makeIngredientRows(from assessment: StormSetupAssessment.ReadableAssessment) -> [StormSetupDetailPresentation.Row] {
@@ -51,7 +52,10 @@ enum StormSetupDetailIngredientRowsBuilder {
         return groups
     }
 
-    static func makeFuelAndInstabilityRows(from parameters: TornadoRawParameters) -> [StormSetupDetailPresentation.Row] {
+    static func makeFuelAndInstabilityRows(
+        from parameters: TornadoRawParameters,
+        dewPointFahrenheit: Double? = nil
+    ) -> [StormSetupDetailPresentation.Row] {
         var rows: [StormSetupDetailPresentation.Row] = []
         rows.appendNumericRow(title: "MLCAPE — J/kg", value: parameters.mlcapeJkg, format: .whole, accessibilityTitle: "Mixed-layer CAPE")
         rows.appendNumericRow(title: "MUCAPE — J/kg", value: parameters.mucapeJkg, format: .whole, accessibilityTitle: "Most-unstable CAPE")
@@ -64,10 +68,19 @@ enum StormSetupDetailIngredientRowsBuilder {
             format: .decimalIfNeeded,
             accessibilityTitle: "Temperature and dew-point spread"
         )
+        rows.appendNumericRow(
+            title: "Dew point — °F",
+            value: dewPointFahrenheit,
+            format: .whole,
+            accessibilityTitle: "Dew point in degrees Fahrenheit"
+        )
         return rows
     }
 
-    static func makeFuelAndInstabilityRows(from parameters: StormSetupDTO.Raw) -> [StormSetupDetailPresentation.Row] {
+    static func makeFuelAndInstabilityRows(
+        from parameters: StormSetupDTO.Raw,
+        dewPointFahrenheit: Double? = nil
+    ) -> [StormSetupDetailPresentation.Row] {
         var rows: [StormSetupDetailPresentation.Row] = []
         rows.appendNumericRow(title: "MLCAPE — J/kg", value: parameters.mlcapeJkg, format: .whole, accessibilityTitle: "Mixed-layer CAPE")
         rows.appendNumericRow(title: "MUCAPE — J/kg", value: parameters.mucapeJkg, format: .whole, accessibilityTitle: "Most-unstable CAPE")
@@ -79,6 +92,12 @@ enum StormSetupDetailIngredientRowsBuilder {
             value: parameters.tempDewPtDeltaF,
             format: .decimalIfNeeded,
             accessibilityTitle: "Temperature and dew-point spread"
+        )
+        rows.appendNumericRow(
+            title: "Dew point — °F",
+            value: dewPointFahrenheit,
+            format: .whole,
+            accessibilityTitle: "Dew point in degrees Fahrenheit"
         )
         return rows
     }

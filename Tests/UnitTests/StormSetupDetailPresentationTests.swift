@@ -6,6 +6,45 @@ import Testing
 
 @Suite("Storm Setup Detail Presentation")
 struct StormSetupDetailPresentationTests {
+    @Test("current dew point appears in Fuel & Instability and unavailable values are omitted")
+    func currentDewPointAppearsInFuelAndInstabilityWhenAvailable() {
+        let preferences = StormSetupPreferences(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        let timeZone = TimeZone(identifier: "America/Denver")!
+        let available = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: preferences,
+            forecastLocationTimeZone: timeZone,
+            dewPointFahrenheit: 68.6,
+            now: date("2026-06-01T19:00:00Z")
+        )
+        let unavailable = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: preferences,
+            forecastLocationTimeZone: timeZone,
+            dewPointFahrenheit: nil,
+            now: date("2026-06-01T19:00:00Z")
+        )
+        let invalid = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: preferences,
+            forecastLocationTimeZone: timeZone,
+            dewPointFahrenheit: .nan,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        let dewPointRow = available.detailIngredientGroups
+            .first(where: { $0.title == "Fuel & Instability" })?
+            .rows.first(where: { $0.title == "Dew point — °F" })
+        #expect(dewPointRow?.value == "69")
+        #expect(dewPointRow?.accessibilityLabel == "Dew point in degrees Fahrenheit. 69.")
+        #expect(unavailable.detailIngredientGroups
+            .first(where: { $0.title == "Fuel & Instability" })?
+            .rows.contains(where: { $0.title == "Dew point — °F" }) == false)
+        #expect(invalid.detailIngredientGroups
+            .first(where: { $0.title == "Fuel & Instability" })?
+            .rows.contains(where: { $0.title == "Dew point — °F" }) == false)
+    }
+
     @Test("ArcusCore current response maps typed values")
     func arcusCoreCurrentResponseMapsTypedValues() {
         let presentation = StormSetupDetailPresentation(

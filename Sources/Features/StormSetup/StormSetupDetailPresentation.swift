@@ -48,6 +48,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         response: StormSetupCurrentResponse,
         preferences: StormSetupPreferences,
         forecastLocationTimeZone: TimeZone,
+        dewPointFahrenheit: Double? = nil,
         now: Date = .now
     ) {
         summaryPresentation = StormSetupSummaryPresentation(
@@ -94,7 +95,10 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         profileAnalysisNoteText = profileAnalysis.noteText
 
         detailIngredientGroups = StormSetupDetailIngredientRowsBuilder.makeDetailIngredientGroups(
-            fuelAndInstability: StormSetupDetailIngredientRowsBuilder.makeFuelAndInstabilityRows(from: response.ingredients.canonical),
+            fuelAndInstability: StormSetupDetailIngredientRowsBuilder.makeFuelAndInstabilityRows(
+                from: response.ingredients.canonical,
+                dewPointFahrenheit: dewPointFahrenheit
+            ),
             cloudBaseAndEffectiveLayer: StormSetupDetailIngredientRowsBuilder.makeCloudBaseAndEffectiveLayerRows(
                 mllclM: response.ingredients.canonical.mllclM,
                 effectiveLayer: profileAnalysisResponse?.effectiveLayer,
@@ -134,6 +138,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         preferences: StormSetupPreferences,
         forecastLocationTimeZone: TimeZone,
         profileAnalysisResponse: AnvilAnalyzeProfileResponse? = nil,
+        dewPointFahrenheit: Double? = nil,
         now: Date = .now
     ) {
         let assessment = StormSetupAssessment(dto: dto)
@@ -183,7 +188,10 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         profileAnalysisNoteText = profileAnalysis.noteText
 
         detailIngredientGroups = StormSetupDetailIngredientRowsBuilder.makeDetailIngredientGroups(
-            fuelAndInstability: StormSetupDetailIngredientRowsBuilder.makeFuelAndInstabilityRows(from: dto.raw),
+            fuelAndInstability: StormSetupDetailIngredientRowsBuilder.makeFuelAndInstabilityRows(
+                from: dto.raw,
+                dewPointFahrenheit: dewPointFahrenheit
+            ),
             cloudBaseAndEffectiveLayer: StormSetupDetailIngredientRowsBuilder.makeCloudBaseAndEffectiveLayerRows(
                 mllclM: dto.raw.mllclM,
                 effectiveLayer: profileAnalysisResponse?.effectiveLayer,

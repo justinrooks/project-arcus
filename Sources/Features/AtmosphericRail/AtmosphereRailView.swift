@@ -12,7 +12,6 @@ struct AtmosphericConditionsCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var activeTip: DewPointTip?
     @AppStorage(
         AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
         store: UserDefaults.shared
@@ -59,15 +58,7 @@ struct AtmosphericConditionsCard: View {
 
     private var contentSurface: some View {
         VStack(alignment: .leading, spacing: 0) {
-            leadMetricRow
-                .padding(.bottom, 10)
-
-            Divider()
-                .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.07))
-                .padding(.vertical, 4)
-
             metricsStrip
-                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -79,58 +70,6 @@ struct AtmosphericConditionsCard: View {
                         .strokeBorder(.white.opacity(colorScheme == .dark ? 0.06 : 0.10), lineWidth: 0.8)
                         .allowsHitTesting(false)
                 }
-        }
-    }
-
-    private var leadMetricRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            (Text("Dew Point")
-                .font(.headline.weight(.semibold))
-                .foregroundColor(.primary)
-                + Text(" · \(model.dewPointDescriptor)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary))
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 8)
-
-            dewPointValueControl
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var dewPointValueControl: some View {
-        if let value = model.dewPointValue {
-            Button {
-                activeTip = activeTip == .dewPoint ? nil : .dewPoint
-            } label: {
-                Text(value)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.72))
-                    .monospacedDigit()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 4)
-                .padding(.vertical, 4)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dew Point \(value)")
-            .accessibilityHint("Shows dew point explanation.")
-            .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
-                switch tip {
-                case .dewPoint:
-                    DewPointTipView(
-                        currentValue: value,
-                        dewPointF: model.dewPointFahrenheit
-                    )
-                    .presentationCompactAdaptation(.popover)
-                }
-            }
-        } else {
-            Text("Unavailable")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -194,9 +133,6 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         var id: String { kind.id }
     }
 
-    let dewPointValue: String?
-    let dewPointFahrenheit: Double?
-    let dewPointDescriptor: String
     let secondaryMetrics: [Metric]
 
     init(
@@ -205,17 +141,10 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         alwaysShowAirQuality: Bool = false
     ) {
         guard let weather else {
-            dewPointValue = nil
-            dewPointFahrenheit = nil
-            dewPointDescriptor = DewPointDescriptor.text(for: nil)
             secondaryMetrics = Self.unavailableMetrics
             return
         }
 
-        let dewPoint = weather.dewPoint.converted(to: .fahrenheit).value
-        dewPointValue = Self.formatTemperature(weather.dewPoint)
-        dewPointFahrenheit = dewPoint
-        dewPointDescriptor = DewPointDescriptor.text(for: dewPoint)
         var metrics: [Metric] = [
             .init(
                 kind: .humidity,
@@ -256,16 +185,6 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         }
 
         secondaryMetrics = metrics
-    }
-
-    private static func temperatureFormatter() -> MeasurementFormatter {
-        let formatter = MeasurementFormatter()
-        formatter.numberFormatter.maximumFractionDigits = 0
-        return formatter
-    }
-
-    private static func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
-        temperatureFormatter().string(from: temperature)
     }
 
     private static func formatHumidity(_ humidity: Double) -> String {
@@ -356,68 +275,6 @@ struct AirQualityPresentation: Sendable, Equatable {
             accessibilityText += " Primary pollutant \(primaryPollutant)."
         }
         return accessibilityText
-    }
-}
-
-enum DewPointDescriptor {
-    static func text(for dewPointF: Double?) -> String {
-        guard let dewPointF else {
-            return "Dew point unavailable"
-        }
-
-        switch dewPointF {
-        case ..<50:
-            return "Dry air in place"
-        case 50..<60:
-            return "Comfortable moisture"
-        case 60..<65:
-            return "Moisture increasing"
-        case 65..<70:
-            return "Moist air may support storms"
-        default:
-            return "Very moist air in place"
-        }
-    }
-}
-
-private enum DewPointTip: String, Identifiable {
-    case dewPoint
-
-    var id: String { rawValue }
-}
-
-private struct DewPointTipView: View {
-    let currentValue: String
-    let dewPointF: Double?
-
-    private var bodyCopy: String {
-        "Dew point measures how much moisture is in the air. Higher values can help storms organize, but dew point alone does not determine severe weather."
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Dew Point")
-                .font(.headline.weight(.semibold))
-
-            Text(bodyCopy)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Current value: \(currentValue)")
-                .font(.subheadline.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let dewPointF {
-                Text(DewPointDescriptor.text(for: dewPointF))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .frame(width: 360, alignment: .leading)
     }
 }
 
