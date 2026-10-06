@@ -63,7 +63,7 @@ struct PrimaryAwarenessHeroView: View {
                 Image(systemName: primary.symbolName)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(accentColor)
-                    .padding(.leading, usesInsetAccentTreatment ? 11 : 0)
+                    .padding(.leading, 11)
                     .frame(width: iconColumnWidth, alignment: .leading)
                     .accessibilityHidden(true)
 
@@ -113,7 +113,7 @@ struct PrimaryAwarenessHeroView: View {
                 .fill(accentColor)
                 .frame(width: 4)
                 .padding(.vertical, 16)
-                .padding(.leading, usesInsetAccentTreatment ? 14 : 0)
+                .padding(.leading, 12)
                 .accessibilityHidden(true)
         }
         .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
@@ -150,10 +150,6 @@ struct PrimaryAwarenessHeroView: View {
     private var isAlert: Bool {
         if case .alert = primary { return true }
         return false
-    }
-
-    private var usesInsetAccentTreatment: Bool {
-        isAlert || primary == .quiet
     }
 
     private var alertTiming: String? {

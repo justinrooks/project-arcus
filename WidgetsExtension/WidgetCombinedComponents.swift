@@ -78,21 +78,21 @@ struct WidgetCombinedMediumView: View {
 
     private var contextRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Spacer(minLength: 2)
             Text("SkyAware")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.primary)
-            Image(systemName: "mappin")
-                .font(.caption2.weight(.semibold))
+            locationLabel
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(location)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 8)
+    }
+
+    private var locationLabel: some View {
+        Label(location, systemImage: "mappin")
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .minimumScaleFactor(0.8)
     }
 
     private var accessibleContent: some View {

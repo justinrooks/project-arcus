@@ -57,7 +57,7 @@ struct SummaryStatus: View {
     }
 
     private var locationFont: Font {
-        .headline.weight(.bold)
+        .title2.weight(.semibold)
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
