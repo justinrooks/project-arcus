@@ -20,7 +20,7 @@ struct WidgetSmallRiskAwareness: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("SkyAware")
+            Text(title)
                 .font(.caption.weight(.bold))
                 .dynamicTypeSize(...DynamicTypeSize.large)
                 .foregroundStyle(.primary)
