@@ -43,6 +43,19 @@ struct RiskChangeNotificationTests {
         """)
     }
 
+    @Test("severe all-clear transition uses scoped notification wording")
+    func composerUsesScopedSevereQuietWording() throws {
+        let change = makeChange(
+            previous: makeProfile(storm: .marginal, severe: .wind(probability: 0.12), fire: .clear),
+            current: makeProfile(storm: .marginal, severe: .allClear, fire: .clear)
+        )
+        let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: change)))
+        let message = RiskChangeComposer().compose(event)
+
+        #expect(message.body == "Severe Risk: Wind 12% → No Active Threats")
+        #expect(message.body.contains("All Clear") == false)
+    }
+
     @Test("disabled occurrence survives unchanged refresh after enablement")
     func disabledOccurrenceSurvivesUnchangedRefreshAfterEnablement() async {
         let sender = RiskChangeRecordingSender()

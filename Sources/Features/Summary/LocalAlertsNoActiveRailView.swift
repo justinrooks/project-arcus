@@ -28,7 +28,12 @@ struct LocalAlertsNoActiveRailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .skyAwareContentSurface(cornerRadius: SkyAwareRadius.card)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
+        )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("summary-local-alerts-no-active-rail")
     }

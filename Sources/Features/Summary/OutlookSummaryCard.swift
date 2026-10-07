@@ -94,7 +94,7 @@ struct OutlookSummaryCard: View {
             }
         }
         .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.05, shadowRadius: 5, shadowY: 2)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .placeholder(presentationState == .loading && todayContentState.showsResolvingSurface, animated: true)
     }
 
