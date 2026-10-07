@@ -225,7 +225,7 @@ struct LocationContextResolverTests {
 
         async let labels = repo.getLocationLabels(using: client, for: "OKC109", and: "OKZ025")
 
-        #expect(await waitUntil { await client.bothZoneRequestsStarted() })
+        #expect(await waitUntil(timeout: .seconds(5)) { await client.bothZoneRequestsStarted() })
         await client.resumeRequests()
 
         let (countyLabel, fireZoneLabel) = try await labels

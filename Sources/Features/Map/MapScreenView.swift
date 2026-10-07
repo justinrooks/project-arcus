@@ -505,6 +505,7 @@ private struct MapAwarenessSummary: View {
 private struct CompactMapAwarenessSummary: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let primary: SummaryAwarenessPrimaryState
     let onExpand: () -> Void
@@ -520,7 +521,7 @@ private struct CompactMapAwarenessSummary: View {
                 Text(primary.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 

@@ -296,6 +296,47 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testIntegratedTodayAndMapAccessibilityInBothAppearances() throws {
+        for appearance in ["light", "dark"] {
+            let app = launchStormSetupFixtureApp(colorScheme: appearance, accessibilityTextSize: true)
+            let summary = app.scrollViews["summary-scroll"]
+            XCTAssertTrue(summary.waitForExistence(timeout: 10))
+            let warning = app.buttons["summary-primary-awareness"]
+            XCTAssertTrue(warning.waitForExistence(timeout: 10))
+            XCTAssertEqual(warning.label, "Severe Thunderstorm Warning")
+            XCTAssertTrue((warning.value as? String ?? "").contains("Seek shelter immediately"))
+            attachScreenshot(app, named: "integrated-today-ax5-\(appearance)")
+
+            let alerts = app.buttons["Alert Center"]
+            scrollUntilHittable(alerts, in: summary, timeout: 30)
+            XCTAssertTrue(alerts.isHittable)
+            let alertsHeading = app.staticTexts["Local Alerts"]
+            XCTAssertGreaterThanOrEqual(alerts.frame.minY, alertsHeading.frame.maxY)
+            attachScreenshot(app, named: "integrated-local-alerts-ax5-\(appearance)")
+            let localWarning = app.buttons["local-alert-row-ui-test-warning-001"]
+            scrollUntilHittable(localWarning, in: summary, timeout: 30)
+            XCTAssertTrue(localWarning.label.contains("Wind gusts up to 70 mph"))
+            XCTAssertTrue(localWarning.label.contains("Hail up to 2.00 in"))
+            attachScreenshot(app, named: "integrated-alert-row-ax5-\(appearance)")
+
+            app.tabBars.buttons["Map"].tap()
+            let legend = app.buttons["Map legend"]
+            XCTAssertTrue(legend.waitForExistence(timeout: 10))
+            XCTAssertTrue(legend.isHittable)
+            let awareness = app.buttons["map-awareness-summary-compact"]
+            if awareness.exists {
+                XCTAssertLessThanOrEqual(awareness.frame.maxY, legend.frame.minY)
+            }
+            attachScreenshot(app, named: "integrated-map-ax5-\(appearance)")
+            legend.tap()
+            XCTAssertTrue(app.navigationBars["Legend"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["Close"].isHittable)
+            attachScreenshot(app, named: "integrated-map-legend-ax5-\(appearance)")
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testTodayOutlookSummaryOpensDetail() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct OutlookSummaryCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let outlook: ConvectiveOutlookDTO?
     let presentationState: ConvectiveOutlookPresentationState
     let todayContentState: TodayContentState
@@ -68,7 +69,7 @@ struct OutlookSummaryCard: View {
                 .font(.body)
                 .foregroundStyle(.primary)
                 .lineSpacing(4)
-                .lineLimit(5)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 5)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let statusText = Self.statusText(for: presentationState) {

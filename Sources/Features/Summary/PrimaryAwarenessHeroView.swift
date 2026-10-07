@@ -12,7 +12,7 @@ struct PrimaryAwarenessHeroView: View {
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private let iconColumnWidth: CGFloat = 32
+    @ScaledMetric(relativeTo: .title2) private var iconColumnWidth: CGFloat = 32
     private let heroColumnSpacing: CGFloat = 14
 
     let primary: SummaryAwarenessPrimaryState
@@ -24,6 +24,12 @@ struct PrimaryAwarenessHeroView: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
+    private var heroLayout: AnyLayout {
+        adaptiveLayout.usesStackedHeroTiles
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: heroColumnSpacing))
+    }
+
     var body: some View {
         let contract = primary.accessibilityContract
 
@@ -32,13 +38,13 @@ struct PrimaryAwarenessHeroView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(contract.label)
                 .accessibilityValue(contract.value)
+                .accessibilityIdentifier("summary-primary-awareness")
         } else {
             Button {
                 handle(action: action)
             } label: {
                 heroContent
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
-                    .accessibilityHidden(true)
             }
             .buttonStyle(
                 SkyAwarePressableButtonStyle(
@@ -47,10 +53,10 @@ struct PrimaryAwarenessHeroView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .accessibilityElement(children: .ignore)
             .accessibilityLabel(contract.label)
             .accessibilityValue(contract.value)
             .accessibilityHintIfNeeded(contract.hint)
+            .accessibilityIdentifier("summary-primary-awareness")
         }
     }
 
@@ -60,7 +66,7 @@ struct PrimaryAwarenessHeroView: View {
                 timingRow(timing)
             }
 
-            HStack(alignment: .top, spacing: heroColumnSpacing) {
+            heroLayout {
                 Image(systemName: primary.symbolName)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(accentColor)
@@ -100,7 +106,7 @@ struct PrimaryAwarenessHeroView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, iconColumnWidth + heroColumnSpacing)
+                .padding(.leading, adaptiveLayout.usesStackedHeroTiles ? 0 : iconColumnWidth + heroColumnSpacing)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -2,6 +2,7 @@
 import ArcusCore
 import Foundation
 import Testing
+import SwiftUI
 import WeatherKit
 @testable import SkyAware
 
@@ -220,4 +221,39 @@ struct AtmosphericConditionsDescriptorTests {
         )
     }
 }
+
+@Suite("Integrated accessibility rendering")
+@MainActor
+struct IntegratedAccessibilityRenderingTests {
+    @Test("Outlook meaning expands at accessibility sizes instead of retaining the five-line cap")
+    func outlookExpandsForAccessibility() throws {
+        let summary = "Isolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast."
+        let outlook = ConvectiveOutlookDTO(
+            title: "Day 1 Outlook",
+            link: URL(string: "https://www.weather.gov/")!,
+            published: Date(timeIntervalSince1970: 1_790_000_000),
+            summary: summary,
+            fullText: summary,
+            day: 1,
+            riskLevel: "slgt",
+            issued: Date(timeIntervalSince1970: 1_790_000_000),
+            validUntil: Date(timeIntervalSince1970: 1_790_086_400)
+        )
+        let card = OutlookSummaryCard(outlook: outlook)
+            .environment(\.dynamicTypeSize, .accessibility5)
+            .frame(width: 320)
+        let image = try #require(ImageRenderer(content: card).uiImage)
+        let capped = VStack(alignment: .leading, spacing: 12) {
+            Text("Outlook Summary").font(.headline.weight(.semibold))
+            Text(summary).font(.body).lineSpacing(4).lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .environment(\.dynamicTypeSize, .accessibility5)
+        .frame(width: 320)
+        let cappedImage = try #require(ImageRenderer(content: capped).uiImage)
+        #expect(image.size.height > cappedImage.size.height + 100)
+    }
+}
+
 #endif

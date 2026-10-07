@@ -28,6 +28,7 @@ struct WidgetUnavailableStateView: View {
                     .accessibilityHidden(true)
                 Text("Risk Unavailable")
                     .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text(message)
                 .font(.caption)
@@ -36,6 +37,9 @@ struct WidgetUnavailableStateView: View {
                 .lineLimit(3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Risk Unavailable. \(message)")
     }
 }
 

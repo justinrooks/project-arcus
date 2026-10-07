@@ -23,10 +23,6 @@ struct WidgetCombinedMediumView: View {
         return (value?.isEmpty == false ? value : nil) ?? "Location unavailable"
     }
 
-    private var isMaximumAccessibilitySize: Bool {
-        dynamicTypeSize >= .accessibility3
-    }
-
     var body: some View {
         Group {
             if case let .unavailable(message) = snapshot.availability {
@@ -34,7 +30,9 @@ struct WidgetCombinedMediumView: View {
                     .padding(12)
             } else {
                 if dynamicTypeSize.isAccessibilitySize {
+                    // Keep all risk context legible within the medium widget’s fixed bounds.
                     accessibleContent
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         .padding(12)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(accessibilitySummary)
@@ -100,15 +98,13 @@ struct WidgetCombinedMediumView: View {
             Text(snapshot.selectedAlert?.title ?? "No local alerts")
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(isMaximumAccessibilitySize ? 3 : 2)
-                .minimumScaleFactor(isMaximumAccessibilitySize ? 0.8 : 1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
-            if !isMaximumAccessibilitySize {
-                Text("Storm: \(snapshot.stormRisk.label) · Severe: \(snapshot.severeRisk.label) · Fire: \(snapshot.fireRisk?.label ?? "--")")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+            Text("Storm: \(snapshot.stormRisk.label) · Severe: \(snapshot.severeRisk.label) · Fire: \(snapshot.fireRisk?.label ?? "--")")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }

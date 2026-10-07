@@ -118,6 +118,7 @@ struct SummaryAvailabilityBadge: View {
 }
 
 struct SummaryView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private static let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -408,8 +409,15 @@ struct SummaryView: View {
         case .atmosphericConditions:
             if isLocationUnavailable == false {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Atmospheric Conditions", systemImage: "barometer")
-                        .todaySectionLabel()
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Text("Atmospheric Conditions")
+                        } else {
+                            Label("Atmospheric Conditions", systemImage: "barometer")
+                        }
+                    }
+                    .todaySectionLabel()
+                    .fixedSize(horizontal: false, vertical: true)
 
                     AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
                         .allowsHitTesting(!isWeatherLoading)
@@ -449,12 +457,19 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var localAlertsSection: some View {
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
+            headerLayout {
                 Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
                     .todaySectionLabel()
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 12)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 12)
+                }
 
                 if ActiveAlertSummaryView.showsAlertCenter(
                     for: localAlertsDisplayState,
@@ -472,6 +487,8 @@ struct SummaryView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
