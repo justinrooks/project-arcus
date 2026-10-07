@@ -89,8 +89,7 @@ struct MapLegend: View {
         .padding(12)
         .frame(minWidth: 144, maxWidth: 260, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+        .mapWeatherContentSurface(cornerRadius: SkyAwareRadius.row)
     }
 
     private var hatchingExplanationTransition: AnyTransition {
@@ -130,18 +129,44 @@ struct CompactMapLegendTrigger: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .skyAwareSurface(
-            cornerRadius: SkyAwareRadius.section,
-            tint: .skyAwareAccent.opacity(0.12),
-            interactive: true,
-            allowsGlass: true,
-            shadowOpacity: 0.14,
-            shadowRadius: 8,
-            shadowY: 4
-        )
+        .modifier(MapLegendTriggerSurface())
         .accessibilityLabel("Map legend")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Opens the full map legend.")
+    }
+}
+
+private struct MapLegendTriggerSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if colorScheme == .dark {
+            content.skyAwareSurface(
+                cornerRadius: SkyAwareRadius.section,
+                tint: .skyAwareAccent.opacity(0.12),
+                interactive: true,
+                allowsGlass: true,
+                shadowOpacity: 0.14,
+                shadowRadius: 8,
+                shadowY: 4
+            )
+        } else if #available(iOS 26, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06),
+                            lineWidth: colorSchemeContrast == .increased ? 1 : 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
+        }
     }
 }
 
@@ -159,8 +184,48 @@ struct WarningLegend: View {
         }
         .padding(12)
         .frame(width: 160, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+        .mapWeatherContentSurface(cornerRadius: SkyAwareRadius.row)
+    }
+}
+
+private extension View {
+    func mapWeatherContentSurface(cornerRadius: CGFloat) -> some View {
+        modifier(MapWeatherContentSurface(cornerRadius: cornerRadius))
+    }
+}
+
+private struct MapWeatherContentSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if colorScheme == .dark {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.regularMaterial)
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(MapSurfaceStyle.lightWeatherContent)
+                }
+            }
+            .overlay {
+                if colorScheme == .light {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(
+                            .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06),
+                            lineWidth: colorSchemeContrast == .increased ? 1 : 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+            .shadow(
+                color: colorScheme == .dark ? .black.opacity(0.08) : .clear,
+                radius: colorScheme == .dark ? 6 : 0,
+                y: colorScheme == .dark ? 2 : 0
+            )
     }
 }
 
