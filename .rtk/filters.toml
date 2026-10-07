@@ -1,0 +1,22 @@
+schema_version = 1
+
+[filters.xcodebuild]
+description = "Keep Xcode build and test diagnostics and outcomes"
+match_command = "^xcodebuild\\b.*\\b(build|test)\\b"
+keep_lines_matching = [
+    "(^|[[:space:]])(error|warning|note):",
+    "\\*\\* (BUILD|TEST) (SUCCEEDED|FAILED) \\*\\*",
+    "(^|[[:space:]])(Testing failed|Testing started|Test Suite|Executed [0-9]+ tests?|Test Case .* failed)",
+    "(Assertion Failure|XCTAssert|failed -|error: -\\[)",
+    "Result bundle:|XCResult:|Environment:|Destinations:|XCResult verification failed:",
+]
+
+[[tests.xcodebuild]]
+name = "preserves compiler diagnostics and build outcome"
+input = "SwiftCompile normal arm64\nSources/Home.swift:10:3: warning: unused value\n** BUILD SUCCEEDED **"
+expected = "Sources/Home.swift:10:3: warning: unused value\n** BUILD SUCCEEDED **"
+
+[[tests.xcodebuild]]
+name = "preserves test failures and result verification"
+input = "Test Case '-[SkyAwareTests.AlertTests testActive]' failed (0.1 seconds)\nXCTAssertEqual failed - values differ\nXCResult: bundle=/tmp/run result=Failed total=1 passed=0 failed=1 skipped=0 expectedFailures=0\nEnvironment: configuration=Debug\nDestinations:\nTesting failed"
+expected = "Test Case '-[SkyAwareTests.AlertTests testActive]' failed (0.1 seconds)\nXCTAssertEqual failed - values differ\nXCResult: bundle=/tmp/run result=Failed total=1 passed=0 failed=1 skipped=0 expectedFailures=0\nEnvironment: configuration=Debug\nDestinations:\nTesting failed"
