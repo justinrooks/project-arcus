@@ -16,7 +16,7 @@ enum WidgetSurfaceStyle {
     static func baseColor(isDark: Bool) -> Color {
         isDark
             ? Color(red: 0.055, green: 0.078, blue: 0.110)
-            : Color(red: 0.955, green: 0.965, blue: 0.980)
+            : Color(red: 0xFC / 255, green: 0xFC / 255, blue: 0xFD / 255)
     }
 
     static func semanticWashOpacity(severity: Int, isDark: Bool) -> Double {
