@@ -22,18 +22,13 @@ struct LocalAlertsNoActiveRailView: View {
 
                 Text("SkyAware will continue watching nearby watches, warnings, and discussions.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .todaySupportingText()
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            shadowY: 1
-        )
+        .todayCardBackground(cornerRadius: SkyAwareRadius.card)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("summary-local-alerts-no-active-rail")
     }

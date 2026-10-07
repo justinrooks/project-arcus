@@ -21,7 +21,7 @@ struct StormSetupSummaryStatusCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Storm Setup", systemImage: "cloud.bolt.fill")
                 .symbolVariant(.fill)
-                .sectionLabel()
+                .todaySectionLabel()
 
             HStack(alignment: .top, spacing: 10) {
                 statusSymbol
@@ -41,11 +41,11 @@ struct StormSetupSummaryStatusCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .cardBackground(
+        .todayCardBackground(
             cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: colorScheme == .dark ? 0.03 : 0.05,
-            shadowRadius: 4,
-            shadowY: 1
+            darkShadowOpacity: 0.03,
+            darkShadowRadius: 4,
+            darkShadowY: 1
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Storm Setup")

@@ -67,7 +67,7 @@ struct PrimaryAwarenessPanel: View {
     private var headerRow: some View {
         HStack(spacing: 10) {
             Label("Today's Awareness", systemImage: "checkmark.shield").symbolVariant(.fill)
-                .sectionLabel()
+                .todaySectionLabel()
 
             Spacer(minLength: 12)
 

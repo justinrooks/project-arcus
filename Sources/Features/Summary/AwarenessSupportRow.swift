@@ -10,6 +10,7 @@ import SwiftUI
 struct AwarenessSupportRow: View {
     @ScaledMetric(relativeTo: .caption2) private var compactIntensityDetailSize = 10.0
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let title: String
@@ -24,6 +25,20 @@ struct AwarenessSupportRow: View {
     var presentationMode: SupportingRiskRowPresentationMode = .normal
     var showsChevron: Bool = false
 
+    private var outlineColor: Color {
+        if colorScheme == .dark {
+            return .white.opacity(strokeOpacity)
+        }
+        guard category != nil else { return .clear }
+        return .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06)
+    }
+
+    private var outlineWidth: CGFloat {
+        if colorScheme == .dark { return 0.8 }
+        guard category != nil else { return 0 }
+        return colorSchemeContrast == .increased ? 1 : 0.5
+    }
+
     var body: some View {
         let rowMetrics = metrics
         content(rowMetrics)
@@ -32,7 +47,7 @@ struct AwarenessSupportRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .fill(category == nil ? Color.clear : Color(uiColor: .secondarySystemBackground))
+                .fill(category == nil ? Color.clear : TodaySurfaceStyle.content(for: colorScheme))
                 .overlay {
                     if category == nil {
                         RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
@@ -61,10 +76,15 @@ struct AwarenessSupportRow: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .strokeBorder(.white.opacity(strokeOpacity), lineWidth: 0.8)
+                .strokeBorder(outlineColor, lineWidth: outlineWidth)
                 .allowsHitTesting(false)
         }
-        .shadow(color: .black.opacity(isQuiet ? 0.06 : 0.10), radius: shadowRadius, x: 0, y: shadowY)
+        .shadow(
+            color: .black.opacity(colorScheme == .dark ? (isQuiet ? 0.06 : 0.10) : 0),
+            radius: shadowRadius,
+            x: 0,
+            y: shadowY
+        )
         .opacity(rowOpacity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(category ?? title)
@@ -131,7 +151,7 @@ struct AwarenessSupportRow: View {
                 .fixedSize(horizontal: false, vertical: true)
             Text(detail)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .todaySupportingText()
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -149,7 +169,7 @@ struct AwarenessSupportRow: View {
 
             Text(intensity.detail)
                 .font(.system(size: compactIntensityDetailSize, weight: .regular, design: .default))
-                .foregroundStyle(.secondary)
+                .todaySupportingText()
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(-2)
         }

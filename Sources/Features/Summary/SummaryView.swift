@@ -312,18 +312,18 @@ struct SummaryView: View {
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: symbol)
-                .sectionLabel()
+                .todaySectionLabel()
             Text(message)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .todaySupportingText()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .cardBackground(
+        .todayCardBackground(
             cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: colorScheme == .dark ? 0.06 : 0.10,
-            shadowRadius: colorScheme == .dark ? 6 : 8,
-            shadowY: colorScheme == .dark ? 2 : 3
+            darkShadowOpacity: 0.06,
+            darkShadowRadius: 6,
+            darkShadowY: 2
         )
     }
 
@@ -334,14 +334,14 @@ struct SummaryView: View {
     private func unavailableContentCard(message: String, symbol: String) -> some View {
         Label(message, systemImage: symbol)
             .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .todaySupportingText()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(18)
-            .cardBackground(
+            .todayCardBackground(
                 cornerRadius: SkyAwareRadius.card,
-                shadowOpacity: colorScheme == .dark ? 0.06 : 0.10,
-                shadowRadius: colorScheme == .dark ? 6 : 8,
-                shadowY: colorScheme == .dark ? 2 : 3
+                darkShadowOpacity: 0.06,
+                darkShadowRadius: 6,
+                darkShadowY: 2
             )
     }
 
@@ -409,7 +409,7 @@ struct SummaryView: View {
             if isLocationUnavailable == false {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Atmospheric Conditions", systemImage: "barometer")
-                        .sectionLabel()
+                        .todaySectionLabel()
 
                     AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
                         .allowsHitTesting(!isWeatherLoading)
@@ -452,7 +452,7 @@ struct SummaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                    .sectionLabel()
+                    .todaySectionLabel()
 
                 Spacer(minLength: 12)
 

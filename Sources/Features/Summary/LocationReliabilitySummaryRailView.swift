@@ -15,11 +15,11 @@ struct LocationReliabilitySummaryRailView: View {
             }
         }
         .padding(14)
-        .cardBackground(
+        .todayCardBackground(
             cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            shadowY: 1
+            darkShadowOpacity: 0.04,
+            darkShadowRadius: 4,
+            darkShadowY: 1
         )
     }
 
