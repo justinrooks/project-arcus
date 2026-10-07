@@ -9,7 +9,6 @@ import SwiftUI
 import ArcusCore
 
 struct AtmosphericConditionsCard: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let weather: SummaryWeather?
@@ -49,15 +48,12 @@ struct AtmosphericConditionsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background {
-            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemBackground))
-                .overlay {
-                    RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.06 : 0.10), lineWidth: 0.8)
-                        .allowsHitTesting(false)
-                }
-        }
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
+        )
     }
 
     @ViewBuilder

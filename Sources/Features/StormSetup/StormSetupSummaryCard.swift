@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct StormSetupSummaryCard: View {
-    @Environment(\.colorScheme) private var colorScheme
     let presentation: StormSetupSummaryPresentation
 
     var body: some View {
@@ -44,9 +43,9 @@ struct StormSetupSummaryCard: View {
         .contentShape(Rectangle())
         .cardBackground(
             cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: colorScheme == .dark ? 0.04 : 0.06,
-            shadowRadius: 5,
-            shadowY: 2
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)

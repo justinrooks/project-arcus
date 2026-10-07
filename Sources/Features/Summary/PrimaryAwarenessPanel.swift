@@ -201,8 +201,7 @@ struct PrimaryAwarenessPanel: View {
     private var stormCardValue: String {
         if stormUnavailable { return "Unavailable" }
         if stormRisk == nil, stormResolving { return "Getting risk…" }
-        guard let stormRisk else { return "All Clear" }
-        return stormRisk == .allClear ? "All Clear" : stormRisk.message
+        return (stormRisk ?? .allClear).message
     }
 
     private var stormDetail: String {
@@ -277,8 +276,7 @@ struct PrimaryAwarenessPanel: View {
     private var severeCardValue: String {
         if severeUnavailable { return "Unavailable" }
         if severeRisk == nil, severeResolving { return "Getting risk…" }
-        guard let severeRisk else { return "All Clear" }
-        return severeRisk == .allClear ? "All Clear" : severeRisk.message
+        return (severeRisk ?? .allClear).message
     }
 
     private var severeDetail: String {

@@ -76,7 +76,7 @@ enum RiskProfileChangeFormatting {
     private static func severeText(_ threat: SevereWeatherThreat) -> String {
         switch threat {
         case .allClear:
-            return "All Clear"
+            return "No Active Threats"
         case .wind(let probability):
             return "Wind \(percentText(probability))"
         case .hail(let probability):

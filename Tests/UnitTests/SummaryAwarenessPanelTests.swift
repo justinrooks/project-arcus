@@ -162,7 +162,7 @@ struct SummaryAwarenessPanelTests {
         let intensity = try #require(SevereIntensityPresentation(hazard: .tornado, level: 1))
         let rows = [
             AwarenessSupportRow(
-                title: "All Clear", detail: "No severe storms expected", symbolName: "cloud.sun.fill",
+                title: "No Severe Storm Risk", detail: "No severe storms expected", symbolName: "cloud.sun.fill",
                 background: background, category: "Storm Risk", accent: .riskAllClear, isQuiet: true
             ),
             AwarenessSupportRow(
@@ -170,7 +170,7 @@ struct SummaryAwarenessPanelTests {
                 background: background, category: "Storm Risk", accent: .riskEnhanced
             ),
             AwarenessSupportRow(
-                title: "All Clear", detail: "No active severe threat", symbolName: "checkmark.seal.fill",
+                title: "No Active Threats", detail: "No active severe threat", symbolName: "checkmark.seal.fill",
                 background: background, category: "Severe Risk", accent: .riskAllClear, isQuiet: true
             ),
             AwarenessSupportRow(
