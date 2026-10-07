@@ -27,7 +27,6 @@ struct ActiveAlertSummaryView: View {
     let localAlertsDisplayState: LocalAlertsDisplayState
     let todayContentState: TodayContentState
     let isOffline: Bool
-    let onOpenAlertCenter: (() -> Void)?
     let onSelectAlert: ((AlertDTO) -> Void)?
     private let sortedMesos: [MdDTO]
     private let sortedAlerts: [AlertDTO]
@@ -44,7 +43,6 @@ struct ActiveAlertSummaryView: View {
         localAlertsDisplayState: LocalAlertsDisplayState = .current(content: .populated, source: .cached),
         todayContentState: TodayContentState = .current,
         isOffline: Bool = false,
-        onOpenAlertCenter: (() -> Void)? = nil,
         onSelectAlert: ((AlertDTO) -> Void)? = nil
     ) {
         self.mesos = mesos
@@ -52,7 +50,6 @@ struct ActiveAlertSummaryView: View {
         self.localAlertsDisplayState = localAlertsDisplayState
         self.todayContentState = todayContentState
         self.isOffline = isOffline
-        self.onOpenAlertCenter = onOpenAlertCenter
         self.onSelectAlert = onSelectAlert
         self.sortedMesos = AlertPresentationOrdering.ordered(mesos)
         self.sortedAlerts = AlertPresentationOrdering.ordered(alerts)
@@ -156,38 +153,6 @@ struct ActiveAlertSummaryView: View {
 
     private var activeContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                    .sectionLabel()
-
-                Spacer(minLength: 12)
-
-                if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
-                    Button {
-                        onOpenAlertCenter()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("Alert Center")
-                            Image(systemName: "arrow.right")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
-                    }
-                    .buttonStyle(
-                        SkyAwarePressableButtonStyle(
-                            cornerRadius: SkyAwareRadius.chipCompact,
-                            pressedScale: 0.985,
-                            pressedOverlayOpacity: 0.08
-                        )
-                    )
-                    .accessibilityHint("Opens the full alerts tab.")
-                }
-            }
-
             if isOffline, contentState != .empty {
                 Label("Offline. Showing saved local alerts when available.", systemImage: "wifi.slash")
                     .font(.caption.weight(.semibold))
@@ -268,8 +233,6 @@ struct ActiveAlertSummaryView: View {
 
     private var loadingContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Checking local alerts", systemImage: "antenna.radiowaves.left.and.right")
-                .sectionLabel()
             Text("Bringing in local alerts…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -363,6 +326,19 @@ struct ActiveAlertSummaryView: View {
         case .alerts, .empty, .unavailable:
             return .empty
         }
+    }
+
+    static func showsAlertCenter(
+        for displayState: LocalAlertsDisplayState,
+        hasRenderableAlerts: Bool,
+        isOffline: Bool
+    ) -> Bool {
+        guard displayState.presentationState != .unavailable else {
+            return false
+        }
+
+        let state = contentState(for: displayState, hasRenderableAlerts: hasRenderableAlerts)
+        return state != .loading && (hasRenderableAlerts || isOffline)
     }
 }
 

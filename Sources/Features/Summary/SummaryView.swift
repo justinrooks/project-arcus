@@ -331,6 +331,20 @@ struct SummaryView: View {
         emptySectionCard(title: title, message: message, symbol: symbol)
     }
 
+    private func unavailableContentCard(message: String, symbol: String) -> some View {
+        Label(message, systemImage: symbol)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .cardBackground(
+                cornerRadius: SkyAwareRadius.card,
+                shadowOpacity: colorScheme == .dark ? 0.06 : 0.10,
+                shadowRadius: colorScheme == .dark ? 6 : 8,
+                shadowY: colorScheme == .dark ? 2 : 3
+            )
+    }
+
     @ViewBuilder
     private func sectionView(
         for section: SummarySectionKind,
@@ -393,14 +407,19 @@ struct SummaryView: View {
 
         case .atmosphericConditions:
             if isLocationUnavailable == false {
-                AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
-                    .allowsHitTesting(!isWeatherLoading)
-                    .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
-                    .summaryResolving(
-                        resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
-                        todayContentState: todayContentState,
-                        style: .subtle
-                    )
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Atmospheric Conditions", systemImage: "barometer")
+                        .sectionLabel()
+
+                    AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
+                        .allowsHitTesting(!isWeatherLoading)
+                        .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                        .summaryResolving(
+                            resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                            todayContentState: todayContentState,
+                            style: .subtle
+                        )
+                }
             }
 
         case .locationReliability:
@@ -431,38 +450,71 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var localAlertsSection: some View {
-        switch localAlertsPresentationState {
-        case .unavailable:
-            if localAlertsDisplayState == .unavailable(reason: .locationUnavailable) {
-                unavailableCard(
-                    title: "Location Required",
-                    message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                    symbol: "location.slash"
-                )
-            } else {
-                unavailableCard(
-                    title: "Local alerts unavailable",
-                    message: "SkyAware has not confirmed the current local alert state. Check again when the feed is available.",
-                    symbol: "cloud.slash"
-                )
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                    .sectionLabel()
+
+                Spacer(minLength: 12)
+
+                if ActiveAlertSummaryView.showsAlertCenter(
+                    for: localAlertsDisplayState,
+                    hasRenderableAlerts: hasActiveAlerts,
+                    isOffline: localAlertsDisplayState.showsOfflineStatusCopy
+                ) {
+                    Button(action: onOpenAlerts) {
+                        HStack(spacing: 6) {
+                            Text("Alert Center")
+                            Image(systemName: "arrow.right")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                    }
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.chipCompact,
+                            pressedScale: 0.985,
+                            pressedOverlayOpacity: 0.08
+                        )
+                    )
+                    .accessibilityHint("Opens the full alerts tab.")
+                }
             }
 
-        case .loading, .alerts, .empty:
-            ActiveAlertSummaryView(
-                mesos: mesos,
-                alerts: alerts,
-                localAlertsDisplayState: localAlertsDisplayState,
-                todayContentState: todayContentState,
-                isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
-                onOpenAlertCenter: onOpenAlerts,
-                onSelectAlert: onSelectAlert
-            )
-            .summaryResolving(
-                localAlertsDisplayState.usesSummaryResolvingTreatment &&
-                resolutionState.isResolving(.alerts),
-                todayContentState: todayContentState,
-                style: .subtle
-            )
+            switch localAlertsPresentationState {
+            case .unavailable:
+                if localAlertsDisplayState == .unavailable(reason: .locationUnavailable) {
+                    unavailableContentCard(
+                        message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                        symbol: "location.slash"
+                    )
+                } else {
+                    unavailableContentCard(
+                        message: "SkyAware has not confirmed the current local alert state. Check again when the feed is available.",
+                        symbol: "cloud.slash"
+                    )
+                }
+
+            case .loading, .alerts, .empty:
+                ActiveAlertSummaryView(
+                    mesos: mesos,
+                    alerts: alerts,
+                    localAlertsDisplayState: localAlertsDisplayState,
+                    todayContentState: todayContentState,
+                    isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
+                    onSelectAlert: onSelectAlert
+                )
+                .summaryResolving(
+                    localAlertsDisplayState.usesSummaryResolvingTreatment &&
+                    resolutionState.isResolving(.alerts),
+                    todayContentState: todayContentState,
+                    style: .subtle
+                )
+            }
         }
     }
 

@@ -29,8 +29,6 @@ struct AtmosphericConditionsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
-
             if isOffline, weather != nil {
                 Text("Offline. Showing saved local data.")
                     .font(.caption.weight(.semibold))
@@ -42,12 +40,6 @@ struct AtmosphericConditionsCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("summary-atmospheric-conditions")
-    }
-
-    private var header: some View {
-        Text("Atmospheric Conditions")
-            .font(.headline.weight(.medium))
-            .foregroundStyle(.secondary)
     }
 
     private var contentSurface: some View {
