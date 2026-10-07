@@ -587,6 +587,160 @@ struct HomeProjectionStoreTests {
         #expect(try #require(await reopenedStore.projection(for: second)).airQuality == secondResponse)
     }
 
+    @Test("cached visibility survives an on-disk projection reopen")
+    func updateWeather_diskContainerReopensVisibility() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let location = makeContext()
+        let weather = makeWeather()
+
+        do {
+            let store = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+            _ = try await store.updateWeather(weather, for: location, loadedAt: Date(timeIntervalSince1970: 300))
+        }
+
+        let reopenedStore = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+        #expect(try #require(await reopenedStore.projection(for: location)).weather == weather)
+    }
+
+    @Test("production migration preserves the v3 projection and adds visibility on update")
+    func productionMigration_v3ProjectionPreservesCacheAndAcceptsVisibility() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storeURL = root.appendingPathComponent("SkyAware_Data_v3.store")
+        let location = makeContext()
+        let meso = MD.sampleDiscussionDTOs[0]
+        let oldSchema = Schema(versionedSchema: SkyAwarePersistenceSchemaV3.self)
+        let oldConfiguration = ModelConfiguration(
+            "SkyAware_Data_v3",
+            schema: oldSchema,
+            url: storeURL
+        )
+
+        do {
+            let oldContainer = try ModelContainer(for: oldSchema, configurations: oldConfiguration)
+            let context = ModelContext(oldContainer)
+            let projection = SkyAwarePersistenceSchemaV3.HomeProjection(context: location)
+            projection.weatherPayload = .init(
+                temperatureFahrenheit: 72,
+                symbolName: "sun.max.fill",
+                conditionText: "Clear",
+                asOf: Date(timeIntervalSince1970: 200),
+                dewPointFahrenheit: 54,
+                humidity: 0.45,
+                windSpeedMilesPerHour: 15,
+                windGustMilesPerHour: 24,
+                windDirection: "NW",
+                pressureInchesOfMercury: 29.92,
+                pressureTrend: "Hausse"
+            )
+            projection.stormRisk = .slight
+            projection.airQualityAQI = 121
+            projection.airQualityCategoryIdentifier = 3
+            projection.airQualityCategoryName = "Unhealthy for Sensitive Groups"
+            projection.airQualityCategoryIsPresent = true
+            projection.airQualityPrimaryPollutant = "PM2.5"
+            projection.airQualityObservedAt = Date(timeIntervalSince1970: 250)
+            projection.airQualitySourceIdentifier = "airnow"
+            projection.activeAlerts = [Watch.sampleWatchRows[0]]
+            projection.activeMesos = [meso]
+            projection.stormSetupCurrentResponseData = try StormSetupCurrentResponsePersistenceCodec.encode(
+                makeStormSetupCurrentResponse()
+            )
+            context.insert(projection)
+            context.insert(
+                SkyAwarePersistenceSchemaV3.ConvectiveOutlook(
+                    title: "Day 1 Convective Outlook",
+                    link: URL(fileURLWithPath: "/outlook"),
+                    published: Date(timeIntervalSince1970: 100),
+                    fullText: "Outlook text",
+                    summary: "A slight risk is present.",
+                    day: 1,
+                    riskLevel: "SLGT",
+                    issued: Date(timeIntervalSince1970: 110),
+                    validUntil: Date(timeIntervalSince1970: 200)
+                )
+            )
+            try context.save()
+        }
+
+        let currentSchema = productionSchema()
+        let currentConfiguration = ModelConfiguration(
+            "SkyAware_Data_v3",
+            schema: currentSchema,
+            url: storeURL
+        )
+        do {
+            let opened = try SkyAwarePersistentStoreBootstrap.open(
+                schema: currentSchema,
+                configuration: currentConfiguration,
+                migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                isProtectedDataAvailable: true
+            )
+            let store = HomeProjectionStore(modelContainer: opened.container)
+            let migrated = try #require(await store.projection(for: location))
+            #expect(opened.mode == .persistent)
+            #expect(migrated.weather?.visibility == nil)
+            #expect(migrated.weather?.pressureTrend == "Hausse")
+            let migratedAtmosphere = AtmosphericConditionsDisplayModel(weather: migrated.weather, airQuality: nil)
+            #expect(migratedAtmosphere.secondaryMetrics[2].detail == "Hausse")
+            #expect(migrated.stormRisk == .slight)
+            #expect(migrated.airQuality?.aqi == 121)
+            #expect(migrated.activeAlerts == [Watch.sampleWatchRows[0]])
+            #expect(migrated.activeMesos == [meso])
+            #expect(migrated.stormSetupCurrentResponse == makeStormSetupCurrentResponse())
+            let migratedOutlook = try #require(
+                ModelContext(opened.container).fetch(FetchDescriptor<ConvectiveOutlook>()).first
+            )
+            #expect(migratedOutlook.title == "Day 1 Convective Outlook")
+            #expect(migratedOutlook.issued == Date(timeIntervalSince1970: 110))
+
+            let oldWeather = try #require(migrated.weather)
+            let updatedWeather = SummaryWeather(
+                temperature: oldWeather.temperature,
+                symbolName: oldWeather.symbolName,
+                conditionText: oldWeather.conditionText,
+                asOf: oldWeather.asOf,
+                dewPoint: oldWeather.dewPoint,
+                humidity: oldWeather.humidity,
+                windSpeed: oldWeather.windSpeed,
+                windGust: oldWeather.windGust,
+                windDirection: oldWeather.windDirection,
+                pressure: oldWeather.pressure,
+                pressureTrend: oldWeather.pressureTrend,
+                visibility: .init(value: 8, unit: .miles)
+            )
+            _ = try await store.updateWeather(
+                updatedWeather,
+                for: location,
+                loadedAt: Date(timeIntervalSince1970: 300)
+            )
+        }
+
+        let reopenedContainer = try ModelContainer(for: currentSchema, configurations: currentConfiguration)
+        let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
+        let reopened = try #require(await reopenedStore.projection(for: location))
+        #expect(reopened.weather?.visibility == .init(value: 8, unit: .miles))
+        #expect(reopened.stormRisk == .slight)
+        #expect(reopened.airQuality?.aqi == 121)
+        #expect(reopened.activeAlerts == [Watch.sampleWatchRows[0]])
+        #expect(reopened.activeMesos == [meso])
+        let reopenedOutlook = try #require(
+            ModelContext(reopenedContainer).fetch(FetchDescriptor<ConvectiveOutlook>()).first
+        )
+        #expect(reopenedOutlook.title == "Day 1 Convective Outlook")
+    }
+
     @Test("updating Storm Setup stores the aggregate payload and load timestamp")
     func updateStormSetup_persistsAggregatePayloadAndLoadTimestamp() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -836,7 +990,7 @@ struct HomeProjectionStoreTests {
 
         let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
         let context = makeContext()
-        let weather = makeWeather()
+        let weather = makeWeather(visibility: nil)
         let createdAt = Date(timeIntervalSince1970: 100)
         let fixtureURL = try #require(
             Bundle(for: HomeProjectionFixtureBundleLocator.self).url(
@@ -2018,7 +2172,8 @@ struct HomeProjectionStoreTests {
 
     private func makeWeather(
         temperature: Double = 72,
-        asOf: TimeInterval = 200
+        asOf: TimeInterval = 200,
+        visibility: Measurement<UnitLength>? = .init(value: 8, unit: .miles)
     ) -> SummaryWeather {
         SummaryWeather(
             temperature: .init(value: temperature, unit: .fahrenheit),
@@ -2031,7 +2186,8 @@ struct HomeProjectionStoreTests {
             windGust: .init(value: 24, unit: .milesPerHour),
             windDirection: "NW",
             pressure: .init(value: 29.92, unit: .inchesOfMercury),
-            pressureTrend: "steady"
+            pressureTrend: "steady",
+            visibility: visibility
         )
     }
 

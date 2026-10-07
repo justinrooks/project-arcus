@@ -156,37 +156,35 @@ struct ActiveAlertSummaryView: View {
 
     private var activeContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if contentState != .empty {
-                HStack(alignment: .center, spacing: 12) {
-                    Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                        .sectionLabel()
+            HStack(alignment: .center, spacing: 12) {
+                Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                    .sectionLabel()
 
-                    Spacer(minLength: 12)
+                Spacer(minLength: 12)
 
-                    if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
-                        Button {
-                            onOpenAlertCenter()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("Alert Center")
-                                Image(systemName: "arrow.right")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
+                    Button {
+                        onOpenAlertCenter()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Alert Center")
+                            Image(systemName: "arrow.right")
+                                .font(.caption.weight(.semibold))
                         }
-                        .buttonStyle(
-                            SkyAwarePressableButtonStyle(
-                                cornerRadius: SkyAwareRadius.chipCompact,
-                                pressedScale: 0.985,
-                                pressedOverlayOpacity: 0.08
-                            )
-                        )
-                        .accessibilityHint("Opens the full alerts tab.")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
                     }
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.chipCompact,
+                            pressedScale: 0.985,
+                            pressedOverlayOpacity: 0.08
+                        )
+                    )
+                    .accessibilityHint("Opens the full alerts tab.")
                 }
             }
 

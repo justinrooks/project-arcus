@@ -218,7 +218,8 @@ struct HomeView: View {
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
-        initialRefreshInFlight: Bool = false
+        initialRefreshInFlight: Bool = false,
+        initialStormSetupRefreshInFlight: Bool = false
     ) {
         _refreshPipeline = State(
             initialValue: HomeRefreshPipeline(
@@ -233,7 +234,8 @@ struct HomeView: View {
                 initialAlerts: initialAlerts,
                 initialOutlooks: initialOutlooks,
                 initialOutlook: initialOutlook,
-                initialRefreshInFlight: initialRefreshInFlight
+                initialRefreshInFlight: initialRefreshInFlight,
+                initialStormSetupRefreshInFlight: initialStormSetupRefreshInFlight
             )
         )
     }
