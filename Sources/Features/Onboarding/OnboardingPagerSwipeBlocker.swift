@@ -19,6 +19,7 @@ struct OnboardingPagerSwipeBlocker: UIViewRepresentable {
 
     final class BlockingView: UIView {
         private var didDisablePagingScrollView = false
+        private var retryTask: Task<Void, Never>?
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -27,21 +28,46 @@ struct OnboardingPagerSwipeBlocker: UIViewRepresentable {
 
         func applyIfNeeded() {
             guard !didDisablePagingScrollView else { return }
-            guard let pagingScrollView = ancestorPagingScrollView() else { return }
+            guard let window else { return }
 
-            pagingScrollView.isScrollEnabled = false
-            didDisablePagingScrollView = true
+            if let pagingScrollView = Self.pagingScrollView(in: window) {
+                pagingScrollView.isScrollEnabled = false
+                didDisablePagingScrollView = true
+                retryTask?.cancel()
+                retryTask = nil
+                return
+            }
+
+            guard retryTask == nil else { return }
+            retryTask = Task { @MainActor [weak self] in
+                for _ in 0..<20 {
+                    try? await Task.sleep(for: .milliseconds(25))
+                    guard let self, !Task.isCancelled else { return }
+                    self.applyIfNeeded()
+                    if self.didDisablePagingScrollView {
+                        return
+                    }
+                }
+                self?.retryTask = nil
+            }
         }
 
-        private func ancestorPagingScrollView() -> UIScrollView? {
-            var currentView = superview
-            while let view = currentView {
-                if let scrollView = view as? UIScrollView, scrollView.isPagingEnabled {
-                    return scrollView
-                }
-                currentView = view.superview
+        private static func pagingScrollView(in view: UIView) -> UIScrollView? {
+            if let scrollView = view as? UIScrollView, scrollView.isPagingEnabled {
+                return scrollView
             }
+
+            for child in view.subviews {
+                if let pagingScrollView = pagingScrollView(in: child) {
+                    return pagingScrollView
+                }
+            }
+
             return nil
+        }
+
+        deinit {
+            retryTask?.cancel()
         }
     }
 }

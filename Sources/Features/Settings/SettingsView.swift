@@ -85,11 +85,6 @@ struct SettingsView: View {
         store: UserDefaults.shared
     ) private var mapWarningGeometryVisible: Bool = true
 
-    @AppStorage(
-        AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
-        store: UserDefaults.shared
-    ) private var alwaysShowAirQuality: Bool = false
-    
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
     @AppStorage("aiShareLocation", store: UserDefaults.shared) private var aiShareLocation: Bool = true
@@ -305,17 +300,6 @@ struct SettingsView: View {
                     }
                 }
 
-                sectionCard(title: "Atmospheric Conditions", symbol: "wind", accent: .primary) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Always Show Air Quality", isOn: $alwaysShowAirQuality)
-                            .accessibilityIdentifier("settings-always-show-air-quality-toggle")
-                        Text("Shows AQI whenever valid air-quality data is available, including Good and Moderate levels.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                }
-                
                 sectionCard(title: "About", symbol: "info.circle", accent: .primary) {
                     infoRow("Version", Bundle.main.fullVersion)
                     infoRow("Disclaimer", "\(disclaimerVersion)")

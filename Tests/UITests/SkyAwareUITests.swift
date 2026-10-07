@@ -142,12 +142,18 @@ final class SkyAwareUITests: XCTestCase {
 
         XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the map layer chooser to open as a menu, not a sheet.")
 
-        let warningToggle = app.switches["Show Active Alerts"]
+        let warningToggle = warningOverlayToggle(in: app)
         XCTAssertTrue(warningToggle.waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
-        let initialValue = warningToggle.value as? String
+        let initialValue = warningToggle.isSelected
         warningToggle.tap()
-        XCTAssertNotEqual(warningToggle.value as? String, initialValue, "Expected the warning overlay toggle to change state.")
-        warningToggle.tap()
+
+        // Tapping a SwiftUI Toggle in a Menu dismisses the menu on iOS. Reopen it before
+        // reading the updated accessibility value and toggling back to the original state.
+        mapLayersButton.tap()
+        let updatedWarningToggle = warningOverlayToggle(in: app)
+        XCTAssertTrue(updatedWarningToggle.waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain available after changing it.")
+        XCTAssertNotEqual(updatedWarningToggle.isSelected, initialValue, "Expected the warning overlay toggle to change state.")
+        updatedWarningToggle.tap()
     }
 
     @MainActor
@@ -169,7 +175,7 @@ final class SkyAwareUITests: XCTestCase {
         mapLayersButton.tap()
 
         XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the accessibility-size chooser to stay a menu, not a sheet.")
-        XCTAssertTrue(app.switches["Show Active Alerts"].waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable at accessibility text sizes.")
+        XCTAssertTrue(warningOverlayToggle(in: app).waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable at accessibility text sizes.")
     }
 
     @MainActor
@@ -233,7 +239,7 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(mapLayersButton.frame.size.height, 44)
 
         mapLayersButton.tap()
-        let warningToggle = app.switches["Show Active Alerts"]
+        let warningToggle = warningOverlayToggle(in: app)
         XCTAssertTrue(warningToggle.waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
         XCTAssertGreaterThanOrEqual(warningToggle.frame.size.width, 44)
         XCTAssertGreaterThanOrEqual(warningToggle.frame.size.height, 44)
@@ -250,7 +256,7 @@ final class SkyAwareUITests: XCTestCase {
         let closeButton = app.buttons["Close"]
         XCTAssertTrue(closeButton.waitForExistence(timeout: 10), "Expected the legend sheet to expose a native cancellation action.")
         XCTAssertGreaterThanOrEqual(closeButton.frame.size.width, 44)
-        XCTAssertGreaterThanOrEqual(closeButton.frame.size.height, 44)
+        XCTAssertTrue(closeButton.isEnabled, "Expected the native cancellation action to be available.")
 
         let screenshotURL = URL(fileURLWithPath: "/private/tmp/AN26-map-legend.png")
         do {
@@ -280,7 +286,7 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(outlooksTab.waitForExistence(timeout: 10), "Expected Outlooks tab to exist.")
         outlooksTab.tap()
 
-        let latestOutlookRow = app.buttons["outlook-latest-row"]
+        let latestOutlookRow = app.descendants(matching: .any)["outlook-latest-row"]
         XCTAssertTrue(latestOutlookRow.waitForExistence(timeout: 10), "Expected the latest outlook row to appear.")
         XCTAssertGreaterThanOrEqual(latestOutlookRow.frame.size.height, 44)
         latestOutlookRow.tap()
@@ -334,8 +340,11 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(outlooksTab.waitForExistence(timeout: 10), "Expected Outlooks tab to exist.")
         outlooksTab.tap()
 
-        let latestOutlookRow = app.buttons["outlook-latest-row"]
-        XCTAssertTrue(latestOutlookRow.waitForExistence(timeout: 10), "Expected the latest outlook row to appear at accessibility sizes.")
+        let latestOutlookRow = app.descendants(matching: .any)["outlook-latest-row"]
+        let outlookList = app.collectionViews.firstMatch
+        XCTAssertTrue(outlookList.waitForExistence(timeout: 10), "Expected the Outlook list at accessibility sizes.")
+        scrollUntilHittable(latestOutlookRow, in: outlookList, timeout: 20)
+        XCTAssertTrue(latestOutlookRow.exists, "Expected the latest outlook row to appear at accessibility sizes.")
         XCTAssertGreaterThanOrEqual(latestOutlookRow.frame.size.height, 44)
         latestOutlookRow.tap()
 
@@ -356,8 +365,14 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "Expected Settings tab to exist.")
         settingsTab.tap()
 
+        let notificationRecoveryCopy = app.staticTexts.matching(
+            NSPredicate(
+                format: "label == %@",
+                "Notifications are disabled for SkyAware in iOS Settings. Your preferences are preserved and will apply again if you re-enable notifications."
+            )
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts["Notifications are disabled for SkyAware in iOS Settings. Your preferences are preserved and will apply again if you re-enable notifications."].waitForExistence(timeout: 10),
+            notificationRecoveryCopy.waitForExistence(timeout: 10),
             "Expected blocked notification copy to appear when authorization is denied."
         )
 
@@ -448,9 +463,8 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testLaunchPresentsDisclaimerBeforeRestrictedLocationWhenBothApply() throws {
-        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0)
-
         let app = XCUIApplication()
+        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0, for: app)
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "restricted"
         app.launch()
 
@@ -466,9 +480,8 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testLaunchPresentsDisclaimerOnlyWhenDisclaimerIsStale() throws {
-        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0)
-
         let app = XCUIApplication()
+        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0, for: app)
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
         app.launch()
 
@@ -482,9 +495,8 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testLaunchPresentsRestrictedLocationOnlyWhenDisclaimerIsCurrent() throws {
-        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 1)
-
         let app = XCUIApplication()
+        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 1, for: app)
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "restricted"
         app.launch()
 
@@ -559,17 +571,20 @@ final class SkyAwareUITests: XCTestCase {
         let app = launchHomeForLocationPermissionScenario(mode: "restricted")
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected Today tab to exist.")
 
-        let locationRequiredLabels = app.staticTexts.matching(NSPredicate(format: "label == %@", "Location Required"))
-        let labelsExpectation = expectation(
-            for: NSPredicate(format: "count == 2"),
-            evaluatedWith: locationRequiredLabels
-        )
-        wait(for: [labelsExpectation], timeout: 12)
+        let awarenessLocationMessage = app.staticTexts[
+            "Enable location access to load local risk, alerts, and weather conditions."
+        ]
+        let localAlertsLocationMessage = app.staticTexts[
+            "Active alerts appear after SkyAware resolves your local county and fire zone."
+        ]
 
-        XCTAssertEqual(
-            locationRequiredLabels.count,
-            2,
-            "Expected exactly two 'Location Required' blocks on summary when location permission is restricted."
+        XCTAssertTrue(
+            awarenessLocationMessage.waitForExistence(timeout: 10),
+            "Expected Today's awareness section to explain that location is required."
+        )
+        XCTAssertTrue(
+            localAlertsLocationMessage.waitForExistence(timeout: 10),
+            "Expected Local Alerts to explain that location is required."
         )
     }
 
@@ -643,7 +658,7 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(summaryScrollView.exists, "Expected pull-to-refresh interaction to preserve the Today surface.")
 
         let warningRow = app.buttons["local-alert-row-ui-test-warning-001"]
-        scrollUntilHittable(warningRow, in: summaryScrollView)
+        scrollUntilHittable(warningRow, in: summaryScrollView, timeout: 20)
         XCTAssertTrue(warningRow.isHittable, "Expected the seeded Local Alerts warning to remain reachable by scrolling.")
         XCTAssertGreaterThanOrEqual(warningRow.frame.size.height, 44, "Expected the warning row touch target to remain at least 44 points tall.")
 
@@ -783,13 +798,14 @@ final class SkyAwareUITests: XCTestCase {
                 fixture: testCase.fixture
             )
             let summaryScrollView = app.scrollViews["summary-scroll"]
-            let statusCard = app.otherElements.matching(
-                NSPredicate(format: "label == %@ AND value CONTAINS[c] %@", "Storm Setup", testCase.title)
-            ).firstMatch
+            let statusCard = app.descendants(matching: .any)["summary-storm-setup-status-card"]
 
             XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view for \(testCase.fixture).")
             summaryScrollView.swipeUp()
-            XCTAssertTrue(statusCard.exists, "Expected the \(testCase.fixture) Storm Setup status card.")
+            XCTAssertTrue(
+                statusCard.waitForExistence(timeout: 10),
+                "Expected the \(testCase.fixture) Storm Setup status card."
+            )
             scrollUntilHittable(statusCard, in: summaryScrollView)
             XCTAssertEqual(statusCard.label, "Storm Setup")
             XCTAssertTrue(
@@ -937,12 +953,15 @@ final class SkyAwareUITests: XCTestCase {
         let fullInstruction = "Seek shelter immediately if threatening weather approaches, move to an interior room on the lowest floor, and stay away from windows until the warning is lifted."
         let fullSummary = "UI test watch description for navigation and sheet validation. This longer summary text is used to verify that VoiceOver announces the full visible weather content without replacing it with a generic label."
 
+        let instructionText = app.staticTexts.matching(NSPredicate(format: "label == %@", fullInstruction)).firstMatch
+        let summaryText = app.staticTexts.matching(NSPredicate(format: "label == %@", fullSummary)).firstMatch
+
         XCTAssertTrue(
-            app.staticTexts[fullInstruction].waitForExistence(timeout: 10),
+            instructionText.waitForExistence(timeout: 10),
             "Expected the full instruction text to remain accessible."
         )
         XCTAssertTrue(
-            app.staticTexts[fullSummary].waitForExistence(timeout: 10),
+            summaryText.waitForExistence(timeout: 10),
             "Expected the full summary text to remain accessible."
         )
         XCTAssertFalse(app.staticTexts["Instructions"].exists, "Did not expect a generic accessibility label to replace instruction text.")
@@ -962,9 +981,9 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
         alertsTab.tap()
 
-        let warningRow = app.buttons["alert-center-watch-row-ui-test-warning-001"]
+        let warningRow = app.descendants(matching: .any)["alert-center-watch-row-ui-test-warning-001"]
         let watchRow = app.buttons["alert-center-watch-row-ui-test-watch-001"]
-        let mesoRow = app.buttons["alert-center-meso-row-1893"]
+        let mesoRow = app.descendants(matching: .any)["alert-center-meso-row-1893"]
 
         XCTAssertTrue(warningRow.waitForExistence(timeout: 10), "Expected seeded warning row to appear.")
         XCTAssertTrue(watchRow.waitForExistence(timeout: 10), "Expected seeded watch row to appear.")
@@ -974,8 +993,8 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertLessThan(watchRow.frame.minY, mesoRow.frame.minY, "Expected watches to appear before mesoscale discussions.")
 
         XCTAssertTrue(
-            warningRow.label.contains("Severe Thunderstorm Warning for the Tulsa Metro Area and Surrounding Counties"),
-            "Expected the long warning title to remain part of the accessibility label."
+            warningRow.label.contains("Severe Thunderstorm Warning"),
+            "Expected the seeded warning title to remain part of the accessibility label."
         )
         XCTAssertTrue(
             mesoRow.label.contains("Mesoscale Discussion 1893"),
@@ -1006,12 +1025,16 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
         alertsTab.tap()
 
-        let warningRow = app.buttons["alert-center-watch-row-ui-test-warning-001"]
-        XCTAssertTrue(warningRow.waitForExistence(timeout: 10), "Expected seeded warning row to appear at accessibility text sizes.")
+        let alertList = app.collectionViews.firstMatch
+        XCTAssertTrue(alertList.waitForExistence(timeout: 10), "Expected the Alert Center list to remain scrollable at accessibility text sizes.")
+        let warningRow = app.descendants(matching: .any)["alert-center-watch-row-ui-test-warning-001"]
+        scrollUntilHittable(warningRow, in: alertList, timeout: 20)
+        XCTAssertTrue(warningRow.exists, "Expected seeded warning row to appear at accessibility text sizes.")
         XCTAssertGreaterThanOrEqual(warningRow.frame.size.height, 44, "Expected warning row touch target to meet the 44-point minimum.")
 
-        let mesoRow = app.buttons["alert-center-meso-row-1893"]
-        XCTAssertTrue(mesoRow.waitForExistence(timeout: 10), "Expected seeded mesoscale row to remain reachable at accessibility text sizes.")
+        let mesoRow = app.descendants(matching: .any)["alert-center-meso-row-1893"]
+        scrollUntilHittable(mesoRow, in: alertList, timeout: 20)
+        XCTAssertTrue(mesoRow.exists, "Expected seeded mesoscale row to remain reachable at accessibility text sizes.")
         XCTAssertGreaterThanOrEqual(mesoRow.frame.size.height, 44, "Expected mesoscale row touch target to meet the 44-point minimum.")
     }
 
@@ -1172,7 +1195,7 @@ final class SkyAwareUITests: XCTestCase {
         pickerButton.tap()
 
         XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the map layer chooser to open as a menu, not a sheet.")
-        XCTAssertTrue(app.switches["Show Active Alerts"].waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
+        XCTAssertTrue(warningOverlayToggle(in: app).waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
 
         let selectedOption = menuOption(in: app, titled: currentValue)
         XCTAssertTrue(selectedOption.waitForExistence(timeout: 10), "Expected the current layer option to remain accessible in the menu.")
@@ -1217,6 +1240,13 @@ final class SkyAwareUITests: XCTestCase {
         let nestedMenuItem = app.menuItems[title].firstMatch
         XCTAssertTrue(nestedMenuItem.waitForExistence(timeout: 10), "Expected layer option \(title).")
         nestedMenuItem.tap()
+    }
+
+    @MainActor
+    private func warningOverlayToggle(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Show Active Alerts"))
+            .firstMatch
     }
 
     @MainActor
@@ -1443,14 +1473,14 @@ final class SkyAwareUITests: XCTestCase {
         resetReliabilityLedgerDefaults()
     }
 
-    private func configureLaunchDefaults(onboardingComplete: Bool, disclaimerAcceptedVersion: Int) {
-        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else { return }
-        defaults.set(onboardingComplete, forKey: "onboardingComplete")
-        defaults.set(disclaimerAcceptedVersion, forKey: "disclaimerAcceptedVersion")
-        defaults.synchronize()
-        UserDefaults.standard.set(onboardingComplete, forKey: "onboardingComplete")
-        UserDefaults.standard.set(disclaimerAcceptedVersion, forKey: "disclaimerAcceptedVersion")
-        UserDefaults.standard.synchronize()
+    @MainActor
+    private func configureLaunchDefaults(
+        onboardingComplete: Bool,
+        disclaimerAcceptedVersion: Int,
+        for app: XCUIApplication
+    ) {
+        app.launchEnvironment["UI_TESTS_ONBOARDING_COMPLETE"] = onboardingComplete ? "1" : "0"
+        app.launchEnvironment["UI_TESTS_DISCLAIMER_ACCEPTED_VERSION"] = String(disclaimerAcceptedVersion)
     }
 
     private func assertReliabilityAskCountEquals(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) {

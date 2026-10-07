@@ -355,8 +355,8 @@ private extension SkyAwareApp {
         } else if isUITestStaticHome {
             if let fixture = Self.uiTestStormSetupFixture {
                 HomeView(
-                    initialStormRisk: fixture.stormRisk ?? .enhanced,
-                    initialSevereRisk: .tornado(probability: 0.10),
+                    initialStormRisk: fixture.stormRisk ?? .allClear,
+                    initialSevereRisk: fixture.stormRisk == nil ? .allClear : .tornado(probability: 0.10),
                     initialFireRisk: .elevated,
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupCurrentResponse: fixture.currentResponse,
@@ -364,7 +364,8 @@ private extension SkyAwareApp {
                     initialMesos: Self.uiTestLaunchMesos,
                     initialAlerts: Self.uiTestLaunchWatches,
                     initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,
-                    initialRefreshInFlight: fixture.isRefreshInFlight
+                    initialRefreshInFlight: fixture.isRefreshInFlight,
+                    initialStormSetupRefreshInFlight: fixture.isRefreshInFlight
                 )
             } else {
                 HomeView(
@@ -478,8 +479,11 @@ private extension SkyAwareApp {
         let env = ProcessInfo.processInfo.environment
         let shouldResetOnboarding = env["UI_TESTS_RESET_ONBOARDING"] == "1"
         let shouldForceOnboardingComplete = env["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] == "1"
+        let onboardingCompleteOverride = env["UI_TESTS_ONBOARDING_COMPLETE"].map { $0 == "1" }
+        let disclaimerVersionOverride = env["UI_TESTS_DISCLAIMER_ACCEPTED_VERSION"].flatMap(Int.init)
 
-        guard shouldResetOnboarding || shouldForceOnboardingComplete else { return }
+        guard shouldResetOnboarding || shouldForceOnboardingComplete
+                || onboardingCompleteOverride != nil || disclaimerVersionOverride != nil else { return }
 
         let suiteName = "com.justinrooks.skyaware"
         guard let sharedDefaults = UserDefaults(suiteName: suiteName) else { return }
@@ -498,6 +502,15 @@ private extension SkyAwareApp {
             sharedDefaults.set(0, forKey: "disclaimerAcceptedVersion")
             UserDefaults.standard.removeObject(forKey: "onboardingComplete")
             UserDefaults.standard.removeObject(forKey: "disclaimerAcceptedVersion")
+        }
+
+        if let onboardingCompleteOverride {
+            sharedDefaults.set(onboardingCompleteOverride, forKey: "onboardingComplete")
+            UserDefaults.standard.set(onboardingCompleteOverride, forKey: "onboardingComplete")
+        }
+        if let disclaimerVersionOverride {
+            sharedDefaults.set(disclaimerVersionOverride, forKey: "disclaimerAcceptedVersion")
+            UserDefaults.standard.set(disclaimerVersionOverride, forKey: "disclaimerAcceptedVersion")
         }
 
         sharedDefaults.synchronize()

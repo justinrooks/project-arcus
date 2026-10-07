@@ -87,6 +87,12 @@ struct OnboardingView: View {
     private func requestLocationPermission() {
         guard !locationStepState.isWorking else { return }
 
+        if locationSession.authorizationStatus == .authorizedWhenInUse {
+            locationReliabilityLogger.notice("Onboarding routed directly to the Always upgrade page for an existing When In Use grant")
+            advance(to: .alwaysUpgrade)
+            return
+        }
+
         Task { @MainActor in
             locationStepState = .working("Waiting for your location choice...")
             _ = await locationSession.prepareCurrentLocationContext(

@@ -110,7 +110,7 @@ final class HomeRefreshPipeline {
     private var acceptedCorePublication: AcceptedCorePublication?
     private var suppressedCoreSubmissionID: UUID?
     private var manualRefreshProjectionKey: String?
-    private(set) var isStormSetupRefreshInFlight = false
+    private(set) var isStormSetupRefreshInFlight: Bool
     private(set) var isManualRefreshInFlight = false
     private(set) var didManualRefreshFail = false
     private(set) var didManualAlertRefreshFail = false
@@ -153,6 +153,7 @@ final class HomeRefreshPipeline {
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
         initialRefreshInFlight: Bool = false,
+        initialStormSetupRefreshInFlight: Bool = false,
         foregroundTimerInterval: Duration = .seconds(120)
     ) {
         self.snap = initialSnap
@@ -175,6 +176,7 @@ final class HomeRefreshPipeline {
             outlook: initialOutlook
         )
         self.activeRefreshCount = initialRefreshInFlight ? 1 : 0
+        self.isStormSetupRefreshInFlight = initialStormSetupRefreshInFlight
         self.outlookRefreshStatus = initialOutlooks.isEmpty && initialOutlook == nil ? .loading : .success(hasContent: true)
         self.foregroundTimerInterval = foregroundTimerInterval
     }

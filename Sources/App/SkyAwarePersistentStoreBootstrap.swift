@@ -4,7 +4,7 @@ import OSLog
 import SwiftData
 
 enum SkyAwarePersistenceSchema: VersionedSchema {
-    static let versionIdentifier = Schema.Version(3, 0, 0)
+    static let versionIdentifier = Schema.Version(4, 0, 0)
 
     static let models: [any PersistentModel.Type] = [
         ConvectiveOutlook.self,
@@ -19,8 +19,13 @@ enum SkyAwarePersistenceSchema: VersionedSchema {
 }
 
 enum SkyAwarePersistenceMigrationPlan: SchemaMigrationPlan {
-    static let schemas: [any VersionedSchema.Type] = [SkyAwarePersistenceSchema.self]
-    static let stages: [MigrationStage] = []
+    static let schemas: [any VersionedSchema.Type] = [
+        SkyAwarePersistenceSchemaV3.self,
+        SkyAwarePersistenceSchema.self
+    ]
+    static let stages: [MigrationStage] = [
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV3.self, toVersion: SkyAwarePersistenceSchema.self)
+    ]
 }
 
 @MainActor
@@ -41,6 +46,7 @@ enum SkyAwarePersistentStoreBootstrap {
         _ migrationPlan: (any SchemaMigrationPlan.Type)?
     ) throws -> ModelContainer
 
+    // Keep the existing path so SwiftData migrates the cache in place.
     static let storeName = "SkyAware_Data_v3"
     static let storeFileName = "SkyAware_Data_v3.store"
     static let quarantineDirectoryName = "IncompatibleStores"
