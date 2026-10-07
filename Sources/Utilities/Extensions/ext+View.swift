@@ -215,22 +215,6 @@ extension View {
         )
     }
 
-    @ViewBuilder
-    func glassCardBackground(
-        cornerRadius: CGFloat = SkyAwareRadius.hero,
-        shadowOpacity: Double = 0.10,
-        shadowRadius: CGFloat = 10,
-        shadowY: CGFloat = 4
-    ) -> some View {
-        self.cardBackground(
-            cornerRadius: cornerRadius,
-            shadowOpacity: shadowOpacity,
-            shadowRadius: shadowRadius,
-            shadowY: shadowY,
-            allowsGlass: true
-        )
-    }
-    
     func cardRowBackground(
         cornerRadius: CGFloat = SkyAwareRadius.row,
         shadowOpacity: Double = 0.0,
