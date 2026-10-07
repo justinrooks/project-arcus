@@ -400,16 +400,20 @@ private struct AtmosphericMetricColumn: View {
 
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(metric.title)
         .accessibilityValue(metric.accessibilityValue ?? metric.value)
     }
 
     private var iconColor: Color {
-        metric.semanticAccent == nil ? .secondary : valueColor
+        metric.semanticAccent == nil ? .secondary : semanticColor
     }
 
     private var valueColor: Color {
+        colorScheme == .light || colorSchemeContrast == .increased ? .primary : semanticColor
+    }
+
+    private var semanticColor: Color {
         switch metric.semanticAccent {
         case .good:
             .riskAllClear

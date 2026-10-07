@@ -153,6 +153,8 @@ struct SummaryStatus: View {
                 showsOfflineExplanation = true
             } label: {
                 SummaryOfflineToken()
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(
                 SkyAwarePressableButtonStyle(
@@ -221,6 +223,7 @@ struct SummaryStatus: View {
                         .symbolVariant(.fill)
                         .font(.title3)
                         .contentTransition(.opacity)
+                        .accessibilityHidden(true)
                 } else {
                     Text("00°")
                         .monospacedDigit()

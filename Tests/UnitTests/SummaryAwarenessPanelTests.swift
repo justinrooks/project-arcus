@@ -155,7 +155,7 @@ struct SummaryAwarenessPanelTests {
         }
     }
 
-    @Test("quiet and elevated supporting risk rails share compact geometry")
+    @Test("supporting rails retain compact geometry and expand for complete quiet labels")
     @MainActor
     func supportingRiskRailsShareCompactGeometry() throws {
         let background = LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom)
@@ -200,7 +200,13 @@ struct SummaryAwarenessPanelTests {
             return try #require(renderer.uiImage?.size.height)
         }
 
-        #expect(heights.allSatisfy { $0 == 90 }, "Rendered compact rail heights: \(heights)")
+        #expect(heights[0] > 90 && heights[2] > 90, "Long quiet labels must be able to expand.")
+        #expect(
+            heights.enumerated().allSatisfy { index, height in
+                index == 0 || index == 2 ? height >= 90 : height == 90
+            },
+            "Rendered compact rail heights: \(heights)"
+        )
     }
 
     @Test("Late intensity results cannot leak across locations or survive expiry")

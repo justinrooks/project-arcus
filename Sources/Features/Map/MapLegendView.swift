@@ -98,6 +98,7 @@ struct MapLegend: View {
 }
 
 struct CompactMapLegendTrigger: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let label: String
     let subtitle: String?
     let accessibilityValue: String
@@ -109,18 +110,21 @@ struct CompactMapLegendTrigger: View {
                 HStack(spacing: SkyAwareSpacing.compact) {
                     Text(label)
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Image(systemName: "chevron.up")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
 
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, SkyAwareSpacing.standard)

@@ -14,6 +14,8 @@ struct WidgetLargeAwarenessView: View {
                     .padding(16)
             } else {
                 content
+                    // WidgetKit has fixed bounds: retain the alert, overflow, and all three risk rows.
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
         .containerBackground(for: .widget) {
@@ -29,7 +31,7 @@ struct WidgetLargeAwarenessView: View {
             Text(awarenessHeading)
                 .font(.title2.weight(.bold))
                 .tracking(0.4)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .lineLimit(dynamicTypeSize >= .xxxLarge ? 2 : 1)
                 .minimumScaleFactor(0.7)
                 .padding(.top, 12)
 
@@ -75,7 +77,7 @@ struct WidgetLargeAwarenessView: View {
 
     private var locationLabel: some View {
         Label(locationSummaryLine, systemImage: "mappin")
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .lineLimit(dynamicTypeSize >= .xxxLarge ? 2 : 1)
             .minimumScaleFactor(0.8)
     }
 
@@ -160,7 +162,7 @@ private struct WidgetLargeAlertRailStack: View {
     private var visibleAlerts: [WidgetLargeAlertRailItem] {
         WidgetLargeAlertPresentation.visibleAlerts(
             from: alerts,
-            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            isAccessibilitySize: dynamicTypeSize >= .xxxLarge
         ).enumerated().map { index, alert in
             WidgetLargeAlertRailItem(position: index, alert: alert)
         }
@@ -217,7 +219,7 @@ private struct WidgetLargeAlertRailStack: View {
 
     private var reservedStackHeight: CGFloat {
         let capacity = WidgetLargeAlertPresentation.visibleAlertCapacity(
-            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            isAccessibilitySize: dynamicTypeSize >= .xxxLarge
         )
         let secondaryCapacity = max(capacity - 1, 0)
         return Self.primaryRowMinimumHeight
@@ -260,7 +262,7 @@ private struct WidgetLargeRiskContextFooter: View {
                 .accessibilityHidden(true)
 
             Group {
-                if dynamicTypeSize.isAccessibilitySize {
+                if dynamicTypeSize >= .xxxLarge {
                     VStack(alignment: .leading, spacing: 8) {
                         columns
                     }
@@ -312,14 +314,14 @@ private struct WidgetLargeRiskContextColumn: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(alignment: .center, spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 10) {
+        HStack(alignment: .center, spacing: dynamicTypeSize >= .xxxLarge ? 8 : 10) {
             Capsule()
                 .fill(tint)
                 .frame(width: 3)
                 .accessibilityHidden(true)
 
             Group {
-                if dynamicTypeSize.isAccessibilitySize {
+                if dynamicTypeSize >= .xxxLarge {
                     accessibilityContent
                 } else {
                     regularContent
@@ -445,13 +447,13 @@ private struct WidgetLargeAlertRailRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(alert.title)
                     .font(isPrimary ? .headline.weight(.bold) : .subheadline.weight(.bold))
-                    .lineLimit(isPrimary || dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .lineLimit(isPrimary || dynamicTypeSize >= .xxxLarge ? 2 : 1)
                     .minimumScaleFactor(isPrimary ? 0.85 : 0.78)
 
                 Text(lifecycleLine)
                     .font(lifecycleFont.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .lineLimit(dynamicTypeSize >= .xxxLarge ? 2 : 1)
             }
 
             Spacer(minLength: 0)

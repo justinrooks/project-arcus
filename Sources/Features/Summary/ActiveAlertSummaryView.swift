@@ -424,23 +424,32 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
 }
 
 private struct MesoRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .subheadline) private var iconColumnWidth: CGFloat = 16
     let meso: MdDTO
     
     var body: some View {
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout())
+
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.mesoscale, "")
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
-                .frame(width: 16, alignment: .center)
+                .frame(width: iconColumnWidth, alignment: .center)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading) {
-                HStack {
+                headerLayout {
                     Text("Meso \(meso.number.formatted(.number.grouping(.never)))")
                         .font(.subheadline.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer()
+                    }
                     VStack(alignment: .trailing) {
                         Text("Ends \(meso.validEnd, style: .time)")
                             .monospacedDigit()
@@ -471,6 +480,8 @@ private struct MesoRowView: View {
 }
 
 private struct WatchRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .subheadline) private var iconColumnWidth: CGFloat = 16
     let alert: AlertDTO
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -479,20 +490,27 @@ private struct WatchRowView: View {
     }()
     
     var body: some View {
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout())
+
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.watch, alert.title)
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
-                .frame(width: 16, alignment: .center)
+                .frame(width: iconColumnWidth, alignment: .center)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading) {
-                HStack {
+                headerLayout {
                     Text("\(alert.title)")
                         .font(.subheadline.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer()
+                    }
                     VStack(alignment: .trailing) {
                         let txt = buildDisplay(alert: alert)
                         Text("Until \(txt) \(alert.validEnd, style: .time)")
@@ -511,7 +529,8 @@ private struct WatchRowView: View {
                             Text(sevTags)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Color.semanticMetadata)
-                                .lineLimit(2)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                     }
