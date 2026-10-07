@@ -8,23 +8,18 @@
 import SwiftUI
 
 struct OutlookSummaryCard: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     let outlook: ConvectiveOutlookDTO?
     let presentationState: ConvectiveOutlookPresentationState
     let todayContentState: TodayContentState
-    let onBrowseAllOutlooks: (() -> Void)?
-    
+
     init(
         outlook: ConvectiveOutlookDTO?,
         presentationState: ConvectiveOutlookPresentationState? = nil,
-        todayContentState: TodayContentState = .current,
-        onBrowseAllOutlooks: (() -> Void)? = nil
+        todayContentState: TodayContentState = .current
     ) {
         self.outlook = outlook
         self.presentationState = presentationState ?? (outlook == nil ? .loading : .populated(.current))
         self.todayContentState = todayContentState
-        self.onBrowseAllOutlooks = onBrowseAllOutlooks
     }
 
     private var titleText: String {
@@ -50,42 +45,31 @@ struct OutlookSummaryCard: View {
         return "sun.max.fill"
     }
 
-    private var adaptiveLayout: SkyAwareAdaptiveLayout {
-        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
-    }
-    
+    @ViewBuilder
     var body: some View {
+        if let outlook {
+            NavigationLink {
+                ConvectiveOutlookDetailView(outlook: outlook)
+            } label: {
+                cardContent
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("summary-outlook-card")
+        } else {
+            cardContent
+        }
+    }
+
+    private var cardContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
 
-            if let outlook {
-                NavigationLink {
-                    ConvectiveOutlookDetailView(outlook: outlook)
-                } label: {
-                    HStack(alignment: .center, spacing: 12) {
-                        Text(summaryText)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .lineSpacing(4)
-                            .lineLimit(5)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .accessibilityHidden(true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("summary-outlook-card")
-            } else {
-                Text(summaryText)
-                    .font(.body)
-                    .lineSpacing(4)
-                    .lineLimit(5)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(summaryText)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .lineSpacing(4)
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let statusText = Self.statusText(for: presentationState) {
                 Text(statusText)
@@ -99,30 +83,18 @@ struct OutlookSummaryCard: View {
     }
 
     private var headerRow: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Label(titleText, systemImage: headerSymbolName)
+        HStack(spacing: 8) {
+            Image(systemName: headerSymbolName)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(titleText)
                 .sectionLabel()
-
-            Spacer(minLength: 12)
-
-            if adaptiveLayout.usesAccessibilityLayout == false,
-               let onBrowseAllOutlooks {
-                Button {
-                    onBrowseAllOutlooks()
-                } label: {
-                    HStack(spacing: 6) {
-                        Text("All Outlooks")
-                        Image(systemName: "arrow.right")
-                            .font(.caption.weight(.semibold))
-                    }
+            Spacer(minLength: 8)
+            if outlook != nil {
+                Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("summary-all-outlooks-button")
-                .accessibilityHint("Opens the full outlook list.")
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
     }

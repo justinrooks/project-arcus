@@ -434,8 +434,7 @@ struct SummaryView: View {
             OutlookSummaryCard(
                 outlook: outlook,
                 presentationState: outlookPresentationState,
-                todayContentState: todayContentState,
-                onBrowseAllOutlooks: onOpenOutlooks
+                todayContentState: todayContentState
             )
             .summaryResolving(
                 resolutionState.isResolving(.outlook),
