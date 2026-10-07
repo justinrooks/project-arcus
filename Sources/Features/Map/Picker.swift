@@ -114,12 +114,15 @@ struct MapLayerMenu: View {
 }
 
 private struct MapLayerPickerButtonStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
             content
                 .buttonStyle(.glass)
-        } else {
+        } else if colorScheme == .dark {
             content
                 .buttonStyle(.plain)
                 .skyAwareSurface(
@@ -130,6 +133,18 @@ private struct MapLayerPickerButtonStyle: ViewModifier {
                     shadowRadius: 10,
                     shadowY: 6
                 )
+        } else {
+            content
+                .buttonStyle(.plain)
+                .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06),
+                            lineWidth: colorSchemeContrast == .increased ? 1 : 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
         }
     }
 }

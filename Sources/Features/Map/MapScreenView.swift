@@ -9,6 +9,10 @@ import SwiftUI
 import CoreLocation
 import MapKit
 
+enum MapSurfaceStyle {
+    static let lightWeatherContent = Color(red: 0xFC / 255, green: 0xFC / 255, blue: 0xFD / 255)
+}
+
 struct MapScreenView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
@@ -416,6 +420,7 @@ private struct MapScreenContentPreview: View {
 
 private struct MapAwarenessSummary: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let primary: SummaryAwarenessPrimaryState
@@ -464,7 +469,9 @@ private struct MapAwarenessSummary: View {
         .padding(.trailing, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: 320, alignment: .leading)
-        .background(Color.cardBackground)
+        .background(
+            colorScheme == .dark ? Color.cardBackground : MapSurfaceStyle.lightWeatherContent
+        )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(alignment: .leading) {
             Capsule(style: .continuous)
@@ -476,13 +483,29 @@ private struct MapAwarenessSummary: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(.primary.opacity(colorScheme == .dark ? 0.08 : 0.06), lineWidth: 0.7)
+                .strokeBorder(.primary.opacity(contentEdgeOpacity), lineWidth: contentEdgeWidth)
                 .allowsHitTesting(false)
         }
+        .shadow(
+            color: colorScheme == .dark ? .clear : .black.opacity(0.06),
+            radius: colorScheme == .dark ? 0 : 4,
+            y: colorScheme == .dark ? 0 : 1
+        )
+    }
+
+    private var contentEdgeOpacity: Double {
+        colorSchemeContrast == .increased ? 0.14 : (colorScheme == .dark ? 0.08 : 0.06)
+    }
+
+    private var contentEdgeWidth: CGFloat {
+        colorSchemeContrast == .increased ? 1 : (colorScheme == .dark ? 0.7 : 0.5)
     }
 }
 
 private struct CompactMapAwarenessSummary: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     let primary: SummaryAwarenessPrimaryState
     let onExpand: () -> Void
 
@@ -510,7 +533,9 @@ private struct CompactMapAwarenessSummary: View {
             .padding(.trailing, 12)
             .padding(.vertical, 10)
             .frame(maxWidth: 320, alignment: .leading)
-            .background(Color.cardBackground)
+            .background(
+                colorScheme == .dark ? Color.cardBackground : MapSurfaceStyle.lightWeatherContent
+            )
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(alignment: .leading) {
                 Capsule(style: .continuous)
@@ -522,7 +547,10 @@ private struct CompactMapAwarenessSummary: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.08), lineWidth: 0.7)
+                .strokeBorder(
+                    .primary.opacity(colorSchemeContrast == .increased ? 0.14 : (colorScheme == .dark ? 0.08 : 0.06)),
+                    lineWidth: colorSchemeContrast == .increased ? 1 : (colorScheme == .dark ? 0.7 : 0.5)
+                )
                     .allowsHitTesting(false)
             }
         }
