@@ -427,6 +427,145 @@ Weather content must remain legible with:
 
 Do not rely solely on translucent material to separate surfaces.
 
+## 13.1 First-Class Light-Mode Grammar
+
+Do not change approved dark-mode values merely to make shared implementation easier.
+
+Light mode is designed independently, with a quiet neutral foundation and precise weather accents.
+It must feel calm and deliberate as a complete composition. Readable individual cards are insufficient
+if the screen still feels icy, washed out, or composed of competing slabs.
+
+The following values are the implementation target for Wave 4. Use explicit **sRGB**, opaque fills for
+these neutral roles; do not copy numerical components into a Display P3 asset without conversion.
+These are a small palette for existing assets and local styling, not a new theme framework.
+
+| Role | Light-mode target | Application |
+| --- | --- | --- |
+| App canvas | `#F5F6F7` | Neutral off-white with a slight cool character; no blue atmospheric wash behind ordinary Today content. |
+| Ordinary weather content | `#FCFCFD` | One near-white family for risk rows, Local Alerts, Atmospheric Conditions, Storm Setup, Outlook Summary, and neutral status surfaces. |
+| Neutral primary awareness | `#FCFCFD` | Same content family; establish prominence through type, space, scale, and the existing semantic accent. |
+| Content edge | Adaptive primary at 6% opacity, 0.5 pt | One restrained continuous outline where needed; no white highlight rim in light mode. |
+
+### Canvas and content relationships
+
+- Keep the canvas slightly darker than ordinary content. Avoid both stark white canvas and visibly
+  blue or lavender neutrals. Do not alternate surface hues by section or weather category.
+- Use one opaque content fill. Do not composite the legacy translucent card fill over gradients and
+  expect the result to match the neutral family. Nested information normally stays on its parent's fill.
+- Current Conditions remains an open header on the canvas. Supporting cards retain their approved
+  external-heading or internal-heading structure, corner radii, padding, and alignment.
+- A neutral awareness hero uses the same fill as its supporting cards. A semantic warning hero may
+  retain its established colored treatment when it conveys warning meaning and supports legible text.
+  Do not add an unrelated neutral hue solely to distinguish the hero.
+- Quiet, resolving, unavailable, and cached content use the same neutral family. Preserve their existing
+  words, symbols, and state distinctions; a new gray slab is not a state indicator.
+
+### Borders and elevation
+
+- Ordinary light-mode weather cards have **no drop shadow**. Use the canvas/content tonal difference
+  first; add the single edge treatment above when a boundary needs reinforcement. Do not combine
+  nested outlines, white rims, gradients, and shadows to make the same boundary.
+- Internal separators, when needed for grouping, use the same quiet neutral edge treatment. Spacing
+  remains the default separator; do not draw a divider between every value or row.
+- Under Increase Contrast, raise the edge to adaptive primary at 14% opacity and 1 pt where needed.
+  Keep text adaptive and verify the actual composition; borders do not substitute for text contrast.
+- A stable awareness summary over a variable map may use a restrained shadow for separation:
+  black at 6% opacity, radius 4 pt, y offset 1 pt. Start with the opaque fill and edge; use the shadow
+  only if representative map backgrounds need it. Keep the base map's native appearance.
+- Native floating controls own their platform elevation. Do not add card shadows or custom highlight
+  rims around the tab bar, toolbar, or native glass controls.
+
+### Typography and contrast roles
+
+Use adaptive system foreground styles at full opacity. Establish role differences with the existing
+Dynamic Type fonts and weights as well as foreground emphasis; never dim an entire content group.
+Use .secondary directly and don’t slap another .opacity(0.6) on it.
+
+| Role | Foreground and emphasis |
+| --- | --- |
+| Location, temperature, primary risk/value, warning title | Primary; retain the approved larger or semibold value treatment. |
+| Section heading | Secondary, headline semibold; clearly visible without matching the weight of a primary value. Applies to internal and external section headings. |
+| Category or measurement label | Secondary, caption/subheadline at the component's existing size; distinct from its value. |
+| Supporting weather meaning or explanatory prose | Secondary, body/subheadline; full opacity, with vertical growth for complete meaning. |
+| Metadata and attribution | Secondary, caption; lower priority through size and spacing, with sufficient legibility. |
+| Decorative chevron or nonessential separator | Tertiary may be used; essential status and weather text must not depend on tertiary contrast. |
+
+Secondary roles may share the system secondary foreground, but must not collapse into one faint gray
+because their size, weight, and placement are identical. Do not hard-code near-black headings or apply
+another opacity reduction to secondary text. A control affordance that becomes hard to see needs stronger
+adaptive emphasis. Meaningful text on a semantic hero requires a separately verified foreground for
+that colored background; do not assume the ordinary neutral text recipe works there.
+
+### Semantic weather color and native controls
+
+- Preserve the established hazard, risk, AQI, and hatching meanings, labels, and symbols. Calm the neutral
+  surroundings before changing any semantic treatment. Do not desaturate the weather palette globally.
+- Ordinary cards express semantic color through their existing accent, icon, or meaningful value.
+  Avoid broad decorative washes in quiet/supporting cards. A warning's stronger semantic surface remains
+  justified by its warning meaning, rather than by a desire for more colorful hierarchy.
+- Where a semantic hue is too light for text, retain it in the accent and use readable adaptive text
+  alongside the existing label/symbol. Do not make yellow, green, or a hatch the sole carrier of meaning.
+- Native Liquid Glass/material remains reserved for floating controls and navigation under section 6.
+  Weather content stays stable and opaque, including awareness content positioned over the Map.
+  Let native controls respond to appearance and accessibility settings; do not imitate their material
+  in content cards or add a tinted backing to make ordinary content compete with them.
+
+### WidgetKit translation
+
+- In full-color light rendering, the widget's single outer content background uses the near-white
+  content target `#FCFCFD`, rather than the app canvas. Supply it through the existing
+  `containerBackground(for: .widget)` boundary and `WidgetSurfaceStyle.baseColor(isDark:)` seam.
+- Translate hierarchy through the approved family layouts, system text roles, spacing, narrow semantic
+  accents, and complete awareness wording. Ordinary supporting groups share the outer neutral family;
+  prefer spacing or restrained separators over nested shaded boxes. A meaningful warning region may
+  retain its semantic emphasis, with verified foreground contrast.
+- Quiet states need no broad semantic background wash. Existing severity-based washes are implementation
+  history, not a requirement to tint every widget. Keep semantic color in meaningful accents and symbols.
+- Let WidgetKit supply outer shape, margins, and placement. Do not add an app-style outer card, floating
+  shadow, Liquid Glass, or simulated material. Lock Screen presentations remain WidgetKit-native.
+- In accented or vibrant rendering, and when the system removes the container background, rely on
+  adaptive foregrounds, labels, symbols, and layout. Do not force the sRGB neutral fill back into those
+  modes or assume that full-color semantic hues survive system rendering.
+- Dark widget styling retains its approved independent base and semantic treatments. App and widget
+  hierarchy should agree; their platform backgrounds and material behavior need not be identical.
+
+### Foundation audit and application boundaries (#661)
+
+The existing implementation seams are sufficient; this foundation establishes rules without changing
+shared runtime styling. The consumer audit found:
+
+- `skyAwareBackground` also supplies onboarding, loading, settings, diagnostics, and detail screens.
+  A global asset edit would repaint those screens as well as Today.
+- `cardBackground` and `skyAwareSurface` in `ext+View.swift` serve Today, alert/outlook/detail content,
+  diagnostics, and Map presentation. Their translucent `cardBackground` asset, white edges, and
+  caller-selected shadows do not yet implement this light grammar.
+- The opaque `skyAwareContentSurface` asset/modifier exists, but currently has a cooler light fill and
+  also serves nested alert rows. Audit its consumers before changing its value or adding edge behavior.
+- `PrimaryAwarenessPanel` also supplies a local blue neutral gradient; changing shared card assets alone
+  will not reconcile all Today content. WidgetKit has its own base, washes, and nested badge treatments
+  in `WidgetRenderingStyle.swift` and `WidgetRenderingComponents.swift`.
+
+#662 applies this grammar across Today, #663 translates it to Map, and #664 applies it to widgets.
+Those stories should reuse the existing seams with audited, appearance-specific changes and preserve
+approved dark values and treatments. Scope changes to the owned surface when a shared edit would
+repaint unrelated consumers. Do not create a parallel palette manager or migrate every legacy modifier
+as part of the foundation story.
+
+### Composition review gate
+
+Use `redesign-2026/target/full-today.png` and `redesign-2026/target/widgets.png` for the intended neutral
+surface relationships and typography-led character. Their generated content, tab treatment, shadows,
+and atmospheric metrics do not override current product behavior or this grammar.
+
+For each application story, inspect the full Today composition, Map controls plus awareness content,
+or small/medium/large widget families as applicable. Compare light and approved dark appearances using
+deterministic quiet, meaningful risk, warning, cached/offline, resolving, and unavailable states.
+Include larger Dynamic Type, Increase Contrast, Reduce Transparency, and widget rendering variants.
+Check that headings scan clearly, prose remains readable, cards form one neutral family, semantic
+accents carry meaning, and native controls sit above content. Passing a build or checking palette
+swatches alone does not establish visual quality. Record representative rendered evidence before
+accepting the surface implementation; integrated validation belongs to #631.
+
 ---
 
 # 14. Atmospheric Conditions
