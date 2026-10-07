@@ -21,12 +21,12 @@ struct StormSetupSummaryCard: View {
             if let summaryProse = presentation.summaryProse {
                 Text(summaryProse)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .todaySupportingText()
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Guidance summary unavailable.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .todaySupportingText()
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -41,12 +41,7 @@ struct StormSetupSummaryCard: View {
         .padding(16)
         .frame(minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            shadowY: 1
-        )
+        .todayCardBackground(cornerRadius: SkyAwareRadius.card)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
         .accessibilityValue(presentation.accessibilityValue)
@@ -59,7 +54,7 @@ struct StormSetupSummaryCard: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text("Storm Setup")
-                .sectionLabel()
+                .todaySectionLabel()
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))

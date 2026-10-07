@@ -48,12 +48,7 @@ struct AtmosphericConditionsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            shadowY: 1
-        )
+        .todayCardBackground(cornerRadius: SkyAwareRadius.card)
     }
 
     @ViewBuilder
@@ -340,6 +335,9 @@ private struct AtmosphericMetricsStack: View {
 }
 
 private struct AtmosphericMetricColumn: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     enum Layout {
         case rail
         case stacked
@@ -387,7 +385,14 @@ private struct AtmosphericMetricColumn: View {
             if let detail = metric.detail {
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(metric.semanticAccent == nil ? .secondary : valueColor)
+                    .foregroundStyle(
+                        metric.semanticAccent == nil
+                            ? TodaySurfaceStyle.supportingTextForeground(
+                                for: colorScheme,
+                                contrast: colorSchemeContrast
+                            )
+                            : valueColor
+                    )
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)

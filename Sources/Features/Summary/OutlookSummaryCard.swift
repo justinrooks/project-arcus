@@ -78,7 +78,7 @@ struct OutlookSummaryCard: View {
             }
         }
         .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .todayCardBackground(cornerRadius: SkyAwareRadius.card)
         .placeholder(presentationState == .loading && todayContentState.showsResolvingSurface, animated: true)
     }
 
@@ -88,7 +88,7 @@ struct OutlookSummaryCard: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(titleText)
-                .sectionLabel()
+                .todaySectionLabel()
             Spacer(minLength: 8)
             if outlook != nil {
                 Image(systemName: "chevron.right")

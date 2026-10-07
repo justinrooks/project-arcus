@@ -12,6 +12,7 @@ struct LoadingView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var message: String = "Bringing in your conditions…"
+    var usesTodayAppearance = false
 
     @State private var glowDrift = CGSize.zero
     @State private var glowOpacity: Double = 0.24
@@ -79,7 +80,17 @@ struct LoadingView: View {
         }
     }
 
+    @ViewBuilder
     private var atmosphericBackground: some View {
+        if usesTodayAppearance, colorScheme != .dark {
+            TodaySurfaceStyle.canvas(for: colorScheme)
+                .ignoresSafeArea()
+        } else {
+            legacyAtmosphericBackground
+        }
+    }
+
+    private var legacyAtmosphericBackground: some View {
         ZStack {
             LinearGradient(
                 colors: colorScheme == .dark
@@ -135,23 +146,23 @@ struct LoadingView: View {
     private var summaryGhost: some View {
         VStack(spacing: 16) {
             RoundedRectangle(cornerRadius: SkyAwareRadius.section, style: .continuous)
-                .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.22))
+                .fill(ghostSurfaceColor(opacity: colorScheme == .dark ? 0.10 : 0.22))
                 .frame(height: 64)
 
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.21))
+                .fill(ghostSurfaceColor(opacity: colorScheme == .dark ? 0.10 : 0.21))
                 .frame(height: 148)
 
             VStack(spacing: 10) {
                 ForEach(0..<3, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                        .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.18))
+                        .fill(ghostSurfaceColor(opacity: colorScheme == .dark ? 0.09 : 0.18))
                         .frame(height: 48)
                 }
             }
 
             RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous)
-                .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.19))
+                .fill(ghostSurfaceColor(opacity: colorScheme == .dark ? 0.09 : 0.19))
                 .frame(height: 84)
         }
         .padding(.horizontal, 18)
@@ -160,6 +171,12 @@ struct LoadingView: View {
         .opacity(ghostOpacity)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func ghostSurfaceColor(opacity: Double) -> Color {
+        usesTodayAppearance && colorScheme != .dark
+            ? TodaySurfaceStyle.content(for: colorScheme).opacity(opacity)
+            : .white.opacity(opacity)
     }
 }
 

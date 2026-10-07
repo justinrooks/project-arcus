@@ -32,6 +32,8 @@ struct SummaryWeatherLocationIdentity: Equatable, Sendable {
 struct SummaryStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var showsOfflineExplanation = false
 
     let statusText: String
@@ -111,7 +113,7 @@ struct SummaryStatus: View {
                 .foregroundStyle(.primary)
             Text("Enable location access to load local risk, alerts, and weather conditions.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .todaySupportingText()
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -137,8 +139,10 @@ struct SummaryStatus: View {
 
     private var headerTitle: some View {
         Text("Current Conditions")
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
+            .font(colorScheme == .dark ? .subheadline.weight(.medium) : .headline.weight(.semibold))
+            .foregroundStyle(
+                TodaySurfaceStyle.sectionHeadingForeground(for: colorScheme, contrast: colorSchemeContrast)
+            )
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -406,7 +410,7 @@ private struct SummarySettledConditionLine: View {
         Group {
             if let conditionText {
                 Text(conditionText)
-                    .foregroundStyle(.secondary)
+                    .todaySupportingText()
             } else {
                 Text(" ")
                     .foregroundStyle(.clear)

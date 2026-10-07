@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PrimaryAwarenessHeroView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let iconColumnWidth: CGFloat = 32
@@ -75,7 +76,7 @@ struct PrimaryAwarenessHeroView: View {
 
                     Text(primary.detail)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .todaySupportingText()
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,7 +107,7 @@ struct PrimaryAwarenessHeroView: View {
         .padding(18)
         .background {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .fill(Color.cardBackground)
+                .fill(colorScheme == .dark ? Color.cardBackground : TodaySurfaceStyle.content(for: colorScheme))
         }
         .overlay(alignment: .leading) {
             Capsule(style: .continuous)
@@ -120,8 +121,10 @@ struct PrimaryAwarenessHeroView: View {
         .overlay {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                 .strokeBorder(
-                    isAlert ? accentColor.opacity(colorScheme == .dark ? 0.48 : 0.38) : .primary.opacity(colorScheme == .dark ? 0.08 : 0.06),
-                    lineWidth: isAlert ? 1 : 0.7
+                    isAlert
+                        ? accentColor.opacity(colorScheme == .dark ? 0.48 : 0.38)
+                        : .primary.opacity(colorScheme == .dark ? 0.08 : (colorSchemeContrast == .increased ? 0.14 : 0.06)),
+                    lineWidth: isAlert ? 1 : (colorScheme == .dark ? 0.7 : (colorSchemeContrast == .increased ? 1 : 0.5))
                 )
                 .allowsHitTesting(false)
         }
