@@ -43,6 +43,7 @@ struct PrimaryAwarenessPanel: View {
             PrimaryAwarenessHeroView(
                 primary: primaryState,
                 action: primaryState.destination,
+                showsSemanticTint: primaryState != .quiet || (stormRisk != nil && severeRisk != nil && fireRisk != nil),
                 onOpenMapLayer: onOpenMapLayer,
                 onOpenAlerts: onOpenAlerts
             )
@@ -86,6 +87,7 @@ struct PrimaryAwarenessPanel: View {
             background: stormBackground,
             category: "Storm Risk",
             accent: stormAccent,
+            semanticTint: stormRisk == nil ? nil : stormAccent,
             categorySymbolName: stormSymbolName,
             isQuiet: stormIsQuiet,
             presentationMode: stormIsQuiet ? .subdued : .normal,
@@ -105,6 +107,7 @@ struct PrimaryAwarenessPanel: View {
             background: severeBackground,
             category: "Severe Risk",
             accent: severeAccent,
+            semanticTint: severeRisk == nil ? nil : severeAccent,
             isQuiet: severeIsQuiet,
             intensity: severeIntensity?.displayed(for: severeRisk, contentState: todayContentState),
             presentationMode: severeIsQuiet ? .subdued : .normal,
@@ -124,6 +127,7 @@ struct PrimaryAwarenessPanel: View {
             background: neutralSupportBackground,
             category: "Fire Risk",
             accent: fireAccent,
+            semanticTint: fireRisk == nil ? nil : fireAccent,
             categorySymbolName: fireSymbolName,
             isQuiet: fireIsQuiet,
             presentationMode: fireIsQuiet ? .subdued : .normal,
@@ -143,12 +147,13 @@ struct PrimaryAwarenessPanel: View {
         background: LinearGradient,
         category: String? = nil,
         accent: Color? = nil,
+        semanticTint: Color? = nil,
         categorySymbolName: String? = nil,
         isQuiet: Bool,
         intensity: SevereIntensityPresentation? = nil,
         presentationMode: SupportingRiskRowPresentationMode = .normal,
         action: @escaping () -> Void,
-        showsChevron: Bool = false
+        showsChevron: Bool = true
     ) -> some View {
         Button(action: action) {
             AwarenessSupportRow(
@@ -162,7 +167,8 @@ struct PrimaryAwarenessPanel: View {
                 intensity: intensity,
                 isQuiet: isQuiet,
                 presentationMode: presentationMode,
-                showsChevron: showsChevron
+                showsChevron: showsChevron,
+                semanticTint: semanticTint
             )
         }
         .buttonStyle(

@@ -24,6 +24,7 @@ struct AwarenessSupportRow: View {
     var isQuiet: Bool = false
     var presentationMode: SupportingRiskRowPresentationMode = .normal
     var showsChevron: Bool = false
+    var semanticTint: Color? = nil
 
     private var outlineColor: Color {
         if colorScheme == .dark {
@@ -52,6 +53,11 @@ struct AwarenessSupportRow: View {
                     if category == nil {
                         RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                             .fill(background)
+                    }
+                }
+                .overlay {
+                    if let semanticTint, category != nil {
+                        AwarenessSemanticTint(accent: semanticTint, isQuiet: isQuiet)
                     }
                 }
                 .overlay(alignment: .leading) {
@@ -116,13 +122,6 @@ struct AwarenessSupportRow: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .layoutPriority(1)
                         }
-                        Spacer(minLength: 0)
-                        if showsChevron {
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .accessibilityHidden(true)
-                        }
                     }
                     .padding(.leading, 18)
                     .frame(minHeight: 78, alignment: .leading)
@@ -131,6 +130,10 @@ struct AwarenessSupportRow: View {
         } else {
             legacyContent(rowMetrics)
         }
+    }
+
+    private var categoryChevron: some View {
+        AwarenessNavigationChevron(accent: accent ?? .secondary)
     }
 
     private func categoryDetails(_ category: String) -> some View {
@@ -144,6 +147,10 @@ struct AwarenessSupportRow: View {
                 Text(category)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
+                if showsChevron, intensity == nil || usesAccessibilityLayout {
+                    Spacer(minLength: 0)
+                    categoryChevron
+                }
             }
             Text(title)
                 .font(.headline.weight(.semibold))
@@ -165,6 +172,10 @@ struct AwarenessSupportRow: View {
                 Text(intensity.title)
                     .font(.caption2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
+                if showsChevron, category != nil, !usesAccessibilityLayout {
+                    Spacer(minLength: 0)
+                    categoryChevron
+                }
             }
 
             Text(intensity.detail)
