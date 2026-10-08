@@ -47,18 +47,9 @@ struct PrimaryAwarenessPanel: View {
                 onOpenMapLayer: onOpenMapLayer,
                 onOpenAlerts: onOpenAlerts
             )
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 10) {
-                    stormRow
-                    severeRow
-                }
-                VStack(spacing: 10) {
-                    stormRow
-                    severeRow
-                }
-            }
             VStack(spacing: 10) {
+                stormRow
+                severeRow
                 fireRow
             }
         }
