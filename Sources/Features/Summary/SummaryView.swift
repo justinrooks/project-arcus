@@ -471,34 +471,34 @@ struct SummaryView: View {
                     Spacer(minLength: 12)
                 }
 
-                if ActiveAlertSummaryView.showsAlertCenter(
-                    for: localAlertsDisplayState,
-                    hasRenderableAlerts: hasActiveAlerts,
-                    isOffline: localAlertsDisplayState.showsOfflineStatusCopy
-                ) {
-                    Button(action: onOpenAlerts) {
-                        HStack(spacing: 6) {
-                            Text("Alert Center")
-                            Image(systemName: "arrow.right")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(
-                        SkyAwarePressableButtonStyle(
-                            cornerRadius: SkyAwareRadius.chipCompact,
-                            pressedScale: 0.985,
-                            pressedOverlayOpacity: 0.08
-                        )
-                    )
-                    .accessibilityHint("Opens the full alerts tab.")
-                }
+//                if ActiveAlertSummaryView.showsAlertCenter(
+//                    for: localAlertsDisplayState,
+//                    hasRenderableAlerts: hasActiveAlerts,
+//                    isOffline: localAlertsDisplayState.showsOfflineStatusCopy
+//                ) {
+//                    Button(action: onOpenAlerts) {
+//                        HStack(spacing: 6) {
+//                            Text("Alert Center")
+//                            Image(systemName: "arrow.right")
+//                                .font(.caption.weight(.semibold))
+//                        }
+//                        .font(.caption.weight(.semibold))
+//                        .foregroundStyle(.secondary)
+//                        .padding(.horizontal, 10)
+//                        .padding(.vertical, 6)
+//                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+//                        .frame(minHeight: 44)
+//                        .contentShape(Rectangle())
+//                    }
+//                    .buttonStyle(
+//                        SkyAwarePressableButtonStyle(
+//                            cornerRadius: SkyAwareRadius.chipCompact,
+//                            pressedScale: 0.985,
+//                            pressedOverlayOpacity: 0.08
+//                        )
+//                    )
+//                    .accessibilityHint("Opens the full alerts tab.")
+//                }
             }
 
             switch localAlertsPresentationState {

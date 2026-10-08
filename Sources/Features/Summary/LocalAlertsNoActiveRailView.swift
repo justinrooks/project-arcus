@@ -20,7 +20,7 @@ struct LocalAlertsNoActiveRailView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text("SkyAware will continue watching nearby watches, warnings, and discussions.")
+                Text("SkyAware will continue monitoring for nearby watches, warnings, and mesoscale discussions.")
                     .font(.caption)
                     .todaySupportingText()
                     .fixedSize(horizontal: false, vertical: true)

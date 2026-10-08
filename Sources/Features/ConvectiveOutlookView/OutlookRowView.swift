@@ -37,7 +37,6 @@ struct OutlookRowView: View {
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .padding(.horizontal, SkyAwareSpacing.contentInset)
         .padding(.vertical, SkyAwareSpacing.compact)
-        .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityTitle)

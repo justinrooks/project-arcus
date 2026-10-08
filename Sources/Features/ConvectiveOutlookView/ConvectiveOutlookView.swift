@@ -319,9 +319,17 @@ struct ConvectiveOutlookView: View {
         @ViewBuilder label: () -> RowContent
     ) -> some View {
         NavigationLink(destination: destination) {
-            label()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            HStack(spacing: SkyAwareSpacing.standard) {
+                label()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.trailing, SkyAwareSpacing.standard)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)

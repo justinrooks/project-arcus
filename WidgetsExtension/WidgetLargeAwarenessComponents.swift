@@ -41,14 +41,14 @@ struct WidgetLargeAwarenessView: View {
             )
                 .padding(.top, 10)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
             WidgetLargeRiskContextFooter(
                 stormState: snapshot.stormRisk,
                 severeState: snapshot.severeRisk,
                 fireState: snapshot.fireRisk
             )
-            .padding(.top, 10)
+                .padding(.top, 6)
         }
         .padding(16)
     }
@@ -151,9 +151,9 @@ struct WidgetLargeAwarenessView: View {
 }
 
 private struct WidgetLargeAlertRailStack: View {
-    fileprivate static let rowMinimumHeight: CGFloat = 46
-    fileprivate static let primaryRowMinimumHeight: CGFloat = 56
-    private static let rowSpacing: CGFloat = 6
+    fileprivate static let rowMinimumHeight: CGFloat = 40
+    fileprivate static let primaryRowMinimumHeight: CGFloat = 50
+    private static let rowSpacing: CGFloat = 4
 
     let alerts: [WidgetSelectedAlertRowDisplayState]
     let knownAlertCount: Int
@@ -197,8 +197,7 @@ private struct WidgetLargeAlertRailStack: View {
                 }
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(minHeight: reservedStackHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .contain)
         .accessibilityRepresentation {
             VStack(alignment: .leading, spacing: Self.rowSpacing) {
@@ -217,15 +216,6 @@ private struct WidgetLargeAlertRailStack: View {
         }
     }
 
-    private var reservedStackHeight: CGFloat {
-        let capacity = WidgetLargeAlertPresentation.visibleAlertCapacity(
-            isAccessibilitySize: dynamicTypeSize >= .xxxLarge
-        )
-        let secondaryCapacity = max(capacity - 1, 0)
-        return Self.primaryRowMinimumHeight
-            + (Self.rowMinimumHeight * CGFloat(secondaryCapacity))
-            + (Self.rowSpacing * CGFloat(capacity - 1))
-    }
 }
 
 private struct WidgetLargeQuietAwarenessState: View {
@@ -255,7 +245,7 @@ private struct WidgetLargeRiskContextFooter: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 5) {
             Rectangle()
                 .fill(Color.primary.opacity(0.12))
                 .frame(height: 1)
@@ -273,7 +263,6 @@ private struct WidgetLargeRiskContextFooter: View {
                 }
             }
         }
-        .padding(.bottom, 4)
         .accessibilityElement(children: .contain)
     }
 
@@ -335,7 +324,7 @@ private struct WidgetLargeRiskContextColumn: View {
     }
 
     private var regularContent: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 1) {
             Text(title)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
@@ -343,7 +332,7 @@ private struct WidgetLargeRiskContextColumn: View {
                 .minimumScaleFactor(0.72)
 
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
