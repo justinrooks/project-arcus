@@ -4,6 +4,8 @@
 //
 //  Created by Justin Rooks on 11/5/25.
 //
+//  Trial note: Outlook Summary has been removed from the Today composition
+//  while this product change is evaluated. This card is intentionally unused.
 
 import SwiftUI
 

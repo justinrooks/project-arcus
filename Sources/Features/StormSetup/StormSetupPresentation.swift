@@ -15,7 +15,6 @@ enum SummarySectionKind: String, Identifiable, Sendable, Equatable {
     case stormSetup
     case atmosphericConditions
     case locationReliability
-    case outlookSummary
     case attribution
 
     var id: String { rawValue }
@@ -188,7 +187,6 @@ struct SummarySectionPlan: Sendable, Equatable {
             sections.append(.locationReliability)
         }
 
-        sections.append(.outlookSummary)
         sections.append(.attribution)
         return .init(sections: sections)
     }

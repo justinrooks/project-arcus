@@ -31,7 +31,6 @@ This document owns:
 - Atmospheric Conditions presentation.
 - Storm Setup summary presentation.
 - Location Reliability presentation.
-- Outlook Summary presentation.
 - Today-specific responsive behavior.
 - Visual consistency and acceptance requirements.
 
@@ -112,8 +111,7 @@ The established section order is:
 4. Atmospheric Conditions.
 5. Storm Setup, when eligible.
 6. Location Reliability, when eligible.
-7. Outlook Summary.
-8. Attribution.
+7. Attribution.
 
 The arrangement is conditional.
 
@@ -137,7 +135,7 @@ Today's Awareness communicates the strongest relevant severe-weather signal and 
 
 ### Supporting Information
 
-Local Alerts, Atmospheric Conditions, Storm Setup, Location Reliability, and Outlook Summary provide additional context and appropriate navigation.
+Local Alerts, Atmospheric Conditions, Storm Setup, and Location Reliability provide additional context and appropriate navigation.
 
 These sections must remain visually subordinate to the primary awareness experience.
 
@@ -809,7 +807,6 @@ This supports clear scanning between sections.
 Used by:
 
 - Storm Setup.
-- Outlook Summary.
 
 Structure:
 
@@ -859,13 +856,11 @@ Keep it consistent with the Atmospheric Conditions heading.
 
 ## 14.2 Alert Center Navigation
 
-When applicable, the heading includes the existing Alert Center navigation action.
+The dedicated Alerts tab is the primary destination for the complete alert list. Do not add an Alert Center button to this header.
 
-The action should remain visually secondary to the section heading.
+Preserve contextual “See all (N more)” navigation when additional local alerts are available, along with individual alert navigation to each alert’s details.
 
-Do not introduce competing navigation elements.
-
-At accessibility text sizes, allow the heading and action to arrange vertically when needed.
+At accessibility text sizes, preserve clear heading and content layout.
 
 ## 14.3 Alert Hierarchy
 
@@ -1163,72 +1158,7 @@ Do not move it into the primary awareness hierarchy.
 
 ---
 
-# 18. Outlook Summary
-
-Outlook Summary provides a concise supporting overview of the accepted convective outlook.
-
-It uses Pattern B:
-
-**Self-contained summary card.**
-
-## 18.1 Embedded Header
-
-Use the established:
-
-- Leading weather symbol.
-- Outlook Summary title.
-- Trailing chevron when actionable.
-
-Preserve the same general embedded-heading language used by Storm Setup.
-
-## 18.2 Whole-Card Navigation
-
-When an accepted outlook exists, the entire summary card is actionable.
-
-It opens the relevant Convective Outlook detail.
-
-The trailing chevron reinforces that existing navigation.
-
-Do not add a redundant "All Outlooks" action inside the card.
-
-The dedicated Outlooks experience remains available through its established navigation.
-
-## 18.3 Summary Content
-
-Show concise accepted outlook information.
-
-Prioritize readability.
-
-Avoid displaying the entire outlook discussion on Today.
-
-Allow users to navigate for additional detail.
-
-## 18.4 State Handling
-
-Distinguish:
-
-- Available current outlook.
-- Cached outlook while refreshing.
-- Failed update with accepted cache.
-- Confirmed empty response.
-- Unavailable outlook.
-- Initial resolving state.
-
-When valid accepted content exists, keep it visible while updates proceed.
-
-Do not replace meaningful cached content with a placeholder during routine refresh.
-
-## 18.5 Nonactionable States
-
-When no accepted outlook is available, the card may present a status or unavailable message.
-
-Do not show a navigation chevron unless a supported destination exists.
-
-Do not invent an outlook to make the card navigable.
-
----
-
-# 19. Attribution
+# 18. Attribution
 
 Attribution is secondary supporting information.
 
@@ -1245,7 +1175,7 @@ Do not remove required source attribution merely for visual simplicity.
 
 ---
 
-# 20. Light and Dark Appearance
+# 19. Light and Dark Appearance
 
 Today's appearance follows the shared Foundations document.
 
@@ -1286,7 +1216,7 @@ Do not rely on translucent materials for legibility.
 
 ---
 
-# 21. State-Aware Presentation
+# 20. State-Aware Presentation
 
 Today consumes accepted weather and application state.
 
@@ -1339,7 +1269,7 @@ The detailed behavioral contract belongs in [States and Accessibility](states-ac
 
 ---
 
-# 22. Accessibility and Responsive Behavior
+# 21. Accessibility and Responsive Behavior
 
 Today must preserve its information hierarchy under accessibility adaptation.
 
@@ -1397,7 +1327,7 @@ Accessibility adaptation may change internal arrangement without changing produc
 
 ---
 
-# 23. Implementation Boundaries
+# 22. Implementation Boundaries
 
 The Today design system is implemented through existing SwiftUI presentation components.
 
@@ -1454,7 +1384,7 @@ Prefer the smallest coherent presentation change.
 
 ---
 
-# 24. Today Visual Validation
+# 23. Today Visual Validation
 
 Visual acceptance requires representative rendered evidence.
 
@@ -1545,7 +1475,7 @@ Detailed validation procedures belong in [Visual Review](visual-review.md).
 
 ---
 
-# 25. Design Anti-Patterns
+# 24. Design Anti-Patterns
 
 Avoid:
 
@@ -1573,7 +1503,7 @@ Avoid:
 
 ---
 
-# 26. Definition of Success
+# 25. Definition of Success
 
 The Today design succeeds when:
 
@@ -1593,7 +1523,7 @@ The Today design succeeds when:
 
 8. Atmospheric Conditions provides useful context without competing with severe-weather awareness.
 
-9. Storm Setup and Outlook Summary share an intentional supporting presentation language.
+9. Storm Setup retains its established supporting presentation pattern.
 
 10. Quiet, elevated, warning,
     cached, offline, and unavailable

@@ -1061,9 +1061,6 @@ struct ConvectiveOutlookViewPresentationStateTests {
         #expect(ConvectiveOutlookPresentationState.resolve(
             dtos: [], refreshStatus: .loading, isOffline: true
         ) == .unavailable)
-        #expect(OutlookSummaryCard.outlookSummaryText(
-            outlook: nil, presentationState: .unavailable
-        ).contains("unavailable"))
     }
 
     @Test("an unaccepted empty result is unavailable")

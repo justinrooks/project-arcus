@@ -244,7 +244,7 @@ Advanced meteorological information remains available through progressive disclo
 
 ## 6.2 Today Content Responsibilities
 
-Today brings together current local conditions, the primary awareness assessment with supporting Storm, Severe, and Fire risks, local alerts, environmental context, outlook information, and source attribution.
+Today brings together current local conditions, the primary awareness assessment with supporting Storm, Severe, and Fire risks, local alerts, environmental context, and source attribution. It interprets the local severe-weather picture; broader outlook discussion and history belong in the dedicated Outlooks experience.
 
 Storm Setup appears when enabled and eligible. Location Reliability appears when eligible.
 
@@ -676,11 +676,7 @@ Each experience should preserve:
 - Appropriate detailed information.
 - Consistent navigation behavior.
 
-The Convective Outlook summary is a supporting Today destination, not another primary awareness hero.
-
-The dedicated Outlooks experience remains the broader browsing destination.
-
-When an outlook summary is actionable, navigation should lead to its relevant detail.
+The dedicated Outlooks experience is the destination for broader forecast discussion and history. Today communicates locally relevant SPC information through Storm Risk, Severe Risk, and Today’s Awareness. No Outlook Summary is required on Today.
 
 Different meteorological products may share structural presentation conventions while retaining their distinct meaning.
 

@@ -39,24 +39,6 @@ struct TodayContentStateTests {
             ) == .quiet
         )
 
-        #expect(
-            OutlookSummaryCard.outlookSummaryText(
-                outlook: nil,
-                presentationState: .unavailable
-            ) == "Outlook information is unavailable. Try again later."
-        )
-    }
-
-    @Test("Today Outlook summary distinguishes accepted empty, unavailable, loading, and retained failure")
-    func outlookSummarySemanticStates() {
-        #expect(OutlookSummaryCard.outlookSummaryText(outlook: nil, presentationState: .loading)
-                == "Checking outlook details…")
-        #expect(OutlookSummaryCard.outlookSummaryText(outlook: nil, presentationState: .empty(.current))
-                .contains("last confirmed update"))
-        #expect(OutlookSummaryCard.outlookSummaryText(outlook: nil, presentationState: .unavailable)
-                .contains("unavailable"))
-        #expect(OutlookSummaryCard.statusText(for: .empty(.refreshing))?.contains("Checking for an updated") == true)
-        #expect(OutlookSummaryCard.statusText(for: .populated(.failed))?.contains("could not be updated") == true)
     }
 
     @Test("no cache while resolving maps to the resolving state")

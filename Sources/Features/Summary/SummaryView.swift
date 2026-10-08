@@ -279,6 +279,12 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func summaryContent(now: Date) -> some View {
+        // TODO (Future): Consider an AI-augmented local outlook
+        // summary that explains meaningful forecast changes affecting
+        // the user's location. Deterministic comparisons of accepted
+        // SPC data must establish actual risk changes; on-device AI
+        // may explain supported changes in plain language.
+        // This is exploratory, not an approved feature.
         let stormSetupSlotState = stormSetupSlotState(now: now)
         let sectionPlan = Self.sectionPlan(
             localAlertsDisplayState: localAlertsDisplayState,
@@ -437,18 +443,6 @@ struct SummaryView: View {
                     onDismiss: locationReliabilityRailState.onDismiss
                 )
             }
-
-        case .outlookSummary:
-            OutlookSummaryCard(
-                outlook: outlook,
-                presentationState: outlookPresentationState,
-                todayContentState: todayContentState
-            )
-            .summaryResolving(
-                resolutionState.isResolving(.outlook),
-                todayContentState: todayContentState,
-                style: .subtle
-            )
 
         case .attribution:
             AttributionView()
