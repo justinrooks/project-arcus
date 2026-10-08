@@ -13,10 +13,12 @@ struct PrimaryAwarenessHeroView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @ScaledMetric(relativeTo: .title2) private var iconColumnWidth: CGFloat = 32
+    @ScaledMetric(relativeTo: .caption) private var chevronClearance: CGFloat = 16
     private let heroColumnSpacing: CGFloat = 14
 
     let primary: SummaryAwarenessPrimaryState
     let action: SummaryAwarenessDestination
+    var showsSemanticTint: Bool = true
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
 
@@ -85,7 +87,13 @@ struct PrimaryAwarenessHeroView: View {
                         .todaySupportingText()
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.trailing, action == .none ? 0 : chevronClearance)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .trailing) {
+                    if action != .none {
+                        AwarenessNavigationChevron(accent: accentColor)
+                    }
+                }
             }
 
             if let instruction = alertInstruction {
@@ -114,6 +122,11 @@ struct PrimaryAwarenessHeroView: View {
         .background {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                 .fill(colorScheme == .dark ? Color.cardBackground : TodaySurfaceStyle.content(for: colorScheme))
+                .overlay {
+                    if showsSemanticTint, primary.source != .loading {
+                        AwarenessSemanticTint(accent: accentColor, isQuiet: primary.isQuiet, isHero: true)
+                    }
+                }
         }
         .overlay(alignment: .leading) {
             Capsule(style: .continuous)
@@ -195,5 +208,77 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+// Local to the four awareness surfaces; the opaque card fill remains underneath.
+struct AwarenessSemanticTint: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.self) private var environment
+
+    let accent: Color
+    let isQuiet: Bool
+    var isHero: Bool = false
+
+    private var strength: Double {
+        if isQuiet {
+            return colorScheme == .dark ? (isHero ? 0.24 : 0.18) : (isHero ? 0.20 : 0.15)
+        }
+        return colorScheme == .dark ? (isHero ? 0.20 : 0.14) : (isHero ? 0.22 : 0.16)
+    }
+
+    private var tint: Color {
+        guard isQuiet else { return accent }
+        let resolved = accent.resolve(in: environment)
+        // Resolved components are linear sRGB. Increase quiet-background chroma toward jade
+        // without changing the semantic rail, icon, or navigation accent.
+        return Color(
+            .sRGBLinear,
+            red: Double(resolved.red) * 0.10,
+            green: Double(resolved.green),
+            blue: Double(resolved.blue) * 1.05
+        )
+    }
+
+    var body: some View {
+        LinearGradient(
+            stops: isQuiet ? [
+                .init(color: tint.opacity(strength), location: 0),
+                .init(color: tint.opacity(strength * 0.55), location: 0.24),
+                .init(color: tint.opacity(strength * 0.32), location: 0.45),
+                .init(color: tint.opacity(strength * 0.15), location: 0.65),
+                .init(color: tint.opacity(strength * 0.055), location: 0.82),
+                .init(color: tint.opacity(strength * 0.012), location: 0.94),
+                .init(color: tint.opacity(0), location: 1)
+            ] : [
+                .init(color: tint.opacity(strength), location: 0),
+                .init(color: tint.opacity(strength * 0.5), location: colorScheme == .dark ? 0.35 : 0.28),
+                .init(color: tint.opacity(0), location: colorScheme == .dark ? 0.85 : 0.72)
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+struct AwarenessNavigationChevron: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    let accent: Color
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(accent.mix(
+                with: colorScheme == .dark ? .white : .black,
+                by: colorScheme == .dark
+                    ? (colorSchemeContrast == .increased ? 0.18 : 0.08)
+                    : (colorSchemeContrast == .increased ? 0.42 : 0.32)
+            ))
+            .fixedSize()
+            .accessibilityHidden(true)
     }
 }

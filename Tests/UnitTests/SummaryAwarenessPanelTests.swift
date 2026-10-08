@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 import SwiftUI
+import UIKit
 @testable import SkyAware
 
 @Suite("Summary Awareness Panel")
@@ -69,6 +70,102 @@ struct SummaryAwarenessPanelTests {
                                        threat: .wind(probability: 0.10), contentState: .current) == nil)
         #expect(SummaryIntensityRequest(projection: projection, location: location,
                                        threat: projection.severeRisk, contentState: .unavailable) == nil)
+    }
+
+    @Test(
+        "Awareness family renders in the complete Today composition across accepted states",
+        .enabled(if: ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1",
+                 "Whole Today rendering uses static Home to skip live WeatherKit attribution.")
+    )
+    @MainActor
+    func awarenessFamilyRenderEvidence() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/673-awareness", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for scheme in [ColorScheme.light, .dark] {
+            for name in ["quiet", "elevated", "warning", "flood-warning", "watch", "cached", "offline", "resolving", "unavailable", "accessibility"] {
+                let unknown = name == "resolving" || name == "unavailable"
+                let elevated = ["elevated", "warning", "flood-warning", "watch", "cached", "offline", "accessibility"].contains(name)
+                let contentState: TodayContentState = switch name {
+                case "cached": .cachedRefreshing
+                case "offline": .degraded
+                case "resolving": .noCacheResolving
+                case "unavailable": .unavailable
+                default: .current
+                }
+                var resolution = SummaryResolutionState()
+                if name == "resolving" {
+                    resolution.begin(task: .finalizing, sections: [.stormRisk, .severeRisk, .fireRisk])
+                }
+                let alerts = ["warning", "flood-warning", "watch", "accessibility"].contains(name) ? [makeAlert(
+                    title: name == "flood-warning" ? "Flash Flood Warning" : (name == "watch" ? "Tornado Watch" : "Tornado Warning"),
+                    headline: name == "flood-warning" ? "Flash flooding is expected." : "Radar indicated tornado.",
+                    instruction: name == "flood-warning" ? "Move to higher ground. Avoid flooded roads."
+                        : "Move to an interior room on the lowest floor."
+                )] : []
+                let summary = SummaryView(
+                    snap: LocationSnapshot(
+                        coordinates: .init(latitude: 39.75, longitude: -104.44),
+                        timestamp: .now, accuracy: 20, placemarkSummary: "Bennett, CO"
+                    ),
+                    stormRisk: unknown ? nil : (elevated ? .enhanced : .allClear),
+                    severeRisk: unknown ? nil : (elevated ? .tornado(probability: 0.10) : .allClear),
+                    fireRisk: unknown ? nil : (elevated ? .elevated : .clear),
+                    alerts: alerts,
+                    outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+                    weather: SummaryWeather(
+                        temperature: Measurement(value: 82, unit: .fahrenheit),
+                        symbolName: "sun.max.fill", conditionText: "Warm and humid", asOf: .now,
+                        dewPoint: Measurement(value: 68, unit: .fahrenheit), humidity: 0.66,
+                        windSpeed: Measurement(value: 22, unit: .milesPerHour),
+                        windGust: Measurement(value: 34, unit: .milesPerHour), windDirection: "SSW",
+                        pressure: Measurement(value: 29.78, unit: .inchesOfMercury), pressureTrend: "falling"
+                    ),
+                    todayContentState: contentState,
+                    localAlertsDisplayState: .from(
+                        todayContentState: contentState, hasCachedProjection: !unknown,
+                        isCurrentContextResolvedInPipeline: !unknown, lastHotAlertsLoadAt: unknown ? nil : .now,
+                        hasActiveAlerts: !alerts.isEmpty, isLocationUnavailable: false
+                    ),
+                    readinessState: .ready, resolutionState: resolution,
+                    showsOfflineToken: name == "offline" || name == "unavailable",
+                    onOpenMapLayer: { _ in }, onOpenAlerts: {}, onOpenOutlooks: {}
+                )
+                .frame(width: 390)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(TodaySurfaceStyle.canvas(for: scheme))
+                .environment(\.colorScheme, scheme)
+                .environment(\.dynamicTypeSize, name == "accessibility" ? .accessibility3 : .large)
+                let renderer = ImageRenderer(content: summary)
+                renderer.scale = 2
+                let image: UIImage
+                if name == "accessibility" {
+                    let host = UIHostingController(rootView: summary)
+                    host.traitOverrides.accessibilityContrast = .high
+                    host.traitOverrides.userInterfaceStyle = scheme == .dark ? .dark : .light
+                    let size = host.sizeThatFits(in: CGSize(width: 390, height: 10_000))
+                    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+                    let window = UIWindow(windowScene: scene)
+                    window.frame = CGRect(origin: .zero, size: size)
+                    window.rootViewController = host
+                    window.makeKeyAndVisible()
+                    defer {
+                        window.isHidden = true
+                        window.rootViewController = nil
+                    }
+                    host.view.frame = window.bounds
+                    host.view.layoutIfNeeded()
+                    try await Task.sleep(for: .milliseconds(100))
+                    image = UIGraphicsImageRenderer(size: size).image { context in
+                        host.view.layer.render(in: context.cgContext)
+                    }
+                } else {
+                    image = try #require(renderer.uiImage)
+                }
+                #expect(image.size.width == 390 && image.size.height > 600)
+                let data = try #require(image.pngData())
+                try data.write(to: root.appendingPathComponent("\(name)-\(scheme).png"))
+            }
+        }
     }
 
     @Test("Intensity panels render in light dark and accessibility sizes")
@@ -197,7 +294,12 @@ struct SummaryAwarenessPanelTests {
         let heights = try zip(rows, widths).map { row, width -> CGFloat in
             let renderer = ImageRenderer(content: row.frame(width: width))
             renderer.scale = 1
-            return try #require(renderer.uiImage?.size.height)
+            let height = try #require(renderer.uiImage?.size.height)
+            var actionableRow = row
+            actionableRow.showsChevron = true
+            let actionableRenderer = ImageRenderer(content: actionableRow.frame(width: width))
+            #expect(actionableRenderer.uiImage?.size.height == height, "Chevron must preserve compact row geometry for \(row.title), intensity: \(row.intensity != nil).")
+            return height
         }
 
         #expect(heights[0] > 90 && heights[2] > 90, "Long quiet labels must be able to expand.")
