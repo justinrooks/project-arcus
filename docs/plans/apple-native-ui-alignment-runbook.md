@@ -16,8 +16,9 @@ permission to replace domain-specific severe-weather components with generic sys
 
 - Audit: `docs/audits/apple-native-ui-audit.md`
 - Progress ledger: `docs/plans/apple-native-ui-alignment-progress.md`
-- Product direction: `docs/SkyAware North Star Spec.md`
-- Brand guidance: `docs/SkyAware Branding and Design Guide.md`
+- Product direction: `docs/product/north-star.md`
+- Brand guidance: `docs/brand/brand-and-voice.md`
+- Visual and interaction guidance: `docs/design/README.md`
 - Repository guidance: `AGENTS.md` and `Sources/AGENTS.md`
 
 ## Required Read Order

@@ -20,7 +20,7 @@ preserving fresh-cache presentation and existing request policy.
 Use this order when evidence conflicts:
 
 1. The current GitHub child issue.
-2. `docs/SkyAware North Star Spec.md`, especially Loading and Resolving guidance.
+2. `docs/product/north-star.md` for Storm Setup and accepted-state invariants; `docs/design/states-accessibility.md` and `docs/design/today.md` for status presentation.
 3. This runbook and `docs/plans/storm-setup-summary-stability-progress.md`.
 4. Existing Storm Setup fetch/display policy and settings behavior.
 5. Existing focused presentation, section-plan, HomeView, and UI tests.

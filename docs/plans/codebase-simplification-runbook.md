@@ -15,7 +15,7 @@
 - `docs/audits/codebase-architecture-recovery.md`
 - `docs/plans/codebase-simplification-roadmap.md`
 - `docs/plans/codebase-simplification-progress.md`
-- `docs/SkyAware North Star Spec.md`
+- `docs/product/north-star.md` — product and domain boundaries
 - `docs/code_review.md`
 
 ## Purpose

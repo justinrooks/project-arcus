@@ -42,7 +42,8 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 - Today composition: `Sources/App/TodayTabView.swift`, Summary feature views
 - Alerts/Outlook: corresponding feature views and presentation-state types
 - Map: `Sources/Features/Map/MapScreenView.swift`, `Sources/Features/Map/MapFeatureModel.swift`
-- Product guidance: `docs/SkyAware North Star Spec.md`
+- Product guidance: `docs/product/north-star.md`
+- State presentation guidance: `docs/design/states-accessibility.md`
 
 ## Status Ledger
 

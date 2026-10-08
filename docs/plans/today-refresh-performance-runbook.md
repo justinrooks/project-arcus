@@ -9,7 +9,8 @@
 
 - `AGENTS.md`
 - `Sources/AGENTS.md`
-- `docs/SkyAware North Star Spec.md`
+- `docs/product/north-star.md` — accepted-state product invariants
+- `docs/design/states-accessibility.md` — refresh and state presentation
 - `docs/codebase/skyaware-app-summary.md`
 - `docs/audits/swiftui-performance-audit.md`
 - `docs/plans/today-state-flow-runbook.md`
