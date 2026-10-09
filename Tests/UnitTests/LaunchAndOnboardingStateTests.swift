@@ -321,6 +321,47 @@ struct OnboardingStepTests {
     }
 }
 
+@Suite("Onboarding Always upgrade action")
+struct OnboardingAlwaysUpgradeActionTests {
+    @Test("requests eligible Always upgrade and continues to notifications")
+    @MainActor
+    func eligibleUpgradeContinues() {
+        var requestCount = 0
+        var advancedSteps: [OnboardingStep] = []
+
+        let didRequestUpgrade = OnboardingAlwaysUpgradeAction.perform(
+            requestUpgrade: {
+                requestCount += 1
+                return true
+            },
+            advance: { advancedSteps.append($0) }
+        )
+
+        #expect(didRequestUpgrade)
+        #expect(requestCount == 1)
+        #expect(advancedSteps == [.notificationPermission])
+    }
+
+    @Test("continues to notifications when Always upgrade is unavailable")
+    @MainActor
+    func unavailableUpgradeContinues() {
+        var requestCount = 0
+        var advancedSteps: [OnboardingStep] = []
+
+        let didRequestUpgrade = OnboardingAlwaysUpgradeAction.perform(
+            requestUpgrade: {
+                requestCount += 1
+                return false
+            },
+            advance: { advancedSteps.append($0) }
+        )
+
+        #expect(!didRequestUpgrade)
+        #expect(requestCount == 1)
+        #expect(advancedSteps == [.notificationPermission])
+    }
+}
+
 @Suite("Onboarding remote setup availability")
 struct OnboardingRemoteSetupDecisionTests {
     @Test("ineligible notification authorization does not continue into remote setup")

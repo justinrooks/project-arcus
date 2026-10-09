@@ -118,17 +118,14 @@ struct OnboardingView: View {
     private func requestAlwaysUpgradeDuringOnboarding() {
         guard !alwaysUpgradeStepState.isWorking else { return }
 
-        Task { @MainActor in
-            alwaysUpgradeStepState = .working("Getting alerts ready...")
-            try? await Task.sleep(for: .milliseconds(300))
-            let didRequestUpgrade = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
-            if didRequestUpgrade {
-                locationReliabilityLogger.notice("Onboarding submitted the native Always upgrade request")
-            } else {
-                locationReliabilityLogger.info("Onboarding could not submit the native Always upgrade request; continuing to notifications")
-            }
-            alwaysUpgradeStepState = .idle
-            advance(to: .notificationPermission)
+        let didRequestUpgrade = OnboardingAlwaysUpgradeAction.perform(
+            requestUpgrade: locationSession.requestAlwaysAuthorizationUpgradeIfNeeded,
+            advance: advance
+        )
+        if didRequestUpgrade {
+            locationReliabilityLogger.notice("Onboarding submitted the native Always upgrade request")
+        } else {
+            locationReliabilityLogger.info("Onboarding could not submit the native Always upgrade request; continuing to notifications")
         }
     }
 
@@ -215,6 +212,18 @@ enum OnboardingRemoteSetupDecision {
         arcusSignalPushEnabled: Bool
     ) -> Bool {
         remoteRegistrationEligible && arcusSignalPushEnabled
+    }
+}
+
+enum OnboardingAlwaysUpgradeAction {
+    @MainActor
+    static func perform(
+        requestUpgrade: () -> Bool,
+        advance: (OnboardingStep) -> Void
+    ) -> Bool {
+        let didRequestUpgrade = requestUpgrade()
+        advance(.notificationPermission)
+        return didRequestUpgrade
     }
 }
 
