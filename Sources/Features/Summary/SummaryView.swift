@@ -225,10 +225,22 @@ struct SummaryView: View {
     }
 
     private var statusText: String {
-        if let placemark = snap?.placemarkSummary {
+        Self.locationStatusText(snapshot: snap, readinessState: readinessState)
+    }
+
+    static func locationStatusText(
+        snapshot: LocationSnapshot?,
+        readinessState: SummaryReadinessState
+    ) -> String {
+        if let placemark = snapshot?.placemarkSummary?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           placemark.isEmpty == false {
             return placemark
         }
-        return readinessState.statusText
+
+        return readinessState == .locationUnavailable
+            ? "Location not available"
+            : "Finding your location…"
     }
 
     private var isLocationUnavailable: Bool {
