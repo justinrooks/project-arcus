@@ -24,13 +24,13 @@ struct WelcomeView: View {
                 .font(.largeTitle.weight(.bold))
                 .multilineTextAlignment(.center)
 
-            Text("How weather-aware do you need to be today? SkyAware helps you understand local severe-weather risk at a glance.")
+            Text("How weather-aware do you need to be today?")
                 .font(.title3.weight(.medium))
                 .multilineTextAlignment(.center)
 
-            Text("Get simple, actionable severe-weather awareness based on authoritative public data from the SPC and National Weather Service.")
+            Text("Understand local severe-weather risk at a glance with public weather data from the Storm Prediction Center, National Weather Service, and Apple Weather.")
                 .font(.body)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         } footer: {
             Button(action: onContinue) {
