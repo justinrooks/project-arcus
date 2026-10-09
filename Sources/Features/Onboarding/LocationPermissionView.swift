@@ -15,18 +15,12 @@ struct LocationPermissionView: View {
     let onEnable: () -> Void
     let onSkip: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 80
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "location.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
-
-            Text("Location Access")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            OnboardingStepHeading(
+                symbol: "location.fill",
+                title: "Location Access"
+            )
 
             Text(locationDescription)
                 .font(.body)
@@ -51,20 +45,12 @@ struct LocationPermissionView: View {
 
                 Button(action: onEnable) {
                     Text(primaryActionTitle)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                                .fill(Color.skyAwareAccent)
-                        )
                 }
+                .buttonStyle(OnboardingPrimaryActionStyle())
                 .disabled(isWorking)
 
                 Button("Skip for Now", action: onSkip)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .buttonStyle(OnboardingSecondaryActionStyle())
                     .disabled(isWorking)
             }
         }

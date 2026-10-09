@@ -296,6 +296,29 @@ struct OnboardingStepTests {
         #expect(OnboardingStep.alwaysUpgrade.nextStep() == .notificationPermission)
         #expect(OnboardingStep.notificationPermission.nextStep() == nil)
     }
+
+    @Test("optional Always access is disclosed without inflating required progress")
+    func optionalAlwaysAccessDoesNotCountAsRequiredProgress() {
+        #expect(OnboardingStep.requiredStageCount == 4)
+        #expect(OnboardingStep.locationPermission.requiredStage == 3)
+        #expect(OnboardingStep.alwaysUpgrade.requiredStage == 3)
+        #expect(OnboardingStep.notificationPermission.requiredStage == 4)
+        #expect(OnboardingStep.alwaysUpgrade.progressTitle.contains("Optional step"))
+        #expect(OnboardingStep.alwaysUpgrade.progressAccessibilityLabel.contains("Optional background awareness"))
+    }
+
+    @Test("Always access is only inserted after When In Use authorization")
+    func conditionalAlwaysStepFollowsWhenInUseAuthorization() {
+        #expect(
+            OnboardingStep.locationPermission.nextStep(locationAuthorizationStatus: .authorizedWhenInUse) == .alwaysUpgrade
+        )
+        #expect(
+            OnboardingStep.locationPermission.nextStep(locationAuthorizationStatus: .authorizedAlways) == .notificationPermission
+        )
+        #expect(
+            OnboardingStep.locationPermission.nextStep(locationAuthorizationStatus: .denied) == .notificationPermission
+        )
+    }
 }
 
 @Suite("Onboarding remote setup availability")

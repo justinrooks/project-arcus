@@ -131,6 +131,7 @@ The design system is organized by responsibility and product surface.
 | [Today](today.md) | Current Conditions, Today's Awareness, semantic gradients, risk cards, Local Alerts, Atmospheric Conditions, Storm Setup, Outlook Summary |
 | [Map](map.md) | Map presentation, controls, overlays, layer selection, legends, conditional-intensity visualization |
 | [Widgets](widgets.md) | Home Screen and Lock Screen widget presentation, family hierarchy, semantic states, constrained layouts |
+| [Onboarding](onboarding.md) | First-run screen hierarchy, conditional progress, permission trust, and required acknowledgment |
 | [States and Accessibility](states-accessibility.md) | Loading, cached refresh, offline, unavailable, empty, Dynamic Type, VoiceOver, contrast, motion, interaction accessibility |
 | [Visual Review](visual-review.md) | Design acceptance, screenshot review, representative weather states, device coverage, visual regression prevention |
 
