@@ -40,8 +40,7 @@ struct WidgetLargeAwarenessView: View {
                 knownAlertCount: snapshot.knownActiveAlertCount
             )
                 .padding(.top, 10)
-
-            Spacer(minLength: 4)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
 
             WidgetLargeRiskContextFooter(
                 stormState: snapshot.stormRisk,
@@ -49,6 +48,7 @@ struct WidgetLargeAwarenessView: View {
                 fireState: snapshot.fireRisk
             )
                 .padding(.top, 6)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
     }
@@ -262,7 +262,9 @@ private struct WidgetLargeRiskContextFooter: View {
                     }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
     }
 
@@ -303,7 +305,7 @@ private struct WidgetLargeRiskContextColumn: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(alignment: .center, spacing: dynamicTypeSize >= .xxxLarge ? 8 : 10) {
+        HStack(alignment: .top, spacing: dynamicTypeSize >= .xxxLarge ? 8 : 10) {
             Capsule()
                 .fill(tint)
                 .frame(width: 3)
@@ -319,6 +321,7 @@ private struct WidgetLargeRiskContextColumn: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(accessibilityValue)")
     }
