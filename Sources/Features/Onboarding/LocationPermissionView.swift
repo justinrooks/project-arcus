@@ -18,20 +18,27 @@ struct LocationPermissionView: View {
     var body: some View {
         OnboardingStepShell {
             OnboardingStepHeading(
-                symbol: "location.fill",
-                title: "Location Access"
+                symbol: "location.circle.fill",
+                title: "Your Location Keeps You Aware"
             )
 
             Text(locationDescription)
                 .font(.body)
                 .multilineTextAlignment(.center)
 
-            Text("To support timely location-based alerts, SkyAware may share an approximate location with the alert service, such as your county, fire zone, or a coarse geographic index.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            OnboardingInformationCard(
+                symbol: "scope",
+                title: "Local risk assessment",
+                detail: "See severe-weather information and relevant alerts for your area."
+            )
 
-            Text("SkyAware does not sell your data, use it for advertising, or track you across apps or websites.")
+            OnboardingInformationCard(
+                symbol: "map",
+                title: "Approximate location sharing",
+                detail: "For location-based alerts, SkyAware may send a coarse geographic index, county zone, or fire zone to its server. It does not send your precise latitude or longitude for this purpose."
+            )
+
+            Text("SkyAware does not sell location data, use it for advertising, or track you across apps or websites.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -65,7 +72,7 @@ private extension LocationPermissionView {
         case .restricted:
             "Location access is unavailable because of system restrictions. Settings may not be able to change this."
         default:
-            "SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area."
+            "SkyAware uses your location to show severe-weather information for your area. You can continue without location access."
         }
     }
 

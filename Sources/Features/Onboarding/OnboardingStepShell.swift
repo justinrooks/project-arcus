@@ -71,6 +71,38 @@ struct OnboardingStepHeading: View {
     }
 }
 
+struct OnboardingInformationCard: View {
+    let symbol: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color.skyAwareAccent)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            .secondary.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
+        )
+    }
+}
+
 struct OnboardingPrimaryActionStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
