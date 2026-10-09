@@ -12,6 +12,8 @@ import UserNotifications
 
 @MainActor
 struct OnboardingView: View {
+    var onComplete: () -> Void = {}
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(LocationSession.self) private var locationSession
 
@@ -202,6 +204,7 @@ struct OnboardingView: View {
 
     @MainActor
     private func completeOnboarding() {
+        onComplete()
         onboardingComplete = true
     }
 }

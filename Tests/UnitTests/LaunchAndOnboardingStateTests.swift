@@ -193,6 +193,83 @@ struct LaunchPresentationStateTests {
 
         #expect(presentation == nil)
     }
+
+    @Test("suppresses location recovery after onboarding completes in this session")
+    func suppressesLocationRecoveryAfterOnboardingCompletion() {
+        var context = OnboardingLaunchContext()
+
+        let beforeCompletion = context.resolve(
+            disclaimerVersion: 1,
+            currentDisclaimerVersion: 1,
+            authorizationStatus: .denied,
+            suppressLocationRestrictedSheet: false
+        )
+        #expect(beforeCompletion == .locationRestricted)
+
+        context.markOnboardingComplete()
+        let afterCompletion = context.resolve(
+            disclaimerVersion: 1,
+            currentDisclaimerVersion: 1,
+            authorizationStatus: .denied,
+            suppressLocationRestrictedSheet: false
+        )
+
+        #expect(afterCompletion == nil)
+    }
+}
+
+@Suite("Location permission recovery")
+struct LocationPermissionRecoveryActionTests {
+    @Test("denied location opens Settings")
+    func deniedOpensSettings() {
+        var settingsOpenCount = 0
+        var authorizationRequestCount = 0
+
+        LocationPermissionRecoveryAction.perform(
+            authorizationStatus: .denied,
+            openSettings: { settingsOpenCount += 1 },
+            requestAuthorization: { authorizationRequestCount += 1 }
+        )
+
+        #expect(settingsOpenCount == 1)
+        #expect(authorizationRequestCount == 0)
+    }
+
+    @Test("restricted location cannot be changed from the app")
+    func restrictedIsUnavailable() {
+        var settingsOpenCount = 0
+        var authorizationRequestCount = 0
+
+        LocationPermissionRecoveryAction.perform(
+            authorizationStatus: .restricted,
+            openSettings: { settingsOpenCount += 1 },
+            requestAuthorization: { authorizationRequestCount += 1 }
+        )
+
+        #expect(settingsOpenCount == 0)
+        #expect(authorizationRequestCount == 0)
+    }
+
+    @Test("not determined location can request native authorization")
+    func notDeterminedRequestsAuthorization() {
+        var settingsOpenCount = 0
+        var authorizationRequestCount = 0
+
+        LocationPermissionRecoveryAction.perform(
+            authorizationStatus: .notDetermined,
+            openSettings: { settingsOpenCount += 1 },
+            requestAuthorization: { authorizationRequestCount += 1 }
+        )
+
+        #expect(settingsOpenCount == 0)
+        #expect(authorizationRequestCount == 1)
+    }
+
+    @Test("authorized location does not need recovery")
+    func authorizedNeedsNoRecovery() {
+        #expect(LocationPermissionRecoveryAction.resolve(authorizationStatus: .authorizedWhenInUse) == .none)
+        #expect(LocationPermissionRecoveryAction.resolve(authorizationStatus: .authorizedAlways) == .none)
+    }
 }
 
 @Suite("Onboarding step progression")
