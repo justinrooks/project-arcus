@@ -526,9 +526,8 @@ private struct WatchRowView: View {
                 if let sevTags = alert.SevereRiskTags {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(sevTags)
+                            Text(styledAlertThreatDetails(sevTags, for: alert))
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Color.semanticMetadata)
                                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

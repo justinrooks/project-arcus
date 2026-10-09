@@ -48,9 +48,8 @@ struct AlertRowView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 
                 if let sevTags = alert.severeRiskTags {
-                    Text(sevTags)
+                    Text(styledAlertThreatDetails(sevTags, for: alert))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.semanticMetadata)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -96,6 +95,33 @@ struct AlertRowView: View {
     private func relativeDate(_ date: Date) -> String {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
+}
+
+func styledAlertThreatDetails(_ text: String, for alert: any AlertItem) -> AttributedString {
+    var attributedText = AttributedString(text)
+    attributedText.foregroundColor = .semanticMetadata
+
+    guard let alert = alert as? AlertDTO,
+          alert.title.localizedCaseInsensitiveCompare("Severe Thunderstorm Warning") == .orderedSame
+    else {
+        return attributedText
+    }
+
+    attributedText.foregroundColor = .primary
+    guard let damageThreatCategory = alert.thunderstormDamageThreat?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased(),
+        damageThreatCategory == "destructive" || damageThreatCategory == "considerable",
+        let damageThreatLine = text
+            .components(separatedBy: .newlines)
+            .first(where: { $0.localizedCaseInsensitiveContains(damageThreatCategory) }),
+        let damageThreatRange = attributedText.range(of: damageThreatLine)
+    else {
+        return attributedText
+    }
+
+    attributedText[damageThreatRange].foregroundColor = .severeTstormWarn
+    return attributedText
 }
 
 #Preview {
