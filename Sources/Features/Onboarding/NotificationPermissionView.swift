@@ -13,18 +13,12 @@ struct NotificationPermissionView: View {
     let onEnable: () -> Void
     let onSkip: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 80
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "bell.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
-
-            Text("Stay Aware")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            OnboardingStepHeading(
+                symbol: "bell.fill",
+                title: "Stay Aware"
+            )
 
             Text("You can allow notifications such as:")
                 .font(.body)
@@ -58,20 +52,12 @@ struct NotificationPermissionView: View {
 
                 Button(action: onEnable) {
                     Text("Allow Notifications")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                                .fill(Color.skyAwareAccent)
-                        )
                 }
+                .buttonStyle(OnboardingPrimaryActionStyle())
                 .disabled(isWorking)
 
                 Button("Skip for Now", action: onSkip)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .buttonStyle(OnboardingSecondaryActionStyle())
                     .disabled(isWorking)
             }
         }

@@ -10,18 +10,13 @@ import SwiftUI
 struct DisclaimerView: View {
     let onAccept: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 80
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
-
-            Text("Important Information")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            OnboardingStepHeading(
+                symbol: "checkmark.shield.fill",
+                title: "Important Information",
+                subtitle: "Please review before continuing."
+            )
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("""
@@ -48,15 +43,8 @@ struct DisclaimerView: View {
         } footer: {
             Button(action: onAccept) {
                 Text("I Understand")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                            .fill(Color.skyAwareAccent)
-                    )
             }
+            .buttonStyle(OnboardingPrimaryActionStyle())
         }
     }
 }

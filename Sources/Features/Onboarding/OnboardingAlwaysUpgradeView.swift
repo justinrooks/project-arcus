@@ -13,18 +13,13 @@ struct OnboardingAlwaysUpgradeView: View {
     let onEnableAlways: () -> Void
     let onSkip: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 80
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "bell.badge.waveform.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
-
-            Text("More Reliable Alerts")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            OnboardingStepHeading(
+                symbol: "location.circle.fill",
+                title: "Background Awareness",
+                subtitle: "An optional location upgrade"
+            )
 
             Text("SkyAware can keep severe-weather alerts current when it can refresh your location in the background.")
                 .font(.body)
@@ -44,20 +39,12 @@ struct OnboardingAlwaysUpgradeView: View {
 
                 Button(action: onEnableAlways) {
                     Text("Enable Always")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                                .fill(Color.skyAwareAccent)
-                        )
                 }
+                .buttonStyle(OnboardingPrimaryActionStyle())
                 .disabled(isWorking)
 
                 Button("Not Now", action: onSkip)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .buttonStyle(OnboardingSecondaryActionStyle())
                     .disabled(isWorking)
             }
         }

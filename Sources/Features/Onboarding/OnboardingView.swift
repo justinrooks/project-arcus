@@ -41,49 +41,49 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        TabView(selection: $currentStep) {
+        activeStep
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                OnboardingStepProgress(step: currentStep)
+            }
+            .animation(SkyAwareMotion.onboardingStep(reduceMotion), value: currentStep)
+            .background(.skyAwareBackground)
+    }
+
+    @ViewBuilder
+    private var activeStep: some View {
+        switch currentStep {
+        case .welcome:
             WelcomeView {
                 advance(to: .disclaimer)
             }
-            .tag(OnboardingStep.welcome)
-
+        case .disclaimer:
             DisclaimerView {
                 disclaimerVersion = currentDisclaimerVersion
                 advance(to: .locationPermission)
             }
-            .tag(OnboardingStep.disclaimer)
-
+        case .locationPermission:
             LocationPermissionView(
                 isWorking: locationStepState.isWorking,
                 statusMessage: locationStepState.statusMessage,
                 onEnable: requestLocationPermission,
                 onSkip: skipLocationPermissionStep
             )
-            .tag(OnboardingStep.locationPermission)
-
+        case .alwaysUpgrade:
             OnboardingAlwaysUpgradeView(
                 isWorking: alwaysUpgradeStepState.isWorking,
                 statusMessage: alwaysUpgradeStepState.statusMessage,
                 onEnableAlways: requestAlwaysUpgradeDuringOnboarding,
                 onSkip: skipAlwaysUpgradeStep
             )
-            .tag(OnboardingStep.alwaysUpgrade)
-
+        case .notificationPermission:
             NotificationPermissionView(
                 isWorking: notificationStepState.isWorking,
                 statusMessage: notificationStepState.statusMessage,
                 onEnable: requestNotificationPermission,
                 onSkip: completeOnboarding
             )
-            .tag(OnboardingStep.notificationPermission)
         }
-        .tabViewStyle(.page)
-        .indexViewStyle(.page(backgroundDisplayMode: .always))
-        .overlay {
-            OnboardingPagerSwipeBlocker()
-                .allowsHitTesting(false)
-        }
-        .background(.skyAwareBackground)
     }
 
     private func requestLocationPermission() {
@@ -226,6 +226,31 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
     case notificationPermission
 
     var id: Int { rawValue }
+
+    static let requiredStageCount = 4
+
+    var requiredStage: Int {
+        switch self {
+        case .welcome: 1
+        case .disclaimer: 2
+        case .locationPermission, .alwaysUpgrade: 3
+        case .notificationPermission: 4
+        }
+    }
+
+    var progressTitle: String {
+        if self == .alwaysUpgrade {
+            return "Optional step · Required setup: 3 of 4"
+        }
+        return "Step \(requiredStage) of \(Self.requiredStageCount)"
+    }
+
+    var progressAccessibilityLabel: String {
+        if self == .alwaysUpgrade {
+            return "Optional background awareness step. Required setup is 3 of 4 steps."
+        }
+        return "Step \(requiredStage) of \(Self.requiredStageCount)"
+    }
 
     func nextStep(locationAuthorizationStatus: CLAuthorizationStatus? = nil) -> OnboardingStep? {
         switch self {

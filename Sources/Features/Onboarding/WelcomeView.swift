@@ -10,27 +10,22 @@ import SwiftUI
 struct WelcomeView: View {
     let onContinue: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 96
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "cloud.bolt.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(
-                    Color.skyAwareAccent,
-                    Color.skyAwareAccent.opacity(0.5)
-                )
+            Image("LaunchCyclone")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 76, height: 76)
+                .foregroundStyle(Color.skyAwareAccent)
+                .accessibilityHidden(true)
 
             Text("Welcome to SkyAware")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+                .font(.largeTitle.weight(.bold))
                 .multilineTextAlignment(.center)
 
             Text("How weather-aware do you need to be today? SkyAware helps you understand local severe-weather risk at a glance.")
-                .font(.title3)
+                .font(.title3.weight(.medium))
                 .multilineTextAlignment(.center)
 
             Text("Get simple, actionable severe-weather awareness based on authoritative public data from the SPC and National Weather Service.")
@@ -40,15 +35,8 @@ struct WelcomeView: View {
         } footer: {
             Button(action: onContinue) {
                 Text("Get Started")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                            .fill(Color.skyAwareAccent)
-                    )
             }
+            .buttonStyle(OnboardingPrimaryActionStyle())
         }
     }
 }
