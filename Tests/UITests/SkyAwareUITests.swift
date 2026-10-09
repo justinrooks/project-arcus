@@ -503,7 +503,7 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchPresentsDisclaimerBeforeRestrictedLocationWhenBothApply() throws {
+    func testLaunchPresentsDisclaimerBeforeDeniedLocationRecoveryWhenBothApply() throws {
         let app = XCUIApplication()
         configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0, for: app)
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "restricted"
@@ -511,11 +511,11 @@ final class SkyAwareUITests: XCTestCase {
 
         let disclaimerButton = app.buttons["I Understand"]
         XCTAssertTrue(disclaimerButton.waitForExistence(timeout: 10), "Expected the disclaimer sheet to appear first.")
-        XCTAssertFalse(app.buttons["Enable Location"].exists, "Did not expect the restricted-location sheet before the disclaimer was accepted.")
+        XCTAssertFalse(app.buttons["Open Settings"].exists, "Did not expect the location recovery sheet before the disclaimer was accepted.")
 
         disclaimerButton.tap()
 
-        let locationButton = app.buttons["Enable Location"]
+        let locationButton = app.buttons["Open Settings"]
         XCTAssertTrue(locationButton.waitForExistence(timeout: 10), "Expected the restricted-location sheet after accepting the disclaimer.")
     }
 
@@ -535,13 +535,13 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchPresentsRestrictedLocationOnlyWhenDisclaimerIsCurrent() throws {
+    func testLaunchPresentsDeniedLocationRecoveryOnlyWhenDisclaimerIsCurrent() throws {
         let app = XCUIApplication()
         configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 1, for: app)
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "restricted"
         app.launch()
 
-        let locationButton = app.buttons["Enable Location"]
+        let locationButton = app.buttons["Open Settings"]
         XCTAssertTrue(locationButton.waitForExistence(timeout: 10), "Expected the restricted-location sheet when the disclaimer is current.")
         XCTAssertFalse(app.buttons["I Understand"].exists, "Did not expect the disclaimer sheet when the stored version is current.")
     }

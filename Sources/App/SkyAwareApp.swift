@@ -32,6 +32,7 @@ struct SkyAwareApp: App {
     // State
     @State private var didBootstrapBGRefresh = false
     @State private var launchPresentation: LaunchPresentationState?
+    @State private var onboardingLaunchContext = OnboardingLaunchContext()
     private let currentDisclaimerVersion = 1
 
     private var isUITestStaticHome: Bool {
@@ -383,7 +384,9 @@ private extension SkyAwareApp {
     }
 
     func onboardingContent(deps: Dependencies) -> some View {
-        OnboardingView()
+        OnboardingView {
+            onboardingLaunchContext.markOnboardingComplete()
+        }
             .environment(\.dependencies, deps)
             .environment(deps.locationSession)
     }
@@ -421,8 +424,13 @@ private extension SkyAwareApp {
             LocationPermissionView(
                 isWorking: false,
                 statusMessage: nil,
+                authorizationStatus: deps?.locationSession.authorizationStatus,
                 onEnable: {
-                    deps?.locationSession.requestInteractiveAuthorization()
+                    LocationPermissionRecoveryAction.perform(
+                        authorizationStatus: deps?.locationSession.authorizationStatus ?? .notDetermined,
+                        openSettings: { deps?.locationSession.openSettings() },
+                        requestAuthorization: { deps?.locationSession.requestInteractiveAuthorization() }
+                    )
                     launchPresentation = nil
                 },
                 onSkip: {
@@ -437,7 +445,7 @@ private extension SkyAwareApp {
 
     func updateLaunchPresentation() {
         guard let locationSession = deps?.locationSession else { return }
-        launchPresentation = LaunchPresentationState.resolve(
+        launchPresentation = onboardingLaunchContext.resolve(
             disclaimerVersion: disclaimerVersion,
             currentDisclaimerVersion: currentDisclaimerVersion,
             authorizationStatus: locationSession.authorizationStatus,
@@ -1067,13 +1075,14 @@ enum LaunchPresentationState: Identifiable, Equatable {
         disclaimerVersion: Int,
         currentDisclaimerVersion: Int,
         authorizationStatus: CLAuthorizationStatus,
+        didCompleteOnboardingThisSession: Bool = false,
         suppressLocationRestrictedSheet: Bool
     ) -> LaunchPresentationState? {
         if disclaimerVersion < currentDisclaimerVersion {
             return .disclaimerUpdate
         }
 
-        guard suppressLocationRestrictedSheet == false else {
+        guard didCompleteOnboardingThisSession == false, suppressLocationRestrictedSheet == false else {
             return nil
         }
 
@@ -1082,6 +1091,29 @@ enum LaunchPresentationState: Identifiable, Equatable {
         }
 
         return nil
+    }
+}
+
+struct OnboardingLaunchContext {
+    private(set) var didCompleteOnboardingThisSession = false
+
+    mutating func markOnboardingComplete() {
+        didCompleteOnboardingThisSession = true
+    }
+
+    func resolve(
+        disclaimerVersion: Int,
+        currentDisclaimerVersion: Int,
+        authorizationStatus: CLAuthorizationStatus,
+        suppressLocationRestrictedSheet: Bool
+    ) -> LaunchPresentationState? {
+        LaunchPresentationState.resolve(
+            disclaimerVersion: disclaimerVersion,
+            currentDisclaimerVersion: currentDisclaimerVersion,
+            authorizationStatus: authorizationStatus,
+            didCompleteOnboardingThisSession: didCompleteOnboardingThisSession,
+            suppressLocationRestrictedSheet: suppressLocationRestrictedSheet
+        )
     }
 }
 
