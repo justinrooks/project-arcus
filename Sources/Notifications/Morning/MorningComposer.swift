@@ -19,7 +19,15 @@ struct MorningComposer: NotificationComposing {
         let stormRisk = (event.payload["stormRisk"] as? StormRiskLevel) ?? .allClear
         let severeRisk = (event.payload["severeRisk"] as? SevereWeatherThreat) ?? .allClear
         let fireRisk = (event.payload["fireRisk"] as? FireRiskLevel) ?? .clear
-        let placemark = (event.payload["placeMark"] as? String) ?? "Unknown"
+        let placemark = (event.payload["placeMark"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let title: String
+        if let placemark, placemark.isEmpty == false,
+           ["unknown", "ready"].contains(placemark.lowercased()) == false {
+            title = "Today's Outlook for \(placemark)"
+        } else {
+            title = "Today's Outlook"
+        }
         let outlook = "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)\nFire Risk: \(fireRisk.message)"
 
         let body: String
@@ -32,6 +40,6 @@ struct MorningComposer: NotificationComposing {
         }
         
         logger.debug("Summary notification generated")
-        return ("Today's Outlook for \(placemark)", body, "\(issue)")
+        return (title, body, "\(issue)")
     }
 }

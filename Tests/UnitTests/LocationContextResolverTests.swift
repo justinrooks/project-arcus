@@ -776,6 +776,50 @@ struct DurableLocationContextCacheTests {
         #expect(restored?.grid.fireZone == "COZ246")
     }
 
+    @Test("restores the name from the accepted snapshot without adding durable fields")
+    func restoresAcceptedNameAcrossCacheInstances() throws {
+        let suiteName = "DurableLocationContextCacheTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let context = makeContext()
+        LocationSnapshotCache(suiteName: suiteName).save(context.snapshot)
+        DurableLocationContextCache(suiteName: suiteName, nowProvider: { now }).save(context)
+
+        let restored = try #require(DurableLocationContextCache(suiteName: suiteName, nowProvider: { now }).load())
+        #expect(restored.snapshot == context.snapshot)
+        let data = try #require(UserDefaults(suiteName: suiteName)?.data(forKey: "location.durableContext.v1"))
+        #expect(String(decoding: data, as: UTF8.self).contains("placemarkSummary") == false)
+    }
+
+    @Test("legacy durable records reconcile only compatible accepted metadata")
+    func legacyRecordsRejectIncompatibleNames() throws {
+        let suiteName = "DurableLocationContextCacheTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let cache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+        for variant in ["matching", "coordinates", "cell", "older", "future", "accuracy", "missing", "blank"] {
+            defaults.set(Data(recordJSON(latitude: 39.7392, timestamp: now).utf8), forKey: "location.durableContext.v1")
+            let original = makeContext().snapshot
+            var snapshot = LocationSnapshot(
+                coordinates: .init(latitude: variant == "coordinates" ? 40 : original.coordinates.latitude,
+                                   longitude: original.coordinates.longitude),
+                timestamp: now.addingTimeInterval(variant == "older" ? -1 : (variant == "future" ? 1 : 0)),
+                accuracy: variant == "accuracy" ? -1 : 20,
+                placemarkSummary: original.placemarkSummary,
+                h3Cell: variant == "cell" ? 2 : original.h3Cell
+            )
+            if variant == "missing" { snapshot.placemarkSummary = nil }
+            if variant == "blank" { snapshot.placemarkSummary = "  " }
+            LocationSnapshotCache(suiteName: suiteName).save(snapshot)
+
+            let restored = try #require(cache.load())
+            let expected: String? = variant == "matching" ? "Denver, CO" : (variant == "blank" ? "  " : nil)
+            #expect(restored.snapshot.placemarkSummary == expected)
+            #expect(restored.snapshot.timestamp == now)
+        }
+        cache.invalidate()
+        #expect(cache.load() == nil)
+    }
+
     @Test("persists no display labels or unrelated upload fields")
     func persistedDataExcludesDisplayAndUploadFields() throws {
         let suiteName = "DurableLocationContextCacheTests.\(UUID().uuidString)"
@@ -832,7 +876,7 @@ struct DurableLocationContextCacheTests {
 
     private func recordJSON(latitude: Double, timestamp: Date, countyCode: String = "COC031") -> String {
         """
-        {"version":1,"latitude":\(latitude),"longitude":-104.9903,"timestamp":"\(ISO8601DateFormatter().string(from: timestamp))","accuracy":20,"h3Cell":613425092313120767,"nwsId":"id","gridId":"BOU","gridX":56,"gridY":66,"countyCode":"\(countyCode)","fireZone":"COZ246"}
+        {"version":1,"latitude":\(latitude),"longitude":-104.9903,"timestamp":"\(ISO8601DateFormatter().string(from: timestamp))","accuracy":20,"h3Cell":613166965663465471,"nwsId":"id","gridId":"BOU","gridX":56,"gridY":66,"countyCode":"\(countyCode)","fireZone":"COZ246"}
         """
     }
 }
