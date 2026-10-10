@@ -435,9 +435,21 @@ final class LocationSession {
 
     private func refreshedContextIfStable(_ context: LocationContext, snapshot: LocationSnapshot?) -> LocationContext {
         guard let snapshot,
-              snapshot.timestamp > context.snapshot.timestamp,
+              snapshot.timestamp >= context.snapshot.timestamp,
               snapshot.h3Cell == context.h3Cell else {
             return context
+        }
+        if snapshot.timestamp == context.snapshot.timestamp {
+            guard snapshot.coordinates.latitude == context.snapshot.coordinates.latitude,
+                  snapshot.coordinates.longitude == context.snapshot.coordinates.longitude,
+                  context.snapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
+                  let name = snapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  name.isEmpty == false else {
+                return context
+            }
+            var enrichedSnapshot = context.snapshot
+            enrichedSnapshot.placemarkSummary = name
+            return LocationContext(snapshot: enrichedSnapshot, h3Cell: context.h3Cell, grid: context.grid)
         }
         return LocationContext(snapshot: snapshot, h3Cell: context.h3Cell, grid: context.grid)
     }

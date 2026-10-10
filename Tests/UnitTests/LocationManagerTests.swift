@@ -728,6 +728,91 @@ struct LocationSessionTests {
     }
 
     @MainActor
+    @Test("equal timestamp enrichment preserves location identity and accepted names",
+          arguments: ["matching", "coordinates", "cell", "older", "named", "namedCoordinates", "namedCell", "blank"])
+    func scheduledReuse_equalTimestampMetadata(variant: String) async throws {
+        let timestamp = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) - 60)
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let cache = DurableLocationContextCache(suiteName: suiteName)
+        let context = durableContext(timestamp: timestamp)
+        cache.save(context)
+        if variant.hasPrefix("named") {
+            var accepted = context.snapshot
+            accepted.placemarkSummary = "Accepted name"
+            LocationSnapshotCache(suiteName: suiteName).save(accepted)
+        }
+        let providerSnapshot = LocationSnapshot(
+            coordinates: .init(latitude: ["coordinates", "namedCoordinates"].contains(variant) ? 40 : context.snapshot.coordinates.latitude,
+                               longitude: context.snapshot.coordinates.longitude),
+            timestamp: variant == "older" ? timestamp.addingTimeInterval(-1) : timestamp,
+            accuracy: context.snapshot.accuracy,
+            placemarkSummary: variant == "blank" ? "  " : "Bennett, CO",
+            h3Cell: ["cell", "namedCell"].contains(variant) ? 2 : context.h3Cell
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in }
+        )
+        let session = LocationSession(
+            locationClient: .init(snapshot: { providerSnapshot }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: manager, locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(), durableContextCache: cache
+        )
+        let result = try #require(await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil, uploadReason: nil, authorizationTimeout: 1, locationTimeout: 1,
+            maximumAcceptedLocationAge: 60, placemarkTimeout: 1
+        ))
+        let expected: String? = variant == "matching" ? "Bennett, CO" : (variant.hasPrefix("named") ? "Accepted name" : nil)
+        #expect(result.snapshot.placemarkSummary == expected)
+        #expect(result.snapshot.timestamp == timestamp)
+        #expect(result.snapshot.coordinates.latitude == context.snapshot.coordinates.latitude)
+        #expect(result.h3Cell == context.h3Cell)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+    }
+
+    @MainActor
+    @Test("restored accepted names follow the 90 minute policy and authorization",
+          arguments: ["eligible", "stale", "denied", "invalidated"])
+    func scheduledReuse_restoredNamePolicy(variant: String) async throws {
+        let age: TimeInterval = variant == "stale" ? 91 * 60 : 70 * 60
+        let timestamp = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) - age)
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let context = durableContext(timestamp: timestamp)
+        var accepted = context.snapshot
+        accepted.placemarkSummary = "Bennett, CO"
+        LocationSnapshotCache(suiteName: suiteName).save(accepted)
+        DurableLocationContextCache(suiteName: suiteName).save(context)
+        let cache = DurableLocationContextCache(suiteName: suiteName)
+        if variant == "invalidated" { cache.invalidate() }
+        let provider = LocationProvider(snapshotCache: LocationSnapshotCache(suiteName: suiteName))
+        #expect(await provider.snapshot() == nil)
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(
+                status: variant == "denied" ? .denied : .authorizedWhenInUse
+            ), onUpdate: { _ in }
+        )
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider), locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            durableContextCache: cache
+        )
+        let result = await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil, uploadReason: nil, authorizationTimeout: 1, locationTimeout: 1,
+            maximumAcceptedLocationAge: 60, placemarkTimeout: 1
+        )
+        if variant == "eligible" {
+            #expect(result?.snapshot.placemarkSummary == "Bennett, CO")
+            #expect(result?.snapshot.timestamp == timestamp)
+        } else {
+            #expect(result == nil)
+        }
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+    }
+
+    @MainActor
     @Test("scheduled reuse evaluates a fresh same-cell composite instead of a stale durable snapshot")
     func scheduledReuse_evaluatesFreshSameCellComposite() async throws {
         let now = Date()
