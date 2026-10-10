@@ -177,6 +177,18 @@ Increase review breadth when the implementation boundary is shared or the conseq
 
 Do not increase breadth simply because a visual change is interesting.
 
+## Debug Preview: Today No-Cache Resolving
+
+To inspect the dedicated resolving presentation on a simulator or connected iPhone without changing saved weather data,
+use a Debug Run and add this launch environment variable in Xcode:
+
+1. Open **Product → Scheme → Edit Scheme**.
+2. Select **Run → Arguments → Environment Variables**.
+3. Add `SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING` with value `1`.
+4. Run the app and open Today. Remove the variable or set it to `0` to return to normal presentation.
+
+The override affects only Today presentation in Debug builds. It does not change the app's accepted data or other tabs. The regular no-cache path and `UI_TESTS_NO_CACHE_RESOLVING` UI-test fixture remain separate.
+
 ---
 
 # 3. Establish the Review Baseline
