@@ -23,6 +23,7 @@ enum TodayContentState: Sendable, Equatable {
         hasLiveContent: Bool,
         isRefreshing: Bool,
         isOffline: Bool,
+        isInitialResolutionInFlight: Bool? = nil,
         isManualRefreshInFlight: Bool = false,
         didManualRefreshFail: Bool = false
     ) -> TodayContentState {
@@ -44,11 +45,7 @@ enum TodayContentState: Sendable, Equatable {
             return isOffline ? .degraded : .current
         }
 
-        if isRefreshing ||
-            readinessState == .loadingLocation ||
-            readinessState == .resolvingLocalContext ||
-            readinessState == .loadingLocalData
-        {
+        if isInitialResolutionInFlight ?? isRefreshing {
             return .noCacheResolving
         }
 

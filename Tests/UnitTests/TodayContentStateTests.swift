@@ -41,28 +41,37 @@ struct TodayContentStateTests {
 
     }
 
-    @Test("no cache while resolving maps to the resolving state")
-    func noCacheResolving_mapsToResolvingState() {
-        let readinessResolving = TodayContentState.from(
+    @Test("no cache resolves only while a core attempt for this scope is active")
+    func noCacheResolving_requiresActiveCoreAttempt() {
+        let terminalLocalDataAttempt = TodayContentState.from(
             readinessState: .loadingLocalData,
             hasCachedContent: false,
             hasLiveContent: false,
             isRefreshing: false,
             isOffline: false
         )
-        #expect(readinessResolving == .noCacheResolving)
-        #expect(readinessResolving.showsResolvingSurface)
-        #expect(readinessResolving.suppressesRoutineRefreshMotion == false)
+        #expect(terminalLocalDataAttempt == .unavailable)
 
         let refreshResolving = TodayContentState.from(
-            readinessState: .ready,
+            readinessState: .loadingLocalData,
             hasCachedContent: false,
             hasLiveContent: false,
             isRefreshing: true,
-            isOffline: false
+            isOffline: false,
+            isInitialResolutionInFlight: true
         )
         #expect(refreshResolving == .noCacheResolving)
         #expect(refreshResolving.showsResolvingSurface)
+
+        let alertOnlyRefresh = TodayContentState.from(
+            readinessState: .loadingLocalData,
+            hasCachedContent: false,
+            hasLiveContent: false,
+            isRefreshing: true,
+            isOffline: false,
+            isInitialResolutionInFlight: false
+        )
+        #expect(alertOnlyRefresh == .unavailable)
     }
 
     @Test("cached content refreshes while online")
@@ -234,7 +243,8 @@ struct TodaySurfaceStateFlowTests {
             hasCachedContent: false,
             hasLiveContent: false,
             isRefreshing: false,
-            isOffline: false
+            isOffline: false,
+            isInitialResolutionInFlight: true
         )
 
         #expect(state == .noCacheResolving)
