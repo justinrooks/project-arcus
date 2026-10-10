@@ -186,6 +186,9 @@ struct HomeView: View {
             ),
             isRefreshing: refreshPipeline.isRefreshInFlight,
             isOffline: runtimeConnectivityState.isOffline,
+            isInitialResolutionInFlight: refreshPipeline.isInitialCoreResolutionInFlight(
+                for: currentProjectionKey
+            ),
             isManualRefreshInFlight: refreshPipeline.isManualRefreshInFlight,
             didManualRefreshFail: refreshPipeline.didManualRefreshFail
         )

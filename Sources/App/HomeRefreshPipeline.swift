@@ -84,6 +84,11 @@ final class HomeRefreshPipeline {
         let refreshKey: LocationContext.RefreshKey?
     }
 
+    private struct InitialCoreResolutionAttempt {
+        var projectionKey: String?
+        var activeStages: Int
+    }
+
     struct Environment {
         let logger: Logger
         let sync: any SpcSyncing
@@ -109,6 +114,7 @@ final class HomeRefreshPipeline {
     private var latestVisibleSubmissionID: UUID?
     private var acceptedCorePublication: AcceptedCorePublication?
     private var suppressedCoreSubmissionID: UUID?
+    private var initialCoreResolutionAttempts: [UUID: InitialCoreResolutionAttempt] = [:]
     private var manualRefreshProjectionKey: String?
     private(set) var isStormSetupRefreshInFlight: Bool
     private(set) var isManualRefreshInFlight = false
@@ -137,6 +143,12 @@ final class HomeRefreshPipeline {
     var outlook: ConvectiveOutlookDTO? { outlookSnapshot.outlook }
     var isRefreshInFlight: Bool {
         activeRefreshCount > 0 || followUpRefreshCount > 0
+    }
+
+    func isInitialCoreResolutionInFlight(for projectionKey: String?) -> Bool {
+        initialCoreResolutionAttempts.values.contains { attempt in
+            attempt.projectionKey == nil || attempt.projectionKey == projectionKey
+        }
     }
 
     init(
@@ -360,11 +372,23 @@ final class HomeRefreshPipeline {
         environment.logger.info(
             "Foreground refresh started trigger=\(trigger.logName, privacy: .public) waitsForCompletion=\(waitsForCompletion, privacy: .public)"
         )
+        let coreResolutionAttemptID = beginInitialCoreResolutionAttempt(
+            for: trigger,
+            environment: environment
+        )
         beginForegroundRefresh()
 
         if waitsForCompletion {
-            let outcome = await runRefresh(trigger, environment: environment)
-            finishForegroundRefresh(outcome: outcome, trigger: trigger)
+            let outcome = await runRefresh(
+                trigger,
+                environment: environment,
+                coreResolutionAttemptID: coreResolutionAttemptID
+            )
+            finishForegroundRefresh(
+                outcome: outcome,
+                trigger: trigger,
+                coreResolutionAttemptID: coreResolutionAttemptID
+            )
             if trigger == .manual {
                 completeManualRefresh(outcome: outcome)
             }
@@ -373,8 +397,16 @@ final class HomeRefreshPipeline {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let outcome = await self.runRefresh(trigger, environment: environment)
-            self.finishForegroundRefresh(outcome: outcome, trigger: trigger)
+            let outcome = await self.runRefresh(
+                trigger,
+                environment: environment,
+                coreResolutionAttemptID: coreResolutionAttemptID
+            )
+            self.finishForegroundRefresh(
+                outcome: outcome,
+                trigger: trigger,
+                coreResolutionAttemptID: coreResolutionAttemptID
+            )
             if trigger == .manual {
                 self.completeManualRefresh(outcome: outcome)
             } else if outcome == .completed {
@@ -386,7 +418,8 @@ final class HomeRefreshPipeline {
 
     private func runRefresh(
         _ trigger: HomeView.RefreshTrigger,
-        environment: Environment
+        environment: Environment,
+        coreResolutionAttemptID: UUID?
     ) async -> RefreshOutcome {
         let startedAt = Date()
         do {
@@ -395,14 +428,23 @@ final class HomeRefreshPipeline {
                 snapshot = try await environment.coordinator.enqueueAndWait(
                     makePrimeRequest(for: trigger, using: environment.locationSession)
                 )
+                updateInitialCoreResolutionAttempt(
+                    coreResolutionAttemptID,
+                    projectionKey: snapshot.locationContext.map(HomeProjection.projectionKey(for:))
+                )
                 scheduleFollowUpRefresh(
                     makeFollowUpRequest(for: trigger, resolvedContext: snapshot.locationContext),
-                    environment: environment
+                    environment: environment,
+                    coreResolutionAttemptID: coreResolutionAttemptID
                 )
             } else {
                 snapshot = try await enqueueVisibleSnapshot(
                     makeRequest(for: trigger, using: environment.locationSession),
                     environment: environment
+                )
+                updateInitialCoreResolutionAttempt(
+                    coreResolutionAttemptID,
+                    projectionKey: snapshot.locationContext.map(HomeProjection.projectionKey(for:))
                 )
             }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
@@ -513,13 +555,56 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func finishForegroundRefresh(outcome: RefreshOutcome, trigger: HomeView.RefreshTrigger) {
+    private func finishForegroundRefresh(
+        outcome: RefreshOutcome,
+        trigger: HomeView.RefreshTrigger,
+        coreResolutionAttemptID: UUID?
+    ) {
         guard activeRefreshCount > 0 else { return }
         if trigger == .manual, outcome == .completed {
             didCompleteManualConditionsRefreshSuccessfully = true
         }
         activeRefreshCount -= 1
+        finishInitialCoreResolutionStage(coreResolutionAttemptID)
         finalizeForegroundRefreshIfNeeded()
+    }
+
+    private func beginInitialCoreResolutionAttempt(
+        for trigger: HomeView.RefreshTrigger,
+        environment: Environment
+    ) -> UUID? {
+        guard trigger.supportsInitialCoreResolution else { return nil }
+        let attemptID = UUID()
+        let projectionKey = trigger == .sceneActive || trigger == .manual
+            ? nil
+            : environment.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
+        initialCoreResolutionAttempts[attemptID] = InitialCoreResolutionAttempt(
+            projectionKey: projectionKey,
+            activeStages: 1
+        )
+        return attemptID
+    }
+
+    private func updateInitialCoreResolutionAttempt(_ attemptID: UUID?, projectionKey: String?) {
+        guard let attemptID, var attempt = initialCoreResolutionAttempts[attemptID] else { return }
+        attempt.projectionKey = projectionKey
+        initialCoreResolutionAttempts[attemptID] = attempt
+    }
+
+    private func retainInitialCoreResolutionStage(_ attemptID: UUID?) {
+        guard let attemptID, var attempt = initialCoreResolutionAttempts[attemptID] else { return }
+        attempt.activeStages += 1
+        initialCoreResolutionAttempts[attemptID] = attempt
+    }
+
+    private func finishInitialCoreResolutionStage(_ attemptID: UUID?) {
+        guard let attemptID, var attempt = initialCoreResolutionAttempts[attemptID] else { return }
+        attempt.activeStages -= 1
+        if attempt.activeStages == 0 {
+            initialCoreResolutionAttempts.removeValue(forKey: attemptID)
+        } else {
+            initialCoreResolutionAttempts[attemptID] = attempt
+        }
     }
 
     private func handleIngestionProgress(_ event: HomeIngestionProgressEvent) async {
@@ -622,8 +707,10 @@ final class HomeRefreshPipeline {
 
     private func scheduleFollowUpRefresh(
         _ request: HomeIngestionRequest,
-        environment: Environment
+        environment: Environment,
+        coreResolutionAttemptID: UUID?
     ) {
+        retainInitialCoreResolutionStage(coreResolutionAttemptID)
         followUpRefreshCount += 1
         environment.logger.debug(
             "Scheduling non-blocking follow-up refresh trigger=\(request.trigger.logName, privacy: .public)"
@@ -633,6 +720,7 @@ final class HomeRefreshPipeline {
             var outcome: RefreshOutcome = .failed
             defer {
                 self.followUpRefreshCount -= 1
+                self.finishInitialCoreResolutionStage(coreResolutionAttemptID)
                 self.finalizeForegroundRefreshIfNeeded()
             }
             do {
@@ -875,6 +963,15 @@ extension HomeView {
                 return "contextChanged"
             case .timer:
                 return "timer"
+            }
+        }
+
+        var supportsInitialCoreResolution: Bool {
+            switch self {
+            case .sceneActive, .manual, .contextChanged:
+                true
+            case .timer:
+                false
             }
         }
     }

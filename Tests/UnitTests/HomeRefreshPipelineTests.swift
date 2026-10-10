@@ -11,25 +11,56 @@ struct HomeRefreshPipelineTests {
     @Test("scene active submits foreground activate to the unified queue")
     func sceneActive_submitsForegroundActivate() async throws {
         let context = makeContext()
-        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
+        let movedContext = makeContext(h3Cell: 999_999, timestamp: 200)
+        let primeGate = AsyncGate()
+        let followUpGate = AsyncGate()
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: [
+                HomeSnapshot(locationContext: movedContext),
+                HomeSnapshot(locationContext: movedContext)
+            ],
+            gates: [primeGate, followUpGate]
+        )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
-        await pipeline.handleScenePhaseChange(
-            .active,
-            environment: makeEnvironment(
-                coordinator: coordinator,
-                locationSession: locationSession
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+
+        let primeStarted = await waitUntil { await coordinator.requestCount() == 1 }
+        #expect(primeStarted)
+        #expect(pipeline.isInitialCoreResolutionInFlight(for: HomeProjection.projectionKey(for: context)))
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: movedContext)
             )
         )
+
+        locationSession.currentContext = movedContext
+        await primeGate.open()
+        let followUpStarted = await waitUntil { await coordinator.requestCount() == 2 }
+        #expect(followUpStarted)
+        #expect(pipeline.isInitialCoreResolutionInFlight(for: HomeProjection.projectionKey(for: movedContext)))
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: context)
+            ) == false
+        )
+
+        await followUpGate.open()
         await pipeline.waitForIdle()
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: movedContext)
+            ) == false
+        )
 
         let requests = await coordinator.requests()
         #expect(requests.count == 2)
         #expect(requests[0].trigger == .foregroundPrime)
         #expect(requests[0].locationContext == nil)
         #expect(requests[1].trigger == .foregroundActivate)
-        #expect(requests[1].locationContext == context)
+        #expect(requests[1].locationContext == movedContext)
     }
 
     @Test("context change forwards the current resolved context to the unified queue")
@@ -59,7 +90,8 @@ struct HomeRefreshPipelineTests {
     @Test("settings refresh entry point uses one non-forced session tick request")
     func settingsRefreshEntryPoint_usesNonForcedSessionTickRequest() async throws {
         let context = makeContext()
-        let coordinator = RecordingHomeIngestionCoordinator()
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(runGate: gate)
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
@@ -70,6 +102,31 @@ struct HomeRefreshPipelineTests {
                 locationSession: locationSession
             )
         )
+
+        let requestStarted = await waitUntil {
+            await coordinator.requestCount() == 1
+        }
+        #expect(requestStarted)
+        #expect(pipeline.isRefreshInFlight)
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: context)
+            ) == false
+        )
+        #expect(
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: pipeline.isRefreshInFlight,
+                isOffline: false,
+                isInitialResolutionInFlight: pipeline.isInitialCoreResolutionInFlight(
+                    for: HomeProjection.projectionKey(for: context)
+                )
+            ) == .unavailable
+        )
+
+        await gate.open()
         await pipeline.waitForIdle()
 
         let requests = await coordinator.requests()
@@ -177,7 +234,8 @@ struct HomeRefreshPipelineTests {
     func forceRefresh_waitsUntilCoordinatorCompletes() async {
         let gate = AsyncGate()
         let coordinator = RecordingHomeIngestionCoordinator(runGate: gate)
-        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let context = makeContext()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
         let completion = CompletionFlag()
 
@@ -197,6 +255,11 @@ struct HomeRefreshPipelineTests {
         }
         #expect(requestStarted)
         #expect(pipeline.resolutionState.isRefreshing)
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: context)
+            )
+        )
         #expect(await completion.isFinished() == false)
 
         await gate.open()
@@ -204,6 +267,11 @@ struct HomeRefreshPipelineTests {
 
         #expect(await completion.isFinished())
         #expect(pipeline.resolutionState.isRefreshing == false)
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: context)
+            ) == false
+        )
     }
 
     @Test("hot alert progress only resolves the alerts section")
@@ -1475,10 +1543,11 @@ struct HomeRefreshPipelineTests {
 
     @Test("failed force refresh clears resolving state")
     func forceRefreshFailure_clearsResolvingState() async {
+        let context = makeContext()
         let coordinator = RecordingHomeIngestionCoordinator(
             results: [.failure(TestFailure.failedRead)]
         )
-        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
         await pipeline.forceRefreshCurrentContext(
@@ -1494,6 +1563,23 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.isManualRefreshInFlight == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refresh couldn't complete.")
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: context)
+            ) == false
+        )
+        #expect(
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: pipeline.isRefreshInFlight,
+                isOffline: false,
+                isInitialResolutionInFlight: pipeline.isInitialCoreResolutionInFlight(
+                    for: HomeProjection.projectionKey(for: context)
+                )
+            ) == .unavailable
+        )
         for section in SummarySection.resolveForwardSections {
             #expect(pipeline.resolutionState.isResolving(section) == false)
         }
@@ -1528,6 +1614,47 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Conditions refreshed.")
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == "Conditions up to date")
+    }
+
+    @Test("manual refresh keeps initial resolution active when fresh location changes")
+    func manualRefresh_locationChangeKeepsInitialResolutionActive() async {
+        let context = makeContext()
+        let movedContext = makeContext(latitude: 39.76, h3Cell: 654_321, timestamp: 200)
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(runGate: gate)
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+            )
+        }
+
+        let requestStarted = await waitUntil { await coordinator.requestCount() == 1 }
+        #expect(requestStarted)
+        locationSession.currentContext = movedContext
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: movedContext)
+            )
+        )
+        #expect(
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: pipeline.isRefreshInFlight,
+                isOffline: false,
+                isInitialResolutionInFlight: pipeline.isInitialCoreResolutionInFlight(
+                    for: HomeProjection.projectionKey(for: movedContext)
+                )
+            ) == .noCacheResolving
+        )
+
+        await gate.open()
+        await refreshTask.value
     }
 
     @Test("manual refresh reports failure when an accepted requested lane is missing")
@@ -1592,6 +1719,23 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refreshing conditions.")
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
+        #expect(
+            pipeline.isInitialCoreResolutionInFlight(
+                for: HomeProjection.projectionKey(for: context)
+            ) == false
+        )
+        #expect(
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: pipeline.isRefreshInFlight,
+                isOffline: false,
+                isInitialResolutionInFlight: pipeline.isInitialCoreResolutionInFlight(
+                    for: HomeProjection.projectionKey(for: context)
+                )
+            ) == .unavailable
+        )
     }
 
     @Test("automatic refresh remains silent in the manual accessibility channel")

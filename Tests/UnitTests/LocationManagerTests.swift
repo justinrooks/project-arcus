@@ -198,6 +198,80 @@ struct LocationSessionTests {
         func recordedResolveCallCount() -> Int { resolveCallCount }
     }
 
+    private actor ControlledResolver: LocationContextResolving {
+        enum Operation: Equatable {
+            case prepare
+            case resolve
+        }
+
+        private struct PendingRequest {
+            let id: Int
+            let operation: Operation
+            let continuation: CheckedContinuation<LocationContext, Error>
+        }
+
+        private var nextID = 0
+        private var pendingRequests: [PendingRequest] = []
+
+        func prepareCurrentContext(
+            requiresFreshLocation: Bool,
+            showsAuthorizationPrompt: Bool,
+            authorizationTimeout: Double,
+            locationTimeout: Double,
+            maximumAcceptedLocationAge: TimeInterval,
+            placemarkTimeout: Double
+        ) async throws -> LocationContext {
+            try await enqueue(.prepare)
+        }
+
+        func resolveContext(
+            from snapshot: LocationSnapshot,
+            maximumAcceptedLocationAge: TimeInterval?,
+            placemarkTimeout: Double
+        ) async throws -> LocationContext {
+            try await enqueue(.resolve)
+        }
+
+        func pendingIDs(for operation: Operation) -> [Int] {
+            pendingRequests.filter { $0.operation == operation }.map(\.id)
+        }
+
+        func complete(id: Int, with result: Result<LocationContext, LocationContextError>) {
+            guard let index = pendingRequests.firstIndex(where: { $0.id == id }) else { return }
+            let request = pendingRequests.remove(at: index)
+            switch result {
+            case .success(let context):
+                request.continuation.resume(returning: context)
+            case .failure(let error):
+                request.continuation.resume(throwing: error)
+            }
+        }
+
+        private func enqueue(_ operation: Operation) async throws -> LocationContext {
+            nextID += 1
+            let id = nextID
+            return try await withCheckedThrowingContinuation { continuation in
+                pendingRequests.append(PendingRequest(id: id, operation: operation, continuation: continuation))
+            }
+        }
+    }
+
+    @MainActor
+    private func waitUntilAsync(
+        timeout: Duration = .seconds(2),
+        interval: Duration = .milliseconds(10),
+        _ condition: @escaping @MainActor () async -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: interval)
+        }
+        return await condition()
+    }
+
     private actor StubUploadCoordinator: LocationUploadCoordinating {
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
@@ -354,6 +428,120 @@ struct LocationSessionTests {
         #expect(result == nil)
         #expect(session.currentContext == nil)
         #expect(session.startupState == .failed("location-missing-region-context"))
+    }
+
+    @MainActor
+    @Test("older explicit location attempt cannot replace a newer result", arguments: [false, true])
+    func olderExplicitLocationAttemptCannotReplaceNewerResult(olderAttemptFails: Bool) async {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = ControlledResolver()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
+        )
+        let olderContext = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
+        let newerContext = durableContext(timestamp: .now, h3Cell: 2)
+
+        let olderTask = Task {
+            await session.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
+        }
+        let olderStarted = await waitUntilAsync {
+            await resolver.pendingIDs(for: .prepare).count == 1
+        }
+        #expect(olderStarted)
+        let olderRequestID = await resolver.pendingIDs(for: .prepare)[0]
+
+        let newerTask = Task {
+            await session.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
+        }
+        let newerStarted = await waitUntilAsync {
+            await resolver.pendingIDs(for: .prepare).count == 2
+        }
+        #expect(newerStarted)
+        let requestIDs = await resolver.pendingIDs(for: .prepare)
+        let newerRequestID = requestIDs.first { $0 != olderRequestID }
+        #expect(newerRequestID != nil)
+        guard let newerRequestID else { return }
+
+        await resolver.complete(id: newerRequestID, with: .success(newerContext))
+        #expect(await newerTask.value == newerContext)
+
+        await resolver.complete(
+            id: olderRequestID,
+            with: olderAttemptFails ? .failure(.locationTimeout) : .success(olderContext)
+        )
+        #expect(await olderTask.value == nil)
+        #expect(session.currentContext == newerContext)
+        #expect(session.currentSnapshot == newerContext.snapshot)
+        #expect(session.startupState == .ready)
+    }
+
+    @MainActor
+    @Test("new explicit preparation invalidates an older snapshot-driven resolution")
+    func explicitPreparationInvalidatesOlderSnapshotDrivenResolution() async {
+        let initialContext = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
+        let newerContext = durableContext(timestamp: .now, h3Cell: 2)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        let locationClient = LocationClient(
+            snapshot: { initialContext.snapshot },
+            updates: { updates.stream }
+        )
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = ControlledResolver()
+        let session = LocationSession(
+            locationClient: locationClient,
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
+        )
+        session.currentSnapshot = initialContext.snapshot
+        session.currentContext = initialContext
+        session.startupState = .ready
+        session.handleScenePhaseChange(.active)
+
+        let movedSnapshot = newerContext.snapshot
+        updates.continuation.yield(movedSnapshot)
+        let oldResolutionStarted = await waitUntilAsync {
+            await resolver.pendingIDs(for: .resolve).count == 1
+        }
+        #expect(oldResolutionStarted)
+        let oldRequestID = await resolver.pendingIDs(for: .resolve)[0]
+
+        let newPreparation = Task {
+            await session.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
+        }
+        let newPreparationStarted = await waitUntilAsync {
+            await resolver.pendingIDs(for: .prepare).count == 1
+        }
+        #expect(newPreparationStarted)
+        let newRequestID = await resolver.pendingIDs(for: .prepare)[0]
+        await resolver.complete(id: newRequestID, with: .success(newerContext))
+        #expect(await newPreparation.value == newerContext)
+
+        await resolver.complete(id: oldRequestID, with: .failure(.locationTimeout))
+        for _ in 0..<5 { await Task.yield() }
+        try? await Task.sleep(for: .milliseconds(20))
+
+        #expect(session.currentContext == newerContext)
+        #expect(session.startupState == .ready)
     }
 
     @MainActor

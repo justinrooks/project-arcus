@@ -20,8 +20,8 @@ struct TodayResolvingSurfaceStateTests {
         )
     }
 
-    @Test("no content while loading local data shows full-screen resolving")
-    func showsEmptyResolving_noContentLoadingLocalData() {
+    @Test("terminal no-cache local data state shows unavailable")
+    func terminalNoCacheLocalDataAttempt_showsUnavailable() {
         #expect(
             TodayContentState.from(
                 readinessState: .loadingLocalData,
@@ -29,7 +29,7 @@ struct TodayResolvingSurfaceStateTests {
                 hasLiveContent: false,
                 isRefreshing: false,
                 isOffline: false
-            ).showsResolvingSurface
+            ) == .unavailable
         )
     }
 
