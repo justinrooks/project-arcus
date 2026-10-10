@@ -58,14 +58,21 @@ struct TodayTabView: View {
         )
     }
 
+    private var showsResolvingSurface: Bool {
+#if DEBUG
+        todayContentState.showsResolvingSurface || TodayResolvingPreviewOverride.isEnabled(
+            environment: ProcessInfo.processInfo.environment
+        )
+#else
+        todayContentState.showsResolvingSurface
+#endif
+    }
+
     var body: some View {
         let canvas = TodaySurfaceStyle.canvas(for: colorScheme)
         NavigationStack {
-            if todayContentState.showsResolvingSurface {
-                LoadingView(
-                    message: resolutionState.primaryActiveMessage ?? readinessState.statusText,
-                    usesTodayAppearance: true
-                )
+            if showsResolvingSurface {
+                LoadingView()
                     .toolbar(.hidden, for: .navigationBar)
                     .accessibilityIdentifier("today-no-cache-resolving")
                     .background(canvas)
@@ -149,6 +156,14 @@ struct TodayTabView: View {
         }
     }
 }
+
+#if DEBUG
+enum TodayResolvingPreviewOverride {
+    static func isEnabled(environment: [String: String]) -> Bool {
+        environment["SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING"] == "1"
+    }
+}
+#endif
 
 private struct TodayVisibleWeatherStateTaskState: Equatable {
     let liveWeather: SummaryWeather?

@@ -7,6 +7,23 @@ import Testing
 @Suite("Today Content State")
 @MainActor
 struct TodayContentStateTests {
+#if DEBUG
+    @Test("debug resolving preview requires an explicit enabled value")
+    func debugResolvingPreviewOverride_requiresValueOne() {
+        #expect(
+            TodayResolvingPreviewOverride.isEnabled(
+                environment: ["SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING": "1"]
+            )
+        )
+        #expect(
+            TodayResolvingPreviewOverride.isEnabled(
+                environment: ["SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING": "0"]
+            ) == false
+        )
+        #expect(TodayResolvingPreviewOverride.isEnabled(environment: [:]) == false)
+    }
+#endif
+
     @Test("cached manual refresh preserves content and suppresses section loading branches")
     func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
         #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue == false)
