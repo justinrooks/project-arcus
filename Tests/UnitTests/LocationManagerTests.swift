@@ -494,9 +494,14 @@ struct LocationSessionTests {
         let initialContext = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
         let newerContext = durableContext(timestamp: .now, h3Cell: 2)
         let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let updatesSubscription = AsyncStream<Void>.makeStream()
         let locationClient = LocationClient(
             snapshot: { initialContext.snapshot },
-            updates: { updates.stream }
+            updates: {
+                updatesSubscription.continuation.yield(())
+                return updates.stream
+            }
         )
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -514,13 +519,20 @@ struct LocationSessionTests {
         session.startupState = .ready
         session.handleScenePhaseChange(.active)
 
+        var subscriptionIterator = updatesSubscription.stream.makeAsyncIterator()
+        _ = await subscriptionIterator.next()
+        updatesSubscription.continuation.finish()
+
         let movedSnapshot = newerContext.snapshot
         updates.continuation.yield(movedSnapshot)
-        let oldResolutionStarted = await waitUntilAsync {
+        let oldResolutionStarted = await waitUntilAsync(timeout: .seconds(10)) {
             await resolver.pendingIDs(for: .resolve).count == 1
         }
-        #expect(oldResolutionStarted)
-        let oldRequestID = await resolver.pendingIDs(for: .resolve)[0]
+        guard oldResolutionStarted,
+              let oldRequestID = await resolver.pendingIDs(for: .resolve).first else {
+            Issue.record("The snapshot-driven context resolution did not start before the timeout.")
+            return
+        }
 
         let newPreparation = Task {
             await session.prepareCurrentLocationContext(
@@ -528,11 +540,14 @@ struct LocationSessionTests {
                 showsAuthorizationPrompt: false
             )
         }
-        let newPreparationStarted = await waitUntilAsync {
+        let newPreparationStarted = await waitUntilAsync(timeout: .seconds(10)) {
             await resolver.pendingIDs(for: .prepare).count == 1
         }
-        #expect(newPreparationStarted)
-        let newRequestID = await resolver.pendingIDs(for: .prepare)[0]
+        guard newPreparationStarted,
+              let newRequestID = await resolver.pendingIDs(for: .prepare).first else {
+            Issue.record("The explicit context preparation did not start before the timeout.")
+            return
+        }
         await resolver.complete(id: newRequestID, with: .success(newerContext))
         #expect(await newPreparation.value == newerContext)
 

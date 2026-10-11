@@ -24,8 +24,8 @@ struct TodayContentStateTests {
     }
 #endif
 
-    @Test("cached manual refresh preserves content and suppresses section loading branches")
-    func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
+    @Test("cached manual refresh preserves content while missing risk shows active resolution")
+    func cachedRefreshing_preservesContentAndResolvesMissingRisk() {
         #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue == false)
         #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
         #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
@@ -53,7 +53,11 @@ struct TodayContentStateTests {
                 isSevereRiskResolving: true,
                 isFireRiskResolving: true,
                 isOffline: false
-            ) == .quiet
+            ) == .loading(
+                title: "Severe Risk",
+                detail: "Getting severe risk…",
+                symbolName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
+            )
         )
 
     }

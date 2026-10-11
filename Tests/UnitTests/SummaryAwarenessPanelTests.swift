@@ -346,7 +346,7 @@ struct SummaryAwarenessPanelTests {
         let selected = SummaryAwarenessPrimaryState.resolve(
             stormRisk: .moderate,
             severeRisk: .tornado(probability: 0.10),
-            fireRisk: .critical,
+            fireRisk: nil,
             alerts: [
                 makeAlert(
                     title: "Tornado Warning",
@@ -532,8 +532,8 @@ struct SummaryAwarenessPanelTests {
         #expect(subtitle.contains("NWS Chicago IL") == false)
     }
 
-    @Test("cached refreshing without a resolved risk keeps the primary hero calm")
-    func cachedRefreshingWithoutResolvedRisk_keepsPrimaryHeroCalm() {
+    @Test("cached refreshing without a resolved risk shows its active resolution")
+    func cachedRefreshingWithoutResolvedRisk_showsActiveResolution() {
         let selected = SummaryAwarenessPrimaryState.resolve(
             stormRisk: nil,
             severeRisk: nil,
@@ -546,7 +546,89 @@ struct SummaryAwarenessPanelTests {
             isOffline: false
         )
 
-        #expect(selected == .quiet)
+        #expect(
+            selected == .loading(
+                title: "Storm Risk",
+                detail: "Getting storm risk…",
+                symbolName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
+            )
+        )
+    }
+
+    @Test("missing settled risk is neutral, unavailable, and non-actionable in light and dark")
+    func missingSettledRisk_showsNeutralUnavailableHero() {
+        let selected = SummaryAwarenessPrimaryState.resolve(
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            alerts: [],
+            todayContentState: .current,
+            isStormRiskResolving: false,
+            isSevereRiskResolving: false,
+            isFireRiskResolving: false,
+            isOffline: false
+        )
+
+        #expect(selected == .unavailable)
+        #expect(selected.title == "Risk Data Unavailable")
+        #expect(selected.detail == "One or more local risk assessments are unavailable.")
+        #expect(selected.destination == .none)
+        #expect(selected.isQuiet == false)
+        #expect(selected.allowsSemanticTint == false)
+        #expect(selected.mapSummaryIsVisible == false)
+        #expect(selected.accessibilityContract.label == "Risk Data Unavailable")
+        #expect(selected.accessibilityContract.hint == nil)
+        for colorScheme in [ColorScheme.light, .dark] {
+            #expect(selected.accentColor == .secondary)
+            _ = selected.background(for: colorScheme)
+        }
+    }
+
+    @Test("missing supporting risks use unavailable copy and neutral accents")
+    @MainActor
+    func missingSupportingRisks_useUnavailableCopyAndNeutralAccents() {
+        let panel = PrimaryAwarenessPanel(
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            alerts: [],
+            todayContentState: .current,
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: false,
+            onOpenMapLayer: { _ in },
+            onOpenAlerts: { }
+        )
+
+        #expect(panel.stormCardValue == "Unavailable")
+        #expect(panel.stormDetail == "Storm risk data is unavailable.")
+        #expect(panel.stormAccent == .secondary)
+        #expect(panel.stormSemanticTint == nil)
+        #expect(panel.severeCardValue == "Unavailable")
+        #expect(panel.severeDetail == "Severe risk data is unavailable.")
+        #expect(panel.severeAccent == .secondary)
+        #expect(panel.severeSemanticTint == nil)
+        #expect(panel.fireValue == "Unavailable")
+        #expect(panel.fireDetail == "Fire risk data is unavailable.")
+        #expect(panel.fireAccent == .secondary)
+        #expect(panel.fireSemanticTint == nil)
+    }
+
+    @Test("accepted quiet risks remain known while another missing risk keeps the hero unavailable")
+    func partialQuietRisk_doesNotSynthesizeQuietHero() {
+        let selected = SummaryAwarenessPrimaryState.resolve(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: nil,
+            alerts: [],
+            todayContentState: .current,
+            isStormRiskResolving: false,
+            isSevereRiskResolving: false,
+            isFireRiskResolving: false,
+            isOffline: false
+        )
+
+        #expect(selected == .unavailable)
+        #expect(selected.title != "Quiet Weather")
     }
 
     @Test("no-cache resolving still shows the primary loading hero")
@@ -593,7 +675,7 @@ struct SummaryAwarenessPanelTests {
     func storm_outranksFire() {
         let selected = SummaryAwarenessPrimaryState.resolve(
             stormRisk: .high,
-            severeRisk: .allClear,
+            severeRisk: nil,
             fireRisk: .critical,
             alerts: [],
             todayContentState: .current,
@@ -638,6 +720,7 @@ struct SummaryAwarenessPanelTests {
         )
 
         #expect(selected == .quiet)
+        #expect(selected.allowsSemanticTint)
     }
 
     @Test("matching severe source transforms severe row into supplemental presentation")

@@ -123,7 +123,7 @@ struct PrimaryAwarenessHeroView: View {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                 .fill(colorScheme == .dark ? Color.cardBackground : TodaySurfaceStyle.content(for: colorScheme))
                 .overlay {
-                    if showsSemanticTint, primary.source != .loading {
+                    if showsSemanticTint, primary.allowsSemanticTint {
                         AwarenessSemanticTint(accent: accentColor, isQuiet: primary.isQuiet, isHero: true)
                     }
                 }
