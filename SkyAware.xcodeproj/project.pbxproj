@@ -13,6 +13,7 @@
 		D2A000032F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */; };
 		D2A000052F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */; };
 		D58000012F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58000022F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift */; };
+		D69500012F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D69500022F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,6 +67,7 @@
 		D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite; sourceTree = "<group>"; };
 		D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite; sourceTree = "<group>"; };
 		D58000022F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/BarometricPressureTrendTests.swift; sourceTree = "<group>"; };
+		D69500022F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -124,6 +126,7 @@
 				UnitTests/NWSGridPointParserTests.swift,
 				UnitTests/NwsHttpClientTests.swift,
 				UnitTests/NwsProviderSyncTests.swift,
+				UnitTests/OnboardingSecondaryActionStyleTests.swift,
 				UnitTests/ParseAsIssueDateTests.swift,
 				UnitTests/ParseSPCValidTime.swift,
 				UnitTests/RemoteHotAlertHandlerTests.swift,
@@ -627,6 +630,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D58000012F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift in Sources */,
+				D69500012F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
