@@ -88,12 +88,12 @@ enum ConvectiveOutlookCollectionSnapshot: Sendable, Equatable {
     case unavailable
     case accepted([ConvectiveOutlookDTO])
 
-    init(rows: [ConvectiveOutlook], day: Int = 1) {
+    init(rows: [ConvectiveOutlook], day: Int? = nil) {
         guard rows.contains(where: \.isCollectionMarker) else {
             self = .unavailable
             return
         }
-        self = .accepted(rows.filter { $0.day == day }
+        self = .accepted(rows.filter { !$0.isCollectionMarker && (day == nil || $0.day == day) }
             .sorted { $0.published > $1.published }
             .map(\.dto))
     }
