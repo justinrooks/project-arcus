@@ -1,6 +1,6 @@
 # Release Notes
 
-## v1.4.0(229)
+## v1.4.0(235)
 
 ## Overview
 Today, Map, and widgets now share a coordinated visual system in light and dark appearances. Today’s weather and awareness hierarchy, Map controls and legends, and widget layouts have been refreshed while preserving weather meaning and readable content at larger text sizes.

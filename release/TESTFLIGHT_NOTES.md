@@ -1,4 +1,4 @@
-SkyAware v1.4.0(229)
+SkyAware v1.4.0(235)
 Highlights:
 - Review Today, Map, and widget layouts in light and dark appearances for consistent hierarchy and weather meaning.
 - Check Today’s five-metric Atmospheric Conditions panel, visible refresh status, and dew point placement in Storm Setup.

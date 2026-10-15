@@ -1,24 +1,24 @@
 # Changelog
 
-## v1.4.0(229)
+## v1.4.0(235)
 
 ### UI / UX
 - Today, Map, and widgets now share a clearer content hierarchy, with refreshed awareness cards, compact Map controls and legends, and coordinated widget layouts.
-<!-- evidence: 7e09f28, 3d9db04, 082cd3d, 45f778b, 6fb519c, 3024ac0, cd418c9, eeef4f8, fcc48a0, 704d943, 0117e0d, 87f6128, 9003550, 30acdba -->
+<!-- evidence: 4d4e9ef -->
 - Light and dark appearances now use a coordinated surface system across Today, Map, and widgets while keeping native floating controls distinct from weather content.
-<!-- evidence: 3748668, e1ab39c, a300bf8, a73c98a, 5e24f8c, 84344b4 -->
+<!-- evidence: 4d4e9ef -->
 - Today now presents Air Quality, Visibility, Pressure, Humidity, and Wind in an adaptive panel, keeps refresh status in Current Conditions, and places dew point with Storm Setup fuel and instability details.
-<!-- evidence: 1f5b286, c58b201, c455de4 -->
+<!-- evidence: 4d4e9ef -->
 - Today, Map, and widgets improve readability at accessibility text sizes, with clearer awareness control semantics and more legible air-quality text.
-<!-- evidence: 9cc1df3 -->
+<!-- evidence: 4d4e9ef -->
 
 ### Reliability
 - Cached WeatherKit visibility now carries forward through the Home projection schema migration.
-<!-- evidence: 1f5b286 -->
+<!-- evidence: 4d4e9ef -->
 
 ### Maintenance / Cleanup
 - Removed unused presentation helpers after the redesign established the active shared surface system.
-<!-- evidence: 9bf801c -->
+<!-- evidence: 4d4e9ef -->
 
 ## v1.3.0(228)
 

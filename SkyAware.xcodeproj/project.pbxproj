@@ -434,6 +434,7 @@
 				D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */,
 				D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */,
 				D58000022F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift */,
+				D69500022F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
