@@ -80,7 +80,7 @@ actor ConvectiveOutlookRepo {
         return dtos
     }
 
-    func collectionSnapshot(for day: Int = 1) throws -> ConvectiveOutlookCollectionSnapshot {
+    func collectionSnapshot(for day: Int? = nil) throws -> ConvectiveOutlookCollectionSnapshot {
         let rows = try modelContext.fetch(FetchDescriptor<ConvectiveOutlook>())
         return ConvectiveOutlookCollectionSnapshot(rows: rows, day: day)
     }
