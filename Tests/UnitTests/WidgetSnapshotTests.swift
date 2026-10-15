@@ -10,6 +10,7 @@ struct WidgetSnapshotTests {
             generatedAt: iso("2026-05-01T12:00:00Z"),
             stormRisk: .init(label: "Slight Risk", severity: 3),
             severeRisk: .init(label: "Tornado", severity: 3),
+            fireRisk: .init(label: "Extreme Fire Risk", severity: 10),
             selectedAlert: .init(
                 title: "Tornado Warning",
                 typeLabel: "Warning",
@@ -47,6 +48,36 @@ struct WidgetSnapshotTests {
 
         let reEncoded = try encoder.encode(decoded)
         #expect(String(decoding: data, as: UTF8.self) == String(decoding: reEncoded, as: UTF8.self))
+    }
+
+@Test("decodes legacy snapshot without fire risk")
+func decodesLegacySnapshot_withoutFireRisk() throws {
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            stormRisk: .init(label: "Slight Risk", severity: 3),
+            severeRisk: .init(label: "Tornado", severity: 3),
+            fireRisk: .init(label: "Critical Fire Risk", severity: 8),
+            selectedAlert: nil,
+            hiddenAlertCount: 0,
+            freshness: .from(timestamp: iso("2026-05-01T11:55:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            availability: .available
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let payload = try #require(JSONSerialization.jsonObject(with: encoder.encode(snapshot)) as? [String: Any])
+        var legacyPayload = payload
+        legacyPayload.removeValue(forKey: "fireRisk")
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(
+            WidgetSnapshot.self,
+            from: JSONSerialization.data(withJSONObject: legacyPayload)
+        )
+
+        #expect(decoded.fireRisk == nil)
+        #expect(decoded.stormRisk == snapshot.stormRisk)
+        #expect(decoded.severeRisk == snapshot.severeRisk)
     }
 
     @Test("decodes legacy snapshot without alert freshness")
@@ -366,6 +397,35 @@ struct WidgetSnapshotTests {
         #expect(json["location"] == nil)
         #expect(json["token"] == nil)
         #expect(json["payload"] == nil)
+    }
+    @Test("risk supporting summaries preserve canonical wording and placeholders")
+    func riskSupportingSummaries_preserveCanonicalWording() {
+        let stormSummaries = [
+            "No severe storms expected",
+            "Chance of thunderstorms",
+            "Low risk, but some stronger storms possible",
+            "Chance for a few strong storms",
+            "Several severe storms are possible",
+            "Widespread severe storms expected",
+            "Severe outbreak likely — stay alert"
+        ]
+        for (severity, summary) in stormSummaries.enumerated() {
+            #expect(WidgetRiskDisplayState(label: "risk", severity: severity).stormSupportingSummary == summary)
+        }
+        #expect(WidgetRiskDisplayState(label: "risk", severity: 7).stormSupportingSummary == nil)
+        #expect(WidgetRiskDisplayState.placeholder.stormSupportingSummary == nil)
+
+        let severeSummaries = [
+            "No severe threats expected",
+            "Damaging wind possible",
+            "1 in or larger hail possible",
+            "Tornadoes are possible"
+        ]
+        for (severity, summary) in severeSummaries.enumerated() {
+            #expect(WidgetRiskDisplayState(label: "risk", severity: severity).severeSupportingSummary == summary)
+        }
+        #expect(WidgetRiskDisplayState(label: "risk", severity: 4).severeSupportingSummary == nil)
+        #expect(WidgetRiskDisplayState.placeholder.severeSupportingSummary == nil)
     }
 }
 

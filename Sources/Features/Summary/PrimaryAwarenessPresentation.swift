@@ -36,11 +36,12 @@ struct SummaryAwarenessAccessibilityContract: Equatable, Sendable {
 }
 
 enum SummaryAwarenessPrimaryState: Equatable, Sendable {
-    case alert(title: String, detail: String)
+    case alert(title: String, detail: String, timing: String, instruction: String?)
     case severe(SevereWeatherThreat)
     case storm(StormRiskLevel)
     case fire(FireRiskLevel)
     case loading(title: String, detail: String, symbolName: String)
+    case unavailable
     case quiet
 
     static func resolve(
@@ -55,7 +56,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         isOffline: Bool
     ) -> SummaryAwarenessPrimaryState {
         if let alert = Self.activeAlert(from: alerts) {
-            return .alert(title: alert.title, detail: alert.detail)
+            return .alert(title: alert.title, detail: alert.detail, timing: alert.timing, instruction: alert.instruction)
         }
 
         if let severeRisk, severeRisk != .allClear {
@@ -70,8 +71,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             return .fire(fireRisk)
         }
 
-        if isOffline == false, todayContentState.showsResolvingSurface {
-            if isSevereRiskResolving {
+        if stormRisk == nil || severeRisk == nil || fireRisk == nil {
+            if isOffline == false, todayContentState != .unavailable, isSevereRiskResolving, severeRisk == nil {
                 return .loading(
                     title: "Severe Risk",
                     detail: "Getting severe risk…",
@@ -79,7 +80,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
                 )
             }
 
-            if isStormRiskResolving {
+            if isOffline == false, todayContentState != .unavailable, isStormRiskResolving, stormRisk == nil {
                 return .loading(
                     title: "Storm Risk",
                     detail: "Getting storm risk…",
@@ -87,7 +88,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
                 )
             }
 
-            if isFireRiskResolving {
+            if isOffline == false, todayContentState != .unavailable, isFireRiskResolving, fireRisk == nil {
                 return .loading(
                     title: "Fire Risk",
                     detail: "Getting fire risk…",
@@ -95,6 +96,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
                 )
             }
 
+            return .unavailable
         }
 
         return .quiet
@@ -112,6 +114,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             .fireRisk
         case .loading:
             .loading
+        case .unavailable:
+            .unavailable
         case .quiet:
             .synthesizedQuietState
         }
@@ -121,7 +125,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         level != .clear
     }
 
-    private static func activeAlert(from alerts: [AlertDTO]) -> (title: String, detail: String)? {
+    private static func activeAlert(from alerts: [AlertDTO]) -> (title: String, detail: String, timing: String, instruction: String?)? {
         let ordered = AlertPresentationOrdering.ordered(alerts)
 
         guard let alert = ordered.first(where: { Self.isWarningOrWatch(title: $0.title) }) else {
@@ -131,7 +135,9 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         if Self.isWatch(title: alert.title) {
             return (
                 title: alert.title.trimmingCharacters(in: .whitespacesAndNewlines),
-                detail: Self.watchHeroDetail(expires: alert.expires)
+                detail: "Watch currently in effect",
+                timing: Self.watchHeroDetail(expires: alert.validEnd),
+                instruction: Self.nonEmpty(alert.instruction)
             )
         }
 
@@ -139,8 +145,28 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         let fallback = alert.areaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         return (
             title: alert.title.trimmingCharacters(in: .whitespacesAndNewlines),
-            detail: detail.isEmpty ? fallback : detail
+            detail: detail.isEmpty ? fallback : detail,
+            timing: Self.expirationTime(alert.validEnd),
+            instruction: Self.nonEmpty(alert.instruction)
         )
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              value.isEmpty == false else { return nil }
+        return value
+    }
+
+    private static func expirationTime(_ expires: Date, now: Date = .now) -> String {
+        let timeZone = TimeZone.autoupdatingCurrent
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.calendar = calendar
+        formatter.dateFormat = calendar.isDate(expires, inSameDayAs: now) ? "h:mm a zzz" : "MMM d, h:mm a zzz"
+        return "Until \(formatter.string(from: expires))"
     }
 
     private static func isWarningOrWatch(title: String) -> Bool {
@@ -178,7 +204,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case let .alert(title, _):
+        case let .alert(title, _, _, _):
             title
         case let .severe(threat):
             threat.message
@@ -188,6 +214,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             level.status == "Clear" ? "No Fire Risk" : "\(level.status) Fire Risk"
         case let .loading(title, _, _):
             title
+        case .unavailable:
+            "Risk Data Unavailable"
         case .quiet:
             "Quiet Weather"
         }
@@ -195,7 +223,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     var detail: String {
         switch self {
-        case let .alert(_, detail):
+        case let .alert(_, detail, _, _):
             detail
         case let .severe(threat):
             threat.dynamicSummary.isEmpty ? threat.summary : threat.dynamicSummary
@@ -205,6 +233,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             level.message
         case let .loading(_, detail, _):
             detail
+        case .unavailable:
+            "One or more local risk assessments are unavailable."
         case .quiet:
             "No active severe threats nearby"
         }
@@ -212,7 +242,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     var symbolName: String {
         switch self {
-        case let .alert(title, _):
+        case let .alert(title, _, _, _):
             styleForType(.watch, title).0
         case let .severe(threat):
             threat.iconName
@@ -222,6 +252,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             level.symbol
         case let .loading(_, _, symbolName):
             symbolName
+        case .unavailable:
+            "exclamationmark.circle"
         case .quiet:
             "checkmark.seal.fill"
         }
@@ -229,7 +261,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     func background(for colorScheme: ColorScheme) -> LinearGradient {
         switch self {
-        case let .alert(title, _):
+        case let .alert(title, _, _, _):
             return styleForType(.watch, title).1.tileGradient(for: colorScheme)
         case let .severe(threat):
             return threat.iconColor(for: colorScheme)
@@ -244,6 +276,14 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             let bottom = colorScheme == .dark
                 ? Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.92)
                 : Color(red: 0.82, green: 0.87, blue: 0.93)
+            return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .unavailable:
+            let top = colorScheme == .dark
+                ? Color(red: 0.16, green: 0.20, blue: 0.27).opacity(0.88)
+                : Color(red: 0.86, green: 0.90, blue: 0.95)
+            let bottom = colorScheme == .dark
+                ? Color(red: 0.10, green: 0.13, blue: 0.18).opacity(0.88)
+                : Color(red: 0.81, green: 0.86, blue: 0.92)
             return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .quiet:
             return Color.riskAllClear.opacity(colorScheme == .dark ? 0.28 : 0.16)
@@ -270,7 +310,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             .map(.categorical)
         case .fire:
             .map(.fire)
-        case .loading, .quiet:
+        case .loading, .unavailable, .quiet:
             .none
         }
     }
@@ -285,8 +325,72 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             threat == .allClear
         case let .fire(level):
             level == .clear
-        case .alert, .loading:
+        case .alert, .loading, .unavailable:
             false
+        }
+    }
+
+    var allowsSemanticTint: Bool {
+        switch self {
+        case .loading, .unavailable:
+            false
+        default:
+            true
+        }
+    }
+
+    var mapSummaryIsVisible: Bool {
+        switch self {
+        case .loading, .unavailable:
+            false
+        default:
+            isQuiet == false
+        }
+    }
+
+    var mapSummaryDetail: String {
+        switch self {
+        case let .alert(_, detail, _, _):
+            detail
+        default:
+            detail
+        }
+    }
+
+    var mapSummaryTiming: String? {
+        guard case let .alert(_, _, timing, _) = self else { return nil }
+        return timing
+    }
+
+    var accentColor: Color {
+        switch self {
+        case let .alert(title, _, _, _):
+            styleForType(.watch, title).1
+        case let .severe(threat):
+            switch threat {
+            case .allClear: .riskAllClear
+            case .wind: .windTeal
+            case .hail: .hailBlue
+            case .tornado: .tornadoRed
+            }
+        case let .storm(level):
+            switch level {
+            case .allClear: .riskAllClear
+            case .thunderstorm: .riskThunderstorm
+            case .marginal: .riskMarginal
+            case .slight: .riskSlight
+            case .enhanced: .riskEnhanced
+            case .moderate: .riskModerate
+            case .high: .riskHigh
+            }
+        case let .fire(level):
+            level.tint
+        case .loading:
+            .secondary
+        case .unavailable:
+            .secondary
+        case .quiet:
+            .riskAllClear
         }
     }
 
@@ -300,7 +404,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     private var accessibilityLabel: String {
         switch self {
-        case .alert(let title, _):
+        case .alert(let title, _, _, _):
             title
         case .severe:
             "Severe Risk"
@@ -310,6 +414,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             "Fire Risk"
         case .loading(let title, _, _):
             title
+        case .unavailable:
+            "Risk Data Unavailable"
         case .quiet:
             "Quiet Weather"
         }
@@ -317,12 +423,14 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
 
     private var accessibilityValue: String {
         switch self {
-        case let .alert(_, detail):
-            detail
+        case let .alert(_, detail, timing, instruction):
+            ([timing, detail] + [instruction].compactMap { $0 }).joined(separator: ". ")
         case .severe, .storm, .fire:
             accessibilityCurrentValue(title: title, detail: detail)
         case let .loading(_, detail, _):
             detail
+        case .unavailable:
+            "One or more local risk assessments are unavailable."
         case .quiet:
             "No active severe threats nearby"
         }
@@ -340,4 +448,5 @@ enum SummaryAwarenessSource: Equatable, Sendable {
     case fireRisk
     case synthesizedQuietState
     case loading
+    case unavailable
 }

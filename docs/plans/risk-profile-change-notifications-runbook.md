@@ -9,7 +9,8 @@
 
 - `AGENTS.md`
 - `Sources/AGENTS.md`
-- `docs/SkyAware North Star Spec.md`, especially Notifications
+- `docs/product/north-star.md`, especially Notifications
+- `docs/brand/brand-and-voice.md`, especially Notification Copy
 - `docs/architecture/timely-notifications-strategy.md`
 - `docs/plans/risk-profile-change-notifications-progress.md`
 

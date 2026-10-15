@@ -31,8 +31,9 @@ struct SummaryWeatherLocationIdentity: Equatable, Sendable {
 
 struct SummaryStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var showsOfflineExplanation = false
 
     let statusText: String
@@ -58,11 +59,20 @@ struct SummaryStatus: View {
     }
 
     private var locationFont: Font {
-        .headline.weight(.bold)
+        .title2.weight(.semibold)
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
+
+    private var usesStackedConditionsLayout: Bool {
+        adaptiveLayout.usesStackedHeroTiles || dynamicTypeSize >= .xxxLarge
+    }
+
+    var headerStatusMessage: String? {
+        guard showsOfflineToken == false, isLocationUnavailable == false else { return nil }
+        return secondaryStatusMessage
     }
 
     var secondaryStatusMessage: String? {
@@ -89,74 +99,89 @@ struct SummaryStatus: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             if isLocationUnavailable {
-                locationUnavailableCard
+                locationUnavailableMessage
             } else {
                 contentRow
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.section,
-            shadowOpacity: 0.08,
-            shadowRadius: 8,
-            shadowY: 3
-        )
     }
 
-    private var locationUnavailableCard: some View {
+    private var locationUnavailableMessage: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Location Required", systemImage: "location.slash")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
             Text("Enable location access to load local risk, alerts, and weather conditions.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .todaySupportingText()
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background {
-            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06))
-        }
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("Current Conditions")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 12)
-
-            if showsOfflineToken {
-                Button {
-                    showsOfflineExplanation = true
-                } label: {
-                    SummaryOfflineToken()
+        Group {
+            if usesStackedConditionsLayout {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerTitle
+                    headerTrailingStatus(isTrailing: false)
                 }
-                .buttonStyle(
-                    SkyAwarePressableButtonStyle(
-                        cornerRadius: SkyAwareRadius.chipCompact,
-                        pressedScale: 0.985,
-                        pressedOverlayOpacity: 0.08
-                    )
-                )
-                .popover(isPresented: $showsOfflineExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                    OfflineExplanationView()
-                        .presentationCompactAdaptation(.popover)
+            } else {
+                HStack(spacing: 10) {
+                    headerTitle
+                    Spacer(minLength: 12)
+                    headerTrailingStatus(isTrailing: true)
                 }
-                .transition(.opacity)
             }
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: showsOfflineToken)
     }
 
+    private var headerTitle: some View {
+        Text("Current Conditions")
+            .font(colorScheme == .dark ? .subheadline.weight(.medium) : .headline.weight(.semibold))
+            .foregroundStyle(
+                TodaySurfaceStyle.sectionHeadingForeground(for: colorScheme, contrast: colorSchemeContrast)
+            )
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func headerTrailingStatus(isTrailing: Bool) -> some View {
+        if showsOfflineToken {
+            Button {
+                showsOfflineExplanation = true
+            } label: {
+                SummaryOfflineToken()
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(
+                SkyAwarePressableButtonStyle(
+                    cornerRadius: SkyAwareRadius.chipCompact,
+                    pressedScale: 0.985,
+                    pressedOverlayOpacity: 0.08
+                )
+            )
+            .popover(isPresented: $showsOfflineExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                OfflineExplanationView()
+                    .presentationCompactAdaptation(.popover)
+            }
+            .padding(.top, isTrailing ? 0 : 6)
+            .transition(.opacity)
+        } else {
+            SummaryStatusSecondaryLine(
+                message: headerStatusMessage,
+                recentCompletedDeadline: secondaryStatusDeadline,
+                allowsWrapping: usesStackedConditionsLayout,
+                isTrailing: isTrailing
+            )
+        }
+    }
+
     private var contentRow: some View {
         Group {
-            if adaptiveLayout.usesStackedHeroTiles {
+            if usesStackedConditionsLayout {
                 VStack(alignment: .leading, spacing: 8) {
                     statusContent
                     weatherContent
@@ -177,13 +202,9 @@ struct SummaryStatus: View {
                 .font(locationFont)
                 .foregroundStyle(.primary)
                 .contentTransition(.opacity)
-                .lineLimit(adaptiveLayout.usesStackedHeroTiles ? nil : 1)
+                .lineLimit(usesStackedConditionsLayout ? nil : 1)
                 .truncationMode(.tail)
 
-            SummaryStatusSecondaryLine(
-                message: secondaryStatusMessage,
-                recentCompletedDeadline: secondaryStatusDeadline
-            )
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,26 +212,31 @@ struct SummaryStatus: View {
 
     @ViewBuilder
     private var weatherContent: some View {
-        VStack(alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing, spacing: 2) {
+        VStack(alignment: usesStackedConditionsLayout ? .leading : .trailing, spacing: 2) {
             HStack(spacing: 6) {
                 if let visibleWeather, let formattedTemperature {
                     Text(formattedTemperature)
                         .monospacedDigit()
+                        .font(.title2.weight(.semibold))
                         .contentTransition(.numericText(value: visibleWeather.temperature.value))
                     Image(systemName: visibleWeather.symbolName)
                         .symbolVariant(.fill)
+                        .font(.title3)
                         .contentTransition(.opacity)
+                        .accessibilityHidden(true)
                 } else {
                     Text("00°")
                         .monospacedDigit()
+                        .font(.title2.weight(.semibold))
                         .hidden()
                         .accessibilityHidden(true)
                     Image(systemName: "sun.max.fill")
+                        .font(.title3)
                         .hidden()
                         .accessibilityHidden(true)
                 }
             }
-            .frame(minHeight: 20, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
+            .frame(minHeight: 20, alignment: usesStackedConditionsLayout ? .leading : .trailing)
 
             Group {
                 SummarySettledConditionLine(
@@ -219,15 +245,15 @@ struct SummaryStatus: View {
                 )
             }
             .font(.footnote)
-            .multilineTextAlignment(adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
-            .lineLimit(1)
-            .frame(minHeight: 18, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
+            .multilineTextAlignment(usesStackedConditionsLayout ? .leading : .trailing)
+            .lineLimit(usesStackedConditionsLayout ? nil : 1)
+            .frame(minHeight: 18, alignment: usesStackedConditionsLayout ? .leading : .trailing)
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.primary)
         .frame(
-            minWidth: adaptiveLayout.usesStackedHeroTiles ? 0 : 80,
-            alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing
+            minWidth: usesStackedConditionsLayout ? 0 : 80,
+            alignment: usesStackedConditionsLayout ? .leading : .trailing
         )
         .contentTransition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: formattedTemperature)
@@ -300,6 +326,8 @@ private struct SummaryStatusSecondaryLine: View {
 
     let message: String?
     let recentCompletedDeadline: Date?
+    let allowsWrapping: Bool
+    let isTrailing: Bool
     @State private var displayedMessage: String?
 
     private struct TaskIdentity: Equatable {
@@ -319,25 +347,22 @@ private struct SummaryStatusSecondaryLine: View {
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
+        ZStack(alignment: isTrailing ? .trailing : .leading) {
             if let displayedMessage {
                 Text(displayedMessage)
                     .id(displayedMessage)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: isTrailing ? .trailing : .leading)
                     .transition(messageTransition)
             } else {
-                Text(" ")
-                    .foregroundStyle(.clear)
-                    .accessibilityHidden(true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                EmptyView()
             }
         }
         .font(.footnote.weight(.medium))
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 18, alignment: .leading)
-        .clipped()
+        .lineLimit(allowsWrapping ? nil : 1)
+        .frame(maxWidth: .infinity, alignment: isTrailing ? .trailing : .leading)
+        .frame(minHeight: allowsWrapping ? 0 : 18, alignment: .leading)
+        .padding(.top, isTrailing || displayedMessage == nil ? 0 : 6)
         .animation(SkyAwareMotion.message(reduceMotion), value: displayedMessage)
         .task(id: taskIdentity) {
             await setDisplayedMessage(message)
@@ -388,7 +413,7 @@ private struct SummarySettledConditionLine: View {
         Group {
             if let conditionText {
                 Text(conditionText)
-                    .foregroundStyle(.secondary)
+                    .todaySupportingText()
             } else {
                 Text(" ")
                     .foregroundStyle(.clear)
@@ -402,67 +427,88 @@ private struct SummarySettledConditionLine: View {
     }
 }
 
-#Preview {
-    VStack {
-        SummaryStatus(
-            statusText: "Denver, CO",
-            weather: .init(
-                temperature: Measurement(
-                    value: 37.0,
-                    unit: .fahrenheit
+#Preview("Current Conditions · Light") {
+    SummaryStatusPreviewSet()
+        .preferredColorScheme(.light)
+}
+
+#Preview("Current Conditions · Dark") {
+    SummaryStatusPreviewSet()
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Current Conditions · Accessibility") {
+    SummaryStatusPreviewSet()
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Current Conditions · XXXLarge") {
+    SummaryStatusPreviewSet()
+        .environment(\.dynamicTypeSize, .xxxLarge)
+}
+
+private struct SummaryStatusPreviewSet: View {
+    private let weather = SummaryWeather(
+        temperature: Measurement(value: 73, unit: .fahrenheit),
+        symbolName: "cloud",
+        conditionText: "Partly Cloudy",
+        asOf: .now,
+        dewPoint: Measurement(value: 55, unit: .fahrenheit),
+        humidity: 0.42,
+        windSpeed: .init(value: 8, unit: .milesPerHour),
+        windGust: nil,
+        windDirection: "SE",
+        pressure: .init(value: 0.25, unit: .inchesOfMercury),
+        pressureTrend: "steady"
+    )
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SummaryStatus(
+                statusText: "Clinton, IL",
+                weather: weather,
+                resolutionState: SummaryResolutionState(),
+                todayContentState: .current,
+                showsOfflineToken: false,
+                isLocationUnavailable: false
+            )
+            SummaryStatus(
+                statusText: "Clinton, IL",
+                weather: weather,
+                resolutionState: SummaryResolutionState(),
+                todayContentState: .degraded,
+                showsOfflineToken: true,
+                isLocationUnavailable: false
+            )
+            SummaryStatus(
+                statusText: "Location not available",
+                weather: nil,
+                resolutionState: SummaryResolutionState(),
+                todayContentState: .noCacheResolving,
+                showsOfflineToken: false,
+                isLocationUnavailable: true
+            )
+            SummaryStatus(
+                statusText: "Clinton, IL",
+                weather: SummaryWeather(
+                    temperature: Measurement(value: 73, unit: .fahrenheit),
+                    symbolName: "cloud.bolt.rain",
+                    conditionText: "Scattered thunderstorms with locally heavy rainfall",
+                    asOf: .now,
+                    dewPoint: Measurement(value: 68, unit: .fahrenheit),
+                    humidity: 0.86,
+                    windSpeed: .init(value: 12, unit: .milesPerHour),
+                    windGust: nil,
+                    windDirection: "SE",
+                    pressure: .init(value: 0.25, unit: .inchesOfMercury),
+                    pressureTrend: "steady"
                 ),
-                symbolName: "sun.max",
-                conditionText: "Clear",
-                asOf: .now,
-                dewPoint: Measurement(
-                    value: 45.0,
-                    unit: .fahrenheit
-                ),
-                humidity: 0.15,
-                windSpeed: .init(value: 15.0, unit: .milesPerHour),
-                windGust: nil,
-                windDirection: "NNW",
-                pressure: .init(value: 0.25, unit: .inchesOfMercury),
-                pressureTrend: "climbing"
-            ),
-            resolutionState: SummaryResolutionState(),
-            todayContentState: .current,
-            showsOfflineToken: false,
-            isLocationUnavailable: false,
-        )
-        SummaryStatus(
-            statusText: "Topeka, KS",
-            weather: .init(
-                temperature: Measurement(
-                    value: 47.0,
-                    unit: .fahrenheit
-                ),
-                symbolName: "cloud",
-                conditionText: "Cloudy",
-                asOf: .now,
-                dewPoint: Measurement(
-                    value: 45.0,
-                    unit: .fahrenheit
-                ),
-                humidity: 0.15,
-                windSpeed: .init(value: 15.0, unit: .milesPerHour),
-                windGust: nil,
-                windDirection: "SSE",
-                pressure: .init(value: 0.25, unit: .inchesOfMercury),
-                pressureTrend: "falling"
-            ),
-            resolutionState: SummaryResolutionState(),
-            todayContentState: .current,
-            showsOfflineToken: true,
-            isLocationUnavailable: false,
-        )
-        SummaryStatus(
-            statusText: "Location not available",
-            weather: nil,
-            resolutionState: SummaryResolutionState(),
-            todayContentState: .noCacheResolving,
-            showsOfflineToken: false,
-            isLocationUnavailable: true,
-        )
+                resolutionState: SummaryResolutionState(),
+                todayContentState: .refreshFailedWithCache,
+                showsOfflineToken: false,
+                isLocationUnavailable: false
+            )
+        }
+        .padding()
     }
 }

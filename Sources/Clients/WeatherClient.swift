@@ -31,11 +31,21 @@ actor WeatherClient {
                 windGust: currentWeather.wind.gust,
                 windDirection: currentWeather.wind.compassDirection.abbreviation,
                 pressure: currentWeather.pressure,
-                pressureTrend: currentWeather.pressureTrend.description
+                pressureTrend: Self.pressureTrendValue(currentWeather.pressureTrend),
+                visibility: currentWeather.visibility
             ))
         } catch {
             logger.error("WeatherKit request completed result=failure error=\(error, privacy: .public)")
             return .failure
+        }
+    }
+
+    nonisolated static func pressureTrendValue(_ trend: WeatherKit.PressureTrend) -> String {
+        switch trend {
+        case .rising: "rising"
+        case .steady: "steady"
+        case .falling: "falling"
+        @unknown default: "unknown"
         }
     }
     

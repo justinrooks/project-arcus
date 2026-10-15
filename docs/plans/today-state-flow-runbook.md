@@ -18,7 +18,8 @@ calm, predictable landing surface where cached content appears immediately and f
 
 - Parent issue: [#248](https://github.com/justinrooks/project-arcus/issues/248)
 - Progress ledger: `docs/plans/today-state-flow-progress.md`
-- Product direction: `docs/SkyAware North Star Spec.md`
+- Product direction: `docs/product/north-star.md`
+- State presentation: `docs/design/states-accessibility.md`
 - Repository guidance: `AGENTS.md` and `Sources/AGENTS.md`
 - Prior related UI polish ledger: `docs/plans/resolve-forward-ui-polish-progress.md`
 

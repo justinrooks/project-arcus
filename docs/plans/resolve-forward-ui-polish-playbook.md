@@ -25,8 +25,8 @@ Before touching code for any issue, read:
 3. `tasks/lessons.md`
 4. The current GitHub issue body
 5. `docs/plans/resolve-forward-ui-polish-progress.md`
-6. `docs/SkyAware North Star Spec.md`
-7. `docs/SkyAware Branding and Design Guide.md`
+6. `docs/product/north-star.md` and `docs/design/states-accessibility.md` for accepted-state and refresh requirements.
+7. `docs/brand/brand-and-voice.md` for status wording and `docs/design/today.md` for Today presentation.
 8. The relevant Summary/loading files for the issue
 
 For Local Alerts work, also read:

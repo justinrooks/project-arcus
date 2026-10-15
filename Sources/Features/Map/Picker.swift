@@ -114,12 +114,16 @@ struct MapLayerMenu: View {
 }
 
 private struct MapLayerPickerButtonStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
             content
                 .buttonStyle(.glass)
-        } else {
+                .modifier(DarkMapLayerPickerContrast(isEnabled: colorScheme == .dark))
+        } else if colorScheme == .dark {
             content
                 .buttonStyle(.plain)
                 .skyAwareSurface(
@@ -130,12 +134,45 @@ private struct MapLayerPickerButtonStyle: ViewModifier {
                     shadowRadius: 10,
                     shadowY: 6
                 )
+        } else {
+            content
+                .buttonStyle(.plain)
+                .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06),
+                            lineWidth: colorSchemeContrast == .increased ? 1 : 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
+        }
+    }
+}
+
+private struct DarkMapLayerPickerContrast: ViewModifier {
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .foregroundStyle(.white)
+                .background(.black.opacity(0.32), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(.white.opacity(0.28), lineWidth: 0.75)
+                        .allowsHitTesting(false)
+                }
+        } else {
+            content
         }
     }
 }
 
 private struct MapLayerMenuLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     let layer: MapLayer
 
@@ -145,30 +182,30 @@ private struct MapLayerMenuLabel: View {
 
     var body: some View {
         labelBody(title: layer.title)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .frame(minHeight: 44)
             .contentShape(Capsule())
     }
 
     @ViewBuilder
     private func labelBody(title: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: layer.symbol)
                 .imageScale(.medium)
                 .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.secondary)
                 .frame(width: 18)
 
             Text(title)
-                .font(adaptiveLayout.usesAccessibilityLayout ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
+                .font(adaptiveLayout.usesAccessibilityLayout ? .headline.weight(.semibold) : .subheadline.weight(.medium))
                 .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
                 .minimumScaleFactor(0.85)
                 .layoutPriority(1)
 
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.secondary)
                 .frame(width: 12)
         }
     }

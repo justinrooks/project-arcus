@@ -12,6 +12,8 @@ import UserNotifications
 
 @MainActor
 struct OnboardingView: View {
+    var onComplete: () -> Void = {}
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(LocationSession.self) private var locationSession
 
@@ -39,53 +41,59 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        TabView(selection: $currentStep) {
+        activeStep
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                OnboardingStepProgress(step: currentStep)
+            }
+            .animation(SkyAwareMotion.onboardingStep(reduceMotion), value: currentStep)
+            .background(.skyAwareBackground)
+    }
+
+    @ViewBuilder
+    private var activeStep: some View {
+        switch currentStep {
+        case .welcome:
             WelcomeView {
                 advance(to: .disclaimer)
             }
-            .tag(OnboardingStep.welcome)
-
+        case .disclaimer:
             DisclaimerView {
                 disclaimerVersion = currentDisclaimerVersion
                 advance(to: .locationPermission)
             }
-            .tag(OnboardingStep.disclaimer)
-
+        case .locationPermission:
             LocationPermissionView(
                 isWorking: locationStepState.isWorking,
                 statusMessage: locationStepState.statusMessage,
                 onEnable: requestLocationPermission,
                 onSkip: skipLocationPermissionStep
             )
-            .tag(OnboardingStep.locationPermission)
-
+        case .alwaysUpgrade:
             OnboardingAlwaysUpgradeView(
                 isWorking: alwaysUpgradeStepState.isWorking,
                 statusMessage: alwaysUpgradeStepState.statusMessage,
                 onEnableAlways: requestAlwaysUpgradeDuringOnboarding,
                 onSkip: skipAlwaysUpgradeStep
             )
-            .tag(OnboardingStep.alwaysUpgrade)
-
+        case .notificationPermission:
             NotificationPermissionView(
                 isWorking: notificationStepState.isWorking,
                 statusMessage: notificationStepState.statusMessage,
                 onEnable: requestNotificationPermission,
                 onSkip: completeOnboarding
             )
-            .tag(OnboardingStep.notificationPermission)
         }
-        .tabViewStyle(.page)
-        .indexViewStyle(.page(backgroundDisplayMode: .always))
-        .overlay {
-            OnboardingPagerSwipeBlocker()
-                .allowsHitTesting(false)
-        }
-        .background(.skyAwareBackground)
     }
 
     private func requestLocationPermission() {
         guard !locationStepState.isWorking else { return }
+
+        if locationSession.authorizationStatus == .authorizedWhenInUse {
+            locationReliabilityLogger.notice("Onboarding routed directly to the Always upgrade page for an existing When In Use grant")
+            advance(to: .alwaysUpgrade)
+            return
+        }
 
         Task { @MainActor in
             locationStepState = .working("Waiting for your location choice...")
@@ -110,17 +118,14 @@ struct OnboardingView: View {
     private func requestAlwaysUpgradeDuringOnboarding() {
         guard !alwaysUpgradeStepState.isWorking else { return }
 
-        Task { @MainActor in
-            alwaysUpgradeStepState = .working("Getting alerts ready...")
-            try? await Task.sleep(for: .milliseconds(300))
-            let didRequestUpgrade = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
-            if didRequestUpgrade {
-                locationReliabilityLogger.notice("Onboarding submitted the native Always upgrade request")
-            } else {
-                locationReliabilityLogger.info("Onboarding could not submit the native Always upgrade request; continuing to notifications")
-            }
-            alwaysUpgradeStepState = .idle
-            advance(to: .notificationPermission)
+        let didRequestUpgrade = OnboardingAlwaysUpgradeAction.perform(
+            requestUpgrade: locationSession.requestAlwaysAuthorizationUpgradeIfNeeded,
+            advance: advance
+        )
+        if didRequestUpgrade {
+            locationReliabilityLogger.notice("Onboarding submitted the native Always upgrade request")
+        } else {
+            locationReliabilityLogger.info("Onboarding could not submit the native Always upgrade request; continuing to notifications")
         }
     }
 
@@ -196,6 +201,7 @@ struct OnboardingView: View {
 
     @MainActor
     private func completeOnboarding() {
+        onComplete()
         onboardingComplete = true
     }
 }
@@ -209,6 +215,18 @@ enum OnboardingRemoteSetupDecision {
     }
 }
 
+enum OnboardingAlwaysUpgradeAction {
+    @MainActor
+    static func perform(
+        requestUpgrade: () -> Bool,
+        advance: (OnboardingStep) -> Void
+    ) -> Bool {
+        let didRequestUpgrade = requestUpgrade()
+        advance(.notificationPermission)
+        return didRequestUpgrade
+    }
+}
+
 enum OnboardingStep: Int, CaseIterable, Identifiable {
     case welcome
     case disclaimer
@@ -217,6 +235,31 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
     case notificationPermission
 
     var id: Int { rawValue }
+
+    static let requiredStageCount = 4
+
+    var requiredStage: Int {
+        switch self {
+        case .welcome: 1
+        case .disclaimer: 2
+        case .locationPermission, .alwaysUpgrade: 3
+        case .notificationPermission: 4
+        }
+    }
+
+    var progressTitle: String {
+        if self == .alwaysUpgrade {
+            return "Optional step · Required setup: 3 of 4"
+        }
+        return "Step \(requiredStage) of \(Self.requiredStageCount)"
+    }
+
+    var progressAccessibilityLabel: String {
+        if self == .alwaysUpgrade {
+            return "Optional background awareness step. Required setup is 3 of 4 steps."
+        }
+        return "Step \(requiredStage) of \(Self.requiredStageCount)"
+    }
 
     func nextStep(locationAuthorizationStatus: CLAuthorizationStatus? = nil) -> OnboardingStep? {
         switch self {

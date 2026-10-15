@@ -193,6 +193,83 @@ struct LaunchPresentationStateTests {
 
         #expect(presentation == nil)
     }
+
+    @Test("suppresses location recovery after onboarding completes in this session")
+    func suppressesLocationRecoveryAfterOnboardingCompletion() {
+        var context = OnboardingLaunchContext()
+
+        let beforeCompletion = context.resolve(
+            disclaimerVersion: 1,
+            currentDisclaimerVersion: 1,
+            authorizationStatus: .denied,
+            suppressLocationRestrictedSheet: false
+        )
+        #expect(beforeCompletion == .locationRestricted)
+
+        context.markOnboardingComplete()
+        let afterCompletion = context.resolve(
+            disclaimerVersion: 1,
+            currentDisclaimerVersion: 1,
+            authorizationStatus: .denied,
+            suppressLocationRestrictedSheet: false
+        )
+
+        #expect(afterCompletion == nil)
+    }
+}
+
+@Suite("Location permission recovery")
+struct LocationPermissionRecoveryActionTests {
+    @Test("denied location opens Settings")
+    func deniedOpensSettings() {
+        var settingsOpenCount = 0
+        var authorizationRequestCount = 0
+
+        LocationPermissionRecoveryAction.perform(
+            authorizationStatus: .denied,
+            openSettings: { settingsOpenCount += 1 },
+            requestAuthorization: { authorizationRequestCount += 1 }
+        )
+
+        #expect(settingsOpenCount == 1)
+        #expect(authorizationRequestCount == 0)
+    }
+
+    @Test("restricted location cannot be changed from the app")
+    func restrictedIsUnavailable() {
+        var settingsOpenCount = 0
+        var authorizationRequestCount = 0
+
+        LocationPermissionRecoveryAction.perform(
+            authorizationStatus: .restricted,
+            openSettings: { settingsOpenCount += 1 },
+            requestAuthorization: { authorizationRequestCount += 1 }
+        )
+
+        #expect(settingsOpenCount == 0)
+        #expect(authorizationRequestCount == 0)
+    }
+
+    @Test("not determined location can request native authorization")
+    func notDeterminedRequestsAuthorization() {
+        var settingsOpenCount = 0
+        var authorizationRequestCount = 0
+
+        LocationPermissionRecoveryAction.perform(
+            authorizationStatus: .notDetermined,
+            openSettings: { settingsOpenCount += 1 },
+            requestAuthorization: { authorizationRequestCount += 1 }
+        )
+
+        #expect(settingsOpenCount == 0)
+        #expect(authorizationRequestCount == 1)
+    }
+
+    @Test("authorized location does not need recovery")
+    func authorizedNeedsNoRecovery() {
+        #expect(LocationPermissionRecoveryAction.resolve(authorizationStatus: .authorizedWhenInUse) == .none)
+        #expect(LocationPermissionRecoveryAction.resolve(authorizationStatus: .authorizedAlways) == .none)
+    }
 }
 
 @Suite("Onboarding step progression")
@@ -218,6 +295,70 @@ struct OnboardingStepTests {
     func terminalStepsCompleteTheFlow() {
         #expect(OnboardingStep.alwaysUpgrade.nextStep() == .notificationPermission)
         #expect(OnboardingStep.notificationPermission.nextStep() == nil)
+    }
+
+    @Test("optional Always access is disclosed without inflating required progress")
+    func optionalAlwaysAccessDoesNotCountAsRequiredProgress() {
+        #expect(OnboardingStep.requiredStageCount == 4)
+        #expect(OnboardingStep.locationPermission.requiredStage == 3)
+        #expect(OnboardingStep.alwaysUpgrade.requiredStage == 3)
+        #expect(OnboardingStep.notificationPermission.requiredStage == 4)
+        #expect(OnboardingStep.alwaysUpgrade.progressTitle.contains("Optional step"))
+        #expect(OnboardingStep.alwaysUpgrade.progressAccessibilityLabel.contains("Optional background awareness"))
+    }
+
+    @Test("Always access is only inserted after When In Use authorization")
+    func conditionalAlwaysStepFollowsWhenInUseAuthorization() {
+        #expect(
+            OnboardingStep.locationPermission.nextStep(locationAuthorizationStatus: .authorizedWhenInUse) == .alwaysUpgrade
+        )
+        #expect(
+            OnboardingStep.locationPermission.nextStep(locationAuthorizationStatus: .authorizedAlways) == .notificationPermission
+        )
+        #expect(
+            OnboardingStep.locationPermission.nextStep(locationAuthorizationStatus: .denied) == .notificationPermission
+        )
+    }
+}
+
+@Suite("Onboarding Always upgrade action")
+struct OnboardingAlwaysUpgradeActionTests {
+    @Test("requests eligible Always upgrade and continues to notifications")
+    @MainActor
+    func eligibleUpgradeContinues() {
+        var requestCount = 0
+        var advancedSteps: [OnboardingStep] = []
+
+        let didRequestUpgrade = OnboardingAlwaysUpgradeAction.perform(
+            requestUpgrade: {
+                requestCount += 1
+                return true
+            },
+            advance: { advancedSteps.append($0) }
+        )
+
+        #expect(didRequestUpgrade)
+        #expect(requestCount == 1)
+        #expect(advancedSteps == [.notificationPermission])
+    }
+
+    @Test("continues to notifications when Always upgrade is unavailable")
+    @MainActor
+    func unavailableUpgradeContinues() {
+        var requestCount = 0
+        var advancedSteps: [OnboardingStep] = []
+
+        let didRequestUpgrade = OnboardingAlwaysUpgradeAction.perform(
+            requestUpgrade: {
+                requestCount += 1
+                return false
+            },
+            advance: { advancedSteps.append($0) }
+        )
+
+        #expect(!didRequestUpgrade)
+        #expect(requestCount == 1)
+        #expect(advancedSteps == [.notificationPermission])
     }
 }
 

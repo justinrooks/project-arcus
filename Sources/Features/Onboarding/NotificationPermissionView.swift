@@ -13,40 +13,32 @@ struct NotificationPermissionView: View {
     let onEnable: () -> Void
     let onSkip: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 80
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "bell.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
+            OnboardingStepHeading(
+                symbol: "bell.fill",
+                title: "Stay Aware When It Matters"
+            )
 
-            Text("Stay Aware")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Text("You can allow notifications such as:")
+            Text("Allow notifications to stay aware of severe weather in your area.")
                 .font(.body)
+                .multilineTextAlignment(.center)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "sunrise.fill")
-                        .foregroundColor(.skyAwareAccent)
-                    Text("A morning severe-weather summary")
-                }
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.skyAwareAccent)
-                    Text("Warnings, watches, and mesoscale discussion alerts relevant to your location")
-                }
-            }
-            .font(.body)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            OnboardingInformationCard(
+                symbol: "exclamationmark.triangle.fill",
+                title: "Severe weather alerts",
+                detail: "Warnings, watches, and mesoscale discussion alerts relevant to your location."
+            )
+
+            OnboardingInformationCard(
+                symbol: "sunrise.fill",
+                title: "Daily awareness",
+                detail: "Optional morning severe-weather summaries to help you plan your day."
+            )
 
             Text("Notifications are designed to help you stay aware of severe weather, but delivery timing may vary. SkyAware does not issue official warnings. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities for emergency information.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         } footer: {
             VStack(spacing: 12) {
@@ -58,20 +50,12 @@ struct NotificationPermissionView: View {
 
                 Button(action: onEnable) {
                     Text("Allow Notifications")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                                .fill(Color.skyAwareAccent)
-                        )
                 }
+                .buttonStyle(OnboardingPrimaryActionStyle())
                 .disabled(isWorking)
 
                 Button("Skip for Now", action: onSkip)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .buttonStyle(OnboardingSecondaryActionStyle())
                     .disabled(isWorking)
             }
         }

@@ -7,7 +7,8 @@
 
 ## Related Docs
 
-- `docs/SkyAware North Star Spec.md`
+- `docs/product/north-star.md` — accepted-state product invariants
+- `docs/design/states-accessibility.md` — shared state and refresh presentation
 - `docs/plans/today-state-flow-runbook.md`
 - `docs/plans/today-refresh-performance-runbook.md`
 - `docs/plans/ingestion-reactive-consumers-runbook.md`

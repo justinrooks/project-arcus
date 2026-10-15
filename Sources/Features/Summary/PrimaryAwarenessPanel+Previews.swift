@@ -137,6 +137,25 @@ import SwiftUI
                 fireRisk: .extreme,
                 colorScheme: .dark
             )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Fire Risk Unavailable Offline",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: nil,
+                todayContentState: .degraded,
+                showsOfflineToken: true,
+                colorScheme: .dark
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Fire Risk Resolving",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: nil,
+                todayContentState: .noCacheResolving,
+                colorScheme: .light
+            )
         }
         .padding()
     }
@@ -147,14 +166,20 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
     let title: String
     let stormRisk: StormRiskLevel
     let severeRisk: SevereWeatherThreat
-    let fireRisk: FireRiskLevel
+    let fireRisk: FireRiskLevel?
     var alerts: [AlertDTO] = []
     var todayContentState: TodayContentState = .current
+    var showsOfflineToken = false
     var colorScheme: ColorScheme? = nil
     var dynamicTypeSize: DynamicTypeSize? = nil
     var intensity: SevereIntensityPresentation? = nil
 
-    private var resolutionState: SummaryResolutionState { SummaryResolutionState() }
+    private var resolutionState: SummaryResolutionState {
+        guard todayContentState == .noCacheResolving else { return SummaryResolutionState() }
+        var state = SummaryResolutionState()
+        state.begin(task: .finalizing, sections: [.fireRisk])
+        return state
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -169,7 +194,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
                 alerts: alerts,
                 todayContentState: todayContentState,
                 resolutionState: resolutionState,
-                showsOfflineToken: false,
+                showsOfflineToken: showsOfflineToken,
                 onOpenMapLayer: { _ in },
                 onOpenAlerts: { }
             )

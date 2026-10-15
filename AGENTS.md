@@ -87,4 +87,6 @@
 
 ## Related Guidance
 - For code review tasks, follow `docs/code_review.md`.
-- For design, UI, brand, screenshots, marketing visuals, and user-facing copy, follow `docs/SkyAware North Star Spec.md`.
+- For product behavior and meteorological meaning, follow `docs/product/north-star.md`.
+- For brand identity, terminology, and communication, follow `docs/brand/brand-and-voice.md`.
+- For visual and interaction design, start with `docs/design/README.md`, which routes to the relevant surface guidance.

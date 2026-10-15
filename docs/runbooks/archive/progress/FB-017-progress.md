@@ -892,7 +892,7 @@ Related GitHub issues:
   - `docs/plans/FB-017-progress.md`
   - `FB-017 Widgets.md`
   - `FB-018 Widget Deep Linking.md` for out-of-scope boundary only
-  - `SkyAware North Star Spec.md`
+  - `SkyAware North Star Spec.md` (historical citation; [pre-retirement recovery snapshot](https://github.com/justinrooks/project-arcus/blob/791c94b14db4390b7766080efa8164356dd395ad/docs/SkyAware%20North%20Star%20Spec.md), not identification of the exact May 2026 revision reviewed)
   - GitHub epic `#11` and closed child issues `#153` through `#165`
   - widget source, shared snapshot/storage/metadata/routing files, ingestion/APNs refresh seams, entitlements, project target configuration, previews, and focused tests
 

@@ -1230,6 +1230,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                 alertSnapshotTimestamp: projection.lastHotAlertsLoadAt,
                 stormRisk: snapshot.stormRisk,
                 severeRisk: snapshot.severeRisk,
+                fireRisk: snapshot.fireRisk,
                 alerts: projection.activeAlerts,
                 mesos: projection.activeMesos,
                 locationSummary: snapshot.locationSnapshot?.placemarkSummary

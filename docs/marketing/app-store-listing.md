@@ -1,7 +1,7 @@
 # Current App Store Listing
 
 ## Version
-1.2.0
+1.3.0
 
 ## App Name
 SkyAware
@@ -52,6 +52,7 @@ SkyAware 1.3 keeps local severe-weather awareness steadier while conditions upda
 • Maps preserve the selected layer and camera while replacement data loads.
 • Risk-change notifications and active alert handling have been refined so local changes are compared from the right context, and active alerts are not removed by incomplete source updates.
 • Reduce Motion now turns off presentation animations across key surfaces.
+• Open alert details update when a newer accepted alert arrives, and Outlook/risk content stays available when part of a data source fails.
 
 ## Keywords
 storm,tornado,warning,alert,watch,mesoscale,spc,nws,outlook,thunderstorm,hail,wind,fire,forecast

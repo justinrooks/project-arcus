@@ -141,6 +141,26 @@ struct MorningNotificationTests {
         """)
     }
 
+    @Test("missing and synthetic location labels use the generic morning title",
+          arguments: [nil, "", " \n\t ", "Unknown", " UNKNOWN ", "Ready", "ready"] as [String?])
+    func composerUsesGenericTitle(place: String?) {
+        var payload: [String: Sendable] = [:]
+        if let place { payload["placeMark"] = place }
+        let message = MorningComposer().compose(
+            NotificationEvent(kind: .morningOutlook, key: "morning:2026-01-02", payload: payload)
+        )
+        #expect(message.title == "Today's Outlook")
+    }
+
+    @Test("composer trims a valid location name")
+    func composerTrimsValidName() {
+        let message = MorningComposer().compose(
+            NotificationEvent(kind: .morningOutlook, key: "morning:2026-01-02",
+                              payload: ["placeMark": " Bennett, CO \n"])
+        )
+        #expect(message.title == "Today's Outlook for Bennett, CO")
+    }
+
     @Test("composer adds deterministic risk transitions before the morning outlook")
     func composerAddsRiskTransitionsBeforeMorningOutlook() throws {
         let change = try #require(
@@ -204,7 +224,7 @@ struct MorningNotificationTests {
             stormRisk: .slight,
             severeRisk: .allClear,
             fireRisk: .clear,
-            placeMark: "Oklahoma City, OK"
+            placeMark: nil
         )
 
         #expect(await engine.run(ctx: context) == false)

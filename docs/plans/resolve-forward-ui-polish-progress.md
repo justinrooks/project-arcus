@@ -26,6 +26,8 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 
 ## Baseline Audit Artifacts
 
+The original document citations below are historical baseline evidence, not current instructions. The retired [North Star Spec](https://github.com/justinrooks/project-arcus/blob/791c94b14db4390b7766080efa8164356dd395ad/docs/SkyAware%20North%20Star%20Spec.md) and [Branding and Design Guide](https://github.com/justinrooks/project-arcus/blob/791c94b14db4390b7766080efa8164356dd395ad/docs/SkyAware%20Branding%20and%20Design%20Guide.md) remain recoverable at the pre-retirement snapshot `791c94b`. This recovery snapshot does not establish the revision used by each earlier review; historical conclusions are unchanged. Current guidance is routed through the associated runbook.
+
 - Audit drafts: `docs/audits/resolve-forward-ui-polish-issues.md`
 - Agent playbook: `docs/plans/resolve-forward-ui-polish-playbook.md`
 - Design spec: `docs/SkyAware North Star Spec.md`

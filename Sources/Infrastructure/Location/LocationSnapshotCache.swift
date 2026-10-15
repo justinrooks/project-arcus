@@ -221,7 +221,22 @@ struct DurableLocationContextCache: DurableLocationContextCaching {
             defaults.removeObject(forKey: key)
             return nil
         }
-        return context
+        // The accepted snapshot already owns display metadata. Reuse it only for
+        // the identical location, without extending the durable context's age.
+        guard let accepted = LocationSnapshotCache(suiteName: suiteName).load(),
+              accepted.coordinates.latitude == context.snapshot.coordinates.latitude,
+              accepted.coordinates.longitude == context.snapshot.coordinates.longitude,
+              accepted.h3Cell == context.h3Cell,
+              accepted.timestamp >= context.snapshot.timestamp,
+              accepted.timestamp <= nowProvider(),
+              accepted.accuracy.isFinite,
+              accepted.accuracy > 0,
+              accepted.accuracy <= BackgroundLocationContextReusePolicy.maximumHorizontalAccuracy else {
+            return context
+        }
+        var snapshot = context.snapshot
+        snapshot.placemarkSummary = accepted.placemarkSummary
+        return LocationContext(snapshot: snapshot, h3Cell: context.h3Cell, grid: context.grid)
     }
 
     func save(_ context: LocationContext) {

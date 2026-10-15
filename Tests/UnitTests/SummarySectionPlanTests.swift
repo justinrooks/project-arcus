@@ -38,7 +38,7 @@ struct SummarySectionPlanTests {
         #expect(plan.sections.contains(.stormSetup) == false)
         #expect(plan.sections == [
             .currentConditions, .primaryAwareness, .localAlerts, .atmosphericConditions,
-            .locationReliability, .outlookSummary, .attribution
+            .locationReliability, .attribution
         ])
     }
 
@@ -60,7 +60,7 @@ struct SummarySectionPlanTests {
                 if hasLocationReliabilityRail {
                     #expect(plan.sections[stormSetupIndex! + 1] == .locationReliability)
                 } else {
-                    #expect(plan.sections[stormSetupIndex! + 1] == .outlookSummary)
+                    #expect(plan.sections[stormSetupIndex! + 1] == .attribution)
                 }
             }
         }

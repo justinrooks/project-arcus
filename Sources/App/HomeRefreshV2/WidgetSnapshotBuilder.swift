@@ -8,6 +8,7 @@ struct WidgetSnapshotBuilder {
         let availability: WidgetAvailabilityState
         let stormRisk: StormRiskLevel?
         let severeRisk: SevereWeatherThreat?
+        let fireRisk: FireRiskLevel?
         let alerts: [AlertDTO]
         let mesos: [MdDTO]
         let locationSummary: String?
@@ -20,6 +21,7 @@ struct WidgetSnapshotBuilder {
             availability: WidgetAvailabilityState,
             stormRisk: StormRiskLevel?,
             severeRisk: SevereWeatherThreat?,
+            fireRisk: FireRiskLevel? = nil,
             alerts: [AlertDTO],
             mesos: [MdDTO],
             locationSummary: String? = nil
@@ -30,6 +32,7 @@ struct WidgetSnapshotBuilder {
             self.availability = availability
             self.stormRisk = stormRisk
             self.severeRisk = severeRisk
+            self.fireRisk = fireRisk
             self.alerts = alerts
             self.mesos = mesos
             self.locationSummary = locationSummary
@@ -53,6 +56,7 @@ struct WidgetSnapshotBuilder {
             generatedAt: input.generatedAt,
             stormRisk: stormRiskDisplay(from: input.stormRisk),
             severeRisk: severeRiskDisplay(from: input.severeRisk),
+            fireRisk: fireRiskDisplay(from: input.fireRisk),
             selectedAlert: activeAlerts.first?.displayState,
             activeAlerts: activeAlerts.map(\.displayState),
             hiddenAlertCount: max(0, activeAlerts.count - 1),
@@ -166,6 +170,14 @@ private extension WidgetSnapshotBuilder {
         }
 
         return WidgetRiskDisplayState(label: threat.message, severity: threat.priority)
+    }
+
+    func fireRiskDisplay(from level: FireRiskLevel?) -> WidgetRiskDisplayState? {
+        guard let level else { return nil }
+        return WidgetRiskDisplayState(
+            label: level.supportingPresentation().title,
+            severity: level.rawValue
+        )
     }
 
     func orderedActiveAlerts(alerts: [AlertDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {

@@ -62,11 +62,12 @@ extension View {
         cornerRadius: CGFloat = SkyAwareRadius.medium,
         tint: Color = .white.opacity(0.06),
         interactive: Bool = false,
+        allowsGlass: Bool = false,
         shadowOpacity: Double = 0.10,
         shadowRadius: CGFloat = 10,
         shadowY: CGFloat = 4
     ) -> some View {
-        if #available(iOS 26, *) {
+        if #available(iOS 26, *), allowsGlass {
             if interactive {
                 self
                     .glassEffect(
@@ -188,6 +189,7 @@ extension View {
             self.skyAwareSurface(
                 cornerRadius: cornerRadius,
                 tint: .white.opacity(0.10),
+                allowsGlass: true,
                 shadowOpacity: shadowOpacity,
                 shadowRadius: shadowRadius,
                 shadowY: shadowY
@@ -206,22 +208,13 @@ extension View {
         }
     }
 
-    @ViewBuilder
-    func glassCardBackground(
-        cornerRadius: CGFloat = SkyAwareRadius.hero,
-        shadowOpacity: Double = 0.10,
-        shadowRadius: CGFloat = 10,
-        shadowY: CGFloat = 4
-    ) -> some View {
-        self.cardBackground(
-            cornerRadius: cornerRadius,
-            shadowOpacity: shadowOpacity,
-            shadowRadius: shadowRadius,
-            shadowY: shadowY,
-            allowsGlass: true
+    func skyAwareContentSurface(cornerRadius: CGFloat = SkyAwareRadius.card) -> some View {
+        self.background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.skyAwareContentSurface)
         )
     }
-    
+
     func cardRowBackground(
         cornerRadius: CGFloat = SkyAwareRadius.row,
         shadowOpacity: Double = 0.0,
@@ -291,9 +284,10 @@ extension View {
     func skyAwareChip(
         cornerRadius: CGFloat = SkyAwareRadius.hero,
         tint: Color = .white.opacity(0.10),
-        interactive: Bool = false
+        interactive: Bool = false,
+        allowsGlass: Bool = false
     ) -> some View {
-        if #available(iOS 26, *) {
+        if #available(iOS 26, *), allowsGlass {
             if interactive {
                 self.glassEffect(
                     .regular.tint(tint).interactive(),

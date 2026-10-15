@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct OnboardingStepShell<Content: View, Footer: View>: View {
-    private let footerBottomClearance: CGFloat = 52
+    private let footerBottomClearance: CGFloat = 20
     private let content: Content
     private let footer: Footer
 
@@ -32,11 +32,145 @@ struct OnboardingStepShell<Content: View, Footer: View>: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 32)
-                .padding(.top, 16)
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
                 .padding(.bottom, footerBottomClearance)
                 .background(Color(.skyAwareBackground))
         }
         .background(Color(.skyAwareBackground).ignoresSafeArea())
+    }
+}
+
+struct OnboardingStepHeading: View {
+    let symbol: String
+    let title: String
+    var subtitle: String? = nil
+    var symbolSize: CGFloat = 48
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: symbolSize, weight: .medium))
+                .foregroundStyle(Color.skyAwareAccent)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.largeTitle.weight(.bold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let subtitle {
+                Text(subtitle)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct OnboardingInformationCard: View {
+    let symbol: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color.skyAwareAccent)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            .secondary.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
+        )
+    }
+}
+
+struct OnboardingPrimaryActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.chip, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: SkyAwareRadius.chip, style: .continuous)
+                    .fill(
+                        isEnabled
+                            ? Color.skyAwareAccent.opacity(configuration.isPressed ? 0.82 : 1)
+                            : Color.secondary.opacity(0.18)
+                    )
+            }
+            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+    }
+}
+
+struct OnboardingSecondaryActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.medium))
+            .foregroundStyle(enabledForeground(isPressed: configuration.isPressed))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+    }
+
+    private var enabledColor: Color {
+        colorScheme == .dark ? .primary : .skyAwareAccent
+    }
+
+    private func enabledForeground(isPressed: Bool) -> Color {
+        guard isEnabled else { return .secondary }
+        return enabledColor.opacity(isPressed ? 0.7 : 1)
+    }
+}
+
+struct OnboardingStepProgress: View {
+    let step: OnboardingStep
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(step.progressTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 6) {
+                ForEach(1...OnboardingStep.requiredStageCount, id: \.self) { stage in
+                    Capsule()
+                        .fill(stage <= step.requiredStage ? Color.skyAwareAccent : Color.secondary.opacity(0.2))
+                        .frame(height: 4)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(Color(.skyAwareBackground))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(step.progressAccessibilityLabel)
     }
 }

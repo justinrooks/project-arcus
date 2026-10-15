@@ -43,10 +43,10 @@ struct PrimaryAwarenessPanel: View {
             PrimaryAwarenessHeroView(
                 primary: primaryState,
                 action: primaryState.destination,
+                showsSemanticTint: primaryState != .quiet || (stormRisk != nil && severeRisk != nil && fireRisk != nil),
                 onOpenMapLayer: onOpenMapLayer,
                 onOpenAlerts: onOpenAlerts
             )
-
             VStack(spacing: 10) {
                 stormRow
                 severeRow
@@ -59,7 +59,7 @@ struct PrimaryAwarenessPanel: View {
     private var headerRow: some View {
         HStack(spacing: 10) {
             Label("Today's Awareness", systemImage: "checkmark.shield").symbolVariant(.fill)
-                .sectionLabel()
+                .todaySectionLabel()
 
             Spacer(minLength: 12)
 
@@ -72,11 +72,16 @@ struct PrimaryAwarenessPanel: View {
 
     private var stormRow: some View {
         riskRow(
-            title: stormTitle,
+            title: stormCardValue,
             detail: stormDetail,
             symbolName: stormSymbolName,
             background: stormBackground,
+            category: "Storm Risk",
+            accent: stormAccent,
+            semanticTint: stormSemanticTint,
+            categorySymbolName: stormSymbolName,
             isQuiet: stormIsQuiet,
+            presentationMode: stormIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(.categorical)
             }
@@ -87,12 +92,16 @@ struct PrimaryAwarenessPanel: View {
 
     private var severeRow: some View {
         riskRow(
-            title: severeTitle,
+            title: severeCardValue,
             detail: severeDetail,
             symbolName: severeSymbolName,
             background: severeBackground,
+            category: "Severe Risk",
+            accent: severeAccent,
+            semanticTint: severeSemanticTint,
             isQuiet: severeIsQuiet,
             intensity: severeIntensity?.displayed(for: severeRisk, contentState: todayContentState),
+            presentationMode: severeIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(severeMapLayer)
             }
@@ -103,12 +112,16 @@ struct PrimaryAwarenessPanel: View {
 
     private var fireRow: some View {
         riskRow(
-            title: fireTitle,
+            title: fireValue,
             detail: fireDetail,
             symbolName: fireSymbolName,
-            background: fireBackground,
+            background: neutralSupportBackground,
+            category: "Fire Risk",
+            accent: fireAccent,
+            semanticTint: fireSemanticTint,
+            categorySymbolName: fireSymbolName,
             isQuiet: fireIsQuiet,
-            presentationMode: firePresentation.presentationMode,
+            presentationMode: fireIsQuiet ? .subdued : .normal,
             action: {
                 onOpenMapLayer(.fire)
             }
@@ -123,11 +136,15 @@ struct PrimaryAwarenessPanel: View {
         detail: String,
         symbolName: String,
         background: LinearGradient,
+        category: String? = nil,
+        accent: Color? = nil,
+        semanticTint: Color? = nil,
+        categorySymbolName: String? = nil,
         isQuiet: Bool,
         intensity: SevereIntensityPresentation? = nil,
         presentationMode: SupportingRiskRowPresentationMode = .normal,
         action: @escaping () -> Void,
-        showsChevron: Bool = false
+        showsChevron: Bool = true
     ) -> some View {
         Button(action: action) {
             AwarenessSupportRow(
@@ -135,10 +152,14 @@ struct PrimaryAwarenessPanel: View {
                 detail: detail,
                 symbolName: symbolName,
                 background: background,
+                category: category,
+                accent: accent,
+                categorySymbolName: categorySymbolName,
                 intensity: intensity,
                 isQuiet: isQuiet,
                 presentationMode: presentationMode,
-                showsChevron: showsChevron
+                showsChevron: showsChevron,
+                semanticTint: semanticTint
             )
         }
         .buttonStyle(
@@ -174,28 +195,15 @@ struct PrimaryAwarenessPanel: View {
         )
     }
 
-    private var stormTitle: String {
-        if stormUnavailable {
-            return "Unavailable"
-        }
-
-        if stormRisk == nil, stormResolving {
-            return "Storm Risk"
-        }
-
-        guard let stormRisk else {
-            return "Storm Risk"
-        }
-
-        return SupportingRiskRowDisplayModel.storm(
-            level: stormRisk,
-            primarySource: primaryState.source
-        ).title
+    var stormCardValue: String {
+        if stormUnavailable { return "Unavailable" }
+        if stormRisk == nil, stormResolving { return "Getting risk…" }
+        return stormRisk?.message ?? "Unavailable"
     }
 
-    private var stormDetail: String {
+    var stormDetail: String {
         if stormUnavailable {
-            return "No saved storm risk data is available offline."
+            return "Storm risk data is unavailable."
         }
 
         if stormRisk == nil, stormResolving {
@@ -209,7 +217,7 @@ struct PrimaryAwarenessPanel: View {
             ).detail
         }
 
-        return "No severe storms expected"
+        return "Storm risk data is unavailable."
     }
 
     private var stormSymbolName: String {
@@ -221,19 +229,36 @@ struct PrimaryAwarenessPanel: View {
             return "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
         }
 
-        return stormRisk?.iconName ?? "checkmark.seal.fill"
+        return stormRisk?.iconName ?? "exclamationmark.circle"
     }
 
     private var stormIsQuiet: Bool {
-        stormUnavailable ? true : (stormRisk == nil ? stormResolving == false : stormRisk == .allClear)
+        stormRisk == .allClear
     }
 
     private var stormBackground: LinearGradient {
-        if stormUnavailable {
+        if stormRisk == nil {
             return neutralSupportBackground
         }
 
         return stormRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
+    }
+
+    var stormAccent: Color {
+        guard let stormRisk else { return .secondary }
+        return switch stormRisk {
+        case .allClear: Color.riskAllClear
+        case .thunderstorm: Color.riskThunderstorm
+        case .marginal: Color.riskMarginal
+        case .slight: Color.riskSlight
+        case .enhanced: Color.riskEnhanced
+        case .moderate: Color.riskModerate
+        case .high: Color.riskHigh
+        }
+    }
+
+    var stormSemanticTint: Color? {
+        stormRisk == nil ? nil : stormAccent
     }
 
     private var severeMapLayer: MapLayer {
@@ -249,32 +274,19 @@ struct PrimaryAwarenessPanel: View {
         }
     }
 
-    private var severeTitle: String {
-        if severeUnavailable {
-            return "Unavailable"
-        }
-
-        if severeRisk == nil, severeResolving {
-            return "Severe Risk"
-        }
-
-        guard let severeRisk else {
-            return "Severe Risk"
-        }
-
-        return SupportingRiskRowDisplayModel.severe(
-            threat: severeRisk,
-            primarySource: primaryState.source
-        ).title
+    var severeCardValue: String {
+        if severeUnavailable { return "Unavailable" }
+        if severeRisk == nil, severeResolving { return "Getting risk…" }
+        return severeRisk?.message ?? "Unavailable"
     }
 
-    private var severeDetail: String {
+    var severeDetail: String {
         if primaryState.source == .severeRisk,
            severeIntensity?.displayed(for: severeRisk, contentState: todayContentState) != nil {
-            return ""
+            return severeRisk?.dynamicSummary ?? ""
         }
         if severeUnavailable {
-            return "No saved severe risk data is available offline."
+            return "Severe risk data is unavailable."
         }
 
         if severeRisk == nil, severeResolving {
@@ -288,7 +300,7 @@ struct PrimaryAwarenessPanel: View {
             ).detail
         }
 
-        return "No active severe threats"
+        return "Severe risk data is unavailable."
     }
 
     private var severeSymbolName: String {
@@ -300,40 +312,53 @@ struct PrimaryAwarenessPanel: View {
             return "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
         }
 
-        return severeRisk?.iconName ?? "checkmark.seal.fill"
+        return severeRisk?.iconName ?? "exclamationmark.circle"
     }
 
     private var severeIsQuiet: Bool {
-        severeUnavailable ? true : (severeRisk == nil ? severeResolving == false : severeRisk == .allClear)
+        severeRisk == .allClear
     }
 
     private var severeBackground: LinearGradient {
-        if severeUnavailable {
+        if severeRisk == nil {
             return neutralSupportBackground
         }
 
         return severeRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
     }
 
-    private var fireTitle: String {
-        if fireUnavailable {
-            return "Unavailable"
+    var severeAccent: Color {
+        guard let severeRisk else { return .secondary }
+        return switch severeRisk {
+        case .allClear: Color.riskAllClear
+        case .wind: Color.windTeal
+        case .hail: Color.hailBlue
+        case .tornado: Color.tornadoRed
         }
-
-        if fireRisk == nil, fireResolving {
-            return "Fire Risk"
-        }
-
-        guard fireRisk != nil else {
-            return "No Fire Risk"
-        }
-
-        return firePresentation.title
     }
 
-    private var fireDetail: String {
+    var severeSemanticTint: Color? {
+        severeRisk == nil ? nil : severeAccent
+    }
+
+    var fireValue: String {
+        if fireUnavailable { return "Unavailable" }
+        if fireRisk == nil, fireResolving { return "Getting risk…" }
+        guard let fireRisk else { return "Unavailable" }
+        return fireRisk == .clear ? "None" : fireRisk.status
+    }
+
+    private var fireSymbolName: String {
+        if fireUnavailable { return "exclamationmark.circle" }
+        if fireRisk == nil, fireResolving {
+            return "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
+        }
+        return fireRisk?.symbol ?? "checkmark.seal.fill"
+    }
+
+    var fireDetail: String {
         if fireUnavailable {
-            return "No saved fire risk data is available offline."
+            return "Fire risk data is unavailable."
         }
 
         if fireRisk == nil, fireResolving {
@@ -347,32 +372,17 @@ struct PrimaryAwarenessPanel: View {
         return "No elevated fire weather risk"
     }
 
-    private var fireSymbolName: String {
-        if fireUnavailable {
-            return "exclamationmark.circle"
-        }
-
-        if fireRisk == nil, fireResolving {
-            return "flame"
-        }
-
-        return fireRisk?.symbol ?? "checkmark.seal.fill"
-    }
-
     private var fireIsQuiet: Bool {
-        fireUnavailable ? true : (fireRisk == nil ? fireResolving == false : fireRisk == .clear)
+        !fireUnavailable && !fireResolving && fireRisk == .clear
     }
 
-    private var fireBackground: LinearGradient {
-        if fireUnavailable {
-            return neutralSupportBackground
-        }
+    var fireAccent: Color {
+        guard !fireUnavailable, let fireRisk else { return .secondary }
+        return fireRisk == .clear ? .riskAllClear : fireRisk.tint
+    }
 
-        if fireRisk != nil, firePresentation.presentationMode == .subdued {
-            return RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
-        }
-
-        return fireRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
+    var fireSemanticTint: Color? {
+        fireRisk == nil ? nil : fireAccent
     }
 
     private var firePresentation: SupportingRiskRowDisplayModel {
@@ -391,15 +401,15 @@ struct PrimaryAwarenessPanel: View {
     }
 
     private var stormUnavailable: Bool {
-        showsOfflineToken && stormRisk == nil && stormResolving == false
+        stormRisk == nil && stormResolving == false
     }
 
     private var severeUnavailable: Bool {
-        showsOfflineToken && severeRisk == nil && severeResolving == false
+        severeRisk == nil && severeResolving == false
     }
 
     private var fireUnavailable: Bool {
-        showsOfflineToken && fireRisk == nil && fireResolving == false
+        fireRisk == nil && fireResolving == false
     }
 
     private var neutralSupportBackground: LinearGradient {

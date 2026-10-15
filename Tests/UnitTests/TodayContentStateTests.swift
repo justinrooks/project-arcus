@@ -7,8 +7,25 @@ import Testing
 @Suite("Today Content State")
 @MainActor
 struct TodayContentStateTests {
-    @Test("cached manual refresh preserves content and suppresses section loading branches")
-    func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
+#if DEBUG
+    @Test("debug resolving preview requires an explicit enabled value")
+    func debugResolvingPreviewOverride_requiresValueOne() {
+        #expect(
+            TodayResolvingPreviewOverride.isEnabled(
+                environment: ["SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING": "1"]
+            )
+        )
+        #expect(
+            TodayResolvingPreviewOverride.isEnabled(
+                environment: ["SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING": "0"]
+            ) == false
+        )
+        #expect(TodayResolvingPreviewOverride.isEnabled(environment: [:]) == false)
+    }
+#endif
+
+    @Test("cached manual refresh preserves content while missing risk shows active resolution")
+    func cachedRefreshing_preservesContentAndResolvesMissingRisk() {
         #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue == false)
         #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
         #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
@@ -36,51 +53,46 @@ struct TodayContentStateTests {
                 isSevereRiskResolving: true,
                 isFireRiskResolving: true,
                 isOffline: false
-            ) == .quiet
+            ) == .loading(
+                title: "Severe Risk",
+                detail: "Getting severe risk…",
+                symbolName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
+            )
         )
 
-        #expect(
-            OutlookSummaryCard.outlookSummaryText(
-                outlook: nil,
-                presentationState: .unavailable
-            ) == "Outlook information is unavailable. Try again later."
-        )
     }
 
-    @Test("Today Outlook summary distinguishes accepted empty, unavailable, loading, and retained failure")
-    func outlookSummarySemanticStates() {
-        #expect(OutlookSummaryCard.outlookSummaryText(outlook: nil, presentationState: .loading)
-                == "Checking outlook details…")
-        #expect(OutlookSummaryCard.outlookSummaryText(outlook: nil, presentationState: .empty(.current))
-                .contains("last confirmed update"))
-        #expect(OutlookSummaryCard.outlookSummaryText(outlook: nil, presentationState: .unavailable)
-                .contains("unavailable"))
-        #expect(OutlookSummaryCard.statusText(for: .empty(.refreshing))?.contains("Checking for an updated") == true)
-        #expect(OutlookSummaryCard.statusText(for: .populated(.failed))?.contains("could not be updated") == true)
-    }
-
-    @Test("no cache while resolving maps to the resolving state")
-    func noCacheResolving_mapsToResolvingState() {
-        let readinessResolving = TodayContentState.from(
+    @Test("no cache resolves only while a core attempt for this scope is active")
+    func noCacheResolving_requiresActiveCoreAttempt() {
+        let terminalLocalDataAttempt = TodayContentState.from(
             readinessState: .loadingLocalData,
             hasCachedContent: false,
             hasLiveContent: false,
             isRefreshing: false,
             isOffline: false
         )
-        #expect(readinessResolving == .noCacheResolving)
-        #expect(readinessResolving.showsResolvingSurface)
-        #expect(readinessResolving.suppressesRoutineRefreshMotion == false)
+        #expect(terminalLocalDataAttempt == .unavailable)
 
         let refreshResolving = TodayContentState.from(
-            readinessState: .ready,
+            readinessState: .loadingLocalData,
             hasCachedContent: false,
             hasLiveContent: false,
             isRefreshing: true,
-            isOffline: false
+            isOffline: false,
+            isInitialResolutionInFlight: true
         )
         #expect(refreshResolving == .noCacheResolving)
         #expect(refreshResolving.showsResolvingSurface)
+
+        let alertOnlyRefresh = TodayContentState.from(
+            readinessState: .loadingLocalData,
+            hasCachedContent: false,
+            hasLiveContent: false,
+            isRefreshing: true,
+            isOffline: false,
+            isInitialResolutionInFlight: false
+        )
+        #expect(alertOnlyRefresh == .unavailable)
     }
 
     @Test("cached content refreshes while online")
@@ -252,7 +264,8 @@ struct TodaySurfaceStateFlowTests {
             hasCachedContent: false,
             hasLiveContent: false,
             isRefreshing: false,
-            isOffline: false
+            isOffline: false,
+            isInitialResolutionInFlight: true
         )
 
         #expect(state == .noCacheResolving)

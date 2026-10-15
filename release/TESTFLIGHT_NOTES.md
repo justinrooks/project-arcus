@@ -1,4 +1,15 @@
-Unreleased
+SkyAware v1.4.0(229)
+Highlights:
+- Review Today, Map, and widget layouts in light and dark appearances for consistent hierarchy and weather meaning.
+- Check Today’s five-metric Atmospheric Conditions panel, visible refresh status, and dew point placement in Storm Setup.
+- Review Map active awareness, controls, and legends, then compare small, medium, and large widget layouts and risk labels.
+- Check larger text sizes, VoiceOver control descriptions, and air-quality text with increased contrast.
+
+What to test:
+- Update with cached visibility data and confirm it remains available after launch.
+- Switch between light and dark appearances and inspect Today, Map, and each supported widget size.
+- Use accessibility text sizes and VoiceOver on Today and Map; confirm content expands and awareness controls remain clearly labeled.
+
 SkyAware v1.3.0(228)
 Highlights:
 - Open alert details keep the cached alert visible immediately, then update when a newer accepted revision for the same alert arrives.

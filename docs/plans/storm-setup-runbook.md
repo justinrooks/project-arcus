@@ -23,7 +23,7 @@ Read these in order before implementing any Storm Setup issue:
 3. `tasks/lessons.md`
 4. The current Storm Setup issue
 5. This runbook
-6. `docs/SkyAware North Star Spec.md`
+6. `docs/product/north-star.md` for Storm Setup meaning and `docs/design/today.md` for its presentation.
 7. `docs/plans/today-state-flow-runbook.md`
 8. The production and test files named by the current issue
 

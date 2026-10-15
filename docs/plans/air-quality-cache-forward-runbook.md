@@ -16,7 +16,8 @@
 - `docs/plans/air-quality-cache-forward-progress.md`
 - `docs/plans/today-state-flow-runbook.md`
 - `docs/plans/today-refresh-performance-runbook.md`
-- `docs/SkyAware North Star Spec.md`
+- `docs/product/north-star.md` — atmospheric measurement meaning
+- `docs/design/states-accessibility.md` — cache-forward presentation
 - `docs/code_review.md`
 
 ## Purpose

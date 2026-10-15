@@ -21,6 +21,7 @@ struct HomeProjectionWeatherPayload: Sendable, Codable, Equatable {
     let windDirection: String
     let pressureInchesOfMercury: Double
     let pressureTrend: String
+    let visibilityMeters: Double?
 
     init(summary: SummaryWeather) {
         temperatureFahrenheit = summary.temperature.converted(to: .fahrenheit).value
@@ -34,6 +35,7 @@ struct HomeProjectionWeatherPayload: Sendable, Codable, Equatable {
         windDirection = summary.windDirection
         pressureInchesOfMercury = summary.pressure.converted(to: .inchesOfMercury).value
         pressureTrend = summary.pressureTrend
+        visibilityMeters = summary.visibility?.converted(to: .meters).value
     }
 
     var summaryWeather: SummaryWeather {
@@ -48,7 +50,8 @@ struct HomeProjectionWeatherPayload: Sendable, Codable, Equatable {
             windGust: windGustMilesPerHour.map { .init(value: $0, unit: .milesPerHour) },
             windDirection: windDirection,
             pressure: .init(value: pressureInchesOfMercury, unit: .inchesOfMercury),
-            pressureTrend: pressureTrend
+            pressureTrend: pressureTrend,
+            visibility: visibilityMeters.map { .init(value: $0, unit: .meters) }
         )
     }
 }

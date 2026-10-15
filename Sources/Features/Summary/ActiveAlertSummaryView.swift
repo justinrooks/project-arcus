@@ -27,7 +27,6 @@ struct ActiveAlertSummaryView: View {
     let localAlertsDisplayState: LocalAlertsDisplayState
     let todayContentState: TodayContentState
     let isOffline: Bool
-    let onOpenAlertCenter: (() -> Void)?
     let onSelectAlert: ((AlertDTO) -> Void)?
     private let sortedMesos: [MdDTO]
     private let sortedAlerts: [AlertDTO]
@@ -44,7 +43,6 @@ struct ActiveAlertSummaryView: View {
         localAlertsDisplayState: LocalAlertsDisplayState = .current(content: .populated, source: .cached),
         todayContentState: TodayContentState = .current,
         isOffline: Bool = false,
-        onOpenAlertCenter: (() -> Void)? = nil,
         onSelectAlert: ((AlertDTO) -> Void)? = nil
     ) {
         self.mesos = mesos
@@ -52,7 +50,6 @@ struct ActiveAlertSummaryView: View {
         self.localAlertsDisplayState = localAlertsDisplayState
         self.todayContentState = todayContentState
         self.isOffline = isOffline
-        self.onOpenAlertCenter = onOpenAlertCenter
         self.onSelectAlert = onSelectAlert
         self.sortedMesos = AlertPresentationOrdering.ordered(mesos)
         self.sortedAlerts = AlertPresentationOrdering.ordered(alerts)
@@ -156,40 +153,6 @@ struct ActiveAlertSummaryView: View {
 
     private var activeContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if contentState != .empty {
-                HStack(alignment: .center, spacing: 12) {
-                    Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                        .sectionLabel()
-
-                    Spacer(minLength: 12)
-
-                    if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
-                        Button {
-                            onOpenAlertCenter()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("Alert Center")
-                                Image(systemName: "arrow.right")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
-                        }
-                        .buttonStyle(
-                            SkyAwarePressableButtonStyle(
-                                cornerRadius: SkyAwareRadius.chipCompact,
-                                pressedScale: 0.985,
-                                pressedOverlayOpacity: 0.08
-                            )
-                        )
-                        .accessibilityHint("Opens the full alerts tab.")
-                    }
-                }
-            }
-
             if isOffline, contentState != .empty {
                 Label("Offline. Showing saved local alerts when available.", systemImage: "wifi.slash")
                     .font(.caption.weight(.semibold))
@@ -205,8 +168,6 @@ struct ActiveAlertSummaryView: View {
 
             innerContent
         }
-        .padding(contentState == .empty ? 0 : 18)
-        .modifier(LocalAlertsSurfaceChrome(contentState: contentState))
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
@@ -238,13 +199,7 @@ struct ActiveAlertSummaryView: View {
 
     @ViewBuilder
     private var innerContent: some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 12) {
-                contentStateContainer
-            }
-        } else {
-            contentStateContainer
-        }
+        contentStateContainer
     }
 
     private var contentStateContainer: some View {
@@ -278,8 +233,6 @@ struct ActiveAlertSummaryView: View {
 
     private var loadingContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Checking local alerts", systemImage: "antenna.radiowaves.left.and.right")
-                .sectionLabel()
             Text("Bringing in local alerts…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -374,23 +327,18 @@ struct ActiveAlertSummaryView: View {
             return .empty
         }
     }
-}
 
-private struct LocalAlertsSurfaceChrome: ViewModifier {
-    let contentState: ActiveAlertSummaryView.ContentState
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if contentState == .empty {
-            content
-        } else {
-            content.cardBackground(
-                cornerRadius: SkyAwareRadius.card,
-                shadowOpacity: 0.08,
-                shadowRadius: 8,
-                shadowY: 3
-            )
+    static func showsAlertCenter(
+        for displayState: LocalAlertsDisplayState,
+        hasRenderableAlerts: Bool,
+        isOffline: Bool
+    ) -> Bool {
+        guard displayState.presentationState != .unavailable else {
+            return false
         }
+
+        let state = contentState(for: displayState, hasRenderableAlerts: hasRenderableAlerts)
+        return state != .loading && (hasRenderableAlerts || isOffline)
     }
 }
 
@@ -421,9 +369,19 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                     Button {
                         onSelect(item)
                     } label: {
-                        row(item)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(Rectangle())
+                        HStack(spacing: 8) {
+                            row(item)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .skyAwareContentSurface(cornerRadius: SkyAwareRadius.row)
+                        .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous))
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
@@ -446,9 +404,10 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                             Image(systemName: isExpanded ? "arrow.up" : "arrow.right")
                                 .font(.caption.weight(.semibold))
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
+                        .frame(minHeight: 44, alignment: .leading)
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
@@ -465,26 +424,37 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
 }
 
 private struct MesoRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .subheadline) private var iconColumnWidth: CGFloat = 16
     let meso: MdDTO
     
     var body: some View {
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout())
+
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.mesoscale, "")
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
-                .frame(width: 16, alignment: .center)
+                .frame(width: iconColumnWidth, alignment: .center)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading) {
-                HStack {
+                headerLayout {
                     Text("Meso \(meso.number.formatted(.number.grouping(.never)))")
                         .font(.subheadline.weight(.semibold))
-                    Spacer()
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer()
+                    }
                     VStack(alignment: .trailing) {
                         Text("Ends \(meso.validEnd, style: .time)")
                             .monospacedDigit()
                             .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -510,6 +480,8 @@ private struct MesoRowView: View {
 }
 
 private struct WatchRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .subheadline) private var iconColumnWidth: CGFloat = 16
     let alert: AlertDTO
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -518,24 +490,33 @@ private struct WatchRowView: View {
     }()
     
     var body: some View {
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout())
+
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.watch, alert.title)
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
-                .frame(width: 16, alignment: .center)
+                .frame(width: iconColumnWidth, alignment: .center)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading) {
-                HStack {
+                headerLayout {
                     Text("\(alert.title)")
                         .font(.subheadline.weight(.semibold))
-                    Spacer()
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer()
+                    }
                     VStack(alignment: .trailing) {
                         let txt = buildDisplay(alert: alert)
                         Text("Until \(txt) \(alert.validEnd, style: .time)")
                             .monospacedDigit()
                             .font(.caption.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -545,10 +526,10 @@ private struct WatchRowView: View {
                 if let sevTags = alert.SevereRiskTags {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(sevTags)
+                            Text(styledAlertThreatDetails(sevTags, for: alert))
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Color.semanticMetadata)
-                                .lineLimit(2)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                     }

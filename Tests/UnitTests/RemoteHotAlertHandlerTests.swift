@@ -365,6 +365,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         let projection = makeProjection(
             stormRisk: .enhanced,
             severeRisk: .tornado(probability: 0.2),
+            fireRisk: .critical,
             alerts: [makeRemoteAlert(id: "alert-1", revisionSent: generatedAt)],
             mesos: [],
             updatedAt: Date(timeIntervalSince1970: 2_400),
@@ -385,6 +386,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         #expect(call.input.snapshotTimestamp == projection.lastHotAlertsLoadAt)
         #expect(call.input.stormRisk == projection.stormRisk)
         #expect(call.input.severeRisk == projection.severeRisk)
+        #expect(call.input.fireRisk == projection.fireRisk)
         #expect(call.input.alerts == projection.activeAlerts)
         #expect(call.input.mesos == projection.activeMesos)
     }
@@ -426,6 +428,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
     private func makeProjection(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
+        fireRisk: FireRiskLevel? = nil,
         alerts: [AlertDTO],
         mesos: [MdDTO],
         updatedAt: Date = Date(timeIntervalSince1970: 2_100),
@@ -449,7 +452,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
             weather: nil,
             stormRisk: stormRisk,
             severeRisk: severeRisk,
-            fireRisk: nil,
+            fireRisk: fireRisk,
             activeAlerts: alerts,
             activeMesos: mesos,
             lastHotAlertsLoadAt: lastHotAlertsLoadAt,

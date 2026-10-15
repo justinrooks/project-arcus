@@ -23,14 +23,4 @@ struct SkyAwareMotionTests {
         #expect(SkyAwareMotion.layerChange(true) == nil)
         #expect(SkyAwareMotion.toastPresentation(true) == nil)
     }
-
-    @Test("resolving ambient effects run when motion is allowed")
-    func resolvingAmbientEffectsRunWhenMotionIsAllowed() {
-        #expect(LoadingView.shouldAnimateAmbientEffects(reduceMotion: false))
-    }
-
-    @Test("resolving ambient effects stop when Reduce Motion is enabled")
-    func resolvingAmbientEffectsStopWhenReduceMotionIsEnabled() {
-        #expect(LoadingView.shouldAnimateAmbientEffects(reduceMotion: true) == false)
-    }
 }

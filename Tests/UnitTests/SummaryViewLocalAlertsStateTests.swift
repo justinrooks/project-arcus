@@ -41,6 +41,29 @@ struct SummaryViewLocalAlertsTests {
                 hasRenderableAlerts: true
             ) == .alerts
         )
+        #expect(
+            ActiveAlertSummaryView.showsAlertCenter(
+                for: .noCacheResolving,
+                hasRenderableAlerts: true,
+                isOffline: false
+            )
+        )
+    }
+
+    @Test("Alert Center stays hidden when local alerts are unavailable")
+    func localAlerts_unavailableStateHidesAlertCenterEvenWithRetainedAlerts() {
+        for state in [
+            LocalAlertsDisplayState.unavailable(reason: .locationUnavailable),
+            .unavailable(reason: .noUsefulAlertState)
+        ] {
+            #expect(
+                ActiveAlertSummaryView.showsAlertCenter(
+                    for: state,
+                    hasRenderableAlerts: true,
+                    isOffline: false
+                ) == false
+            )
+        }
     }
 
     @Test("renderable alerts outrank every transient display state")

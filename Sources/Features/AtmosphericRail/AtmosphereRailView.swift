@@ -9,15 +9,8 @@ import SwiftUI
 import ArcusCore
 
 struct AtmosphericConditionsCard: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var activeTip: DewPointTip?
-    @AppStorage(
-        AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
-        store: UserDefaults.shared
-    ) private var alwaysShowAirQuality: Bool = false
-
     let weather: SummaryWeather?
     let airQuality: AirQualityCurrentResponse?
     var isOffline: Bool = false
@@ -25,8 +18,7 @@ struct AtmosphericConditionsCard: View {
     private var model: AtmosphericConditionsDisplayModel {
         AtmosphericConditionsDisplayModel(
             weather: weather,
-            airQuality: airQuality,
-            alwaysShowAirQuality: alwaysShowAirQuality
+            airQuality: airQuality
         )
     }
 
@@ -34,24 +26,8 @@ struct AtmosphericConditionsCard: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
-    private var atmosphereBackground: LinearGradient {
-        let colors: [Color] = colorScheme == .dark
-        ? [
-            Color(red: 0.14, green: 0.20, blue: 0.26).opacity(0.95),
-            Color(red: 0.09, green: 0.13, blue: 0.17).opacity(0.95)
-        ]
-        : [
-            Color(red: 0.92, green: 0.96, blue: 0.98),
-            Color(red: 0.87, green: 0.92, blue: 0.95)
-        ]
-
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
-
             if isOffline, weather != nil {
                 Text("Offline. Showing saved local data.")
                     .font(.caption.weight(.semibold))
@@ -62,110 +38,17 @@ struct AtmosphericConditionsCard: View {
             contentSurface
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.section,
-            shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
-            shadowRadius: colorScheme == .dark ? 8 : 10,
-            shadowY: colorScheme == .dark ? 3 : 4
-        )
         .accessibilityIdentifier("summary-atmospheric-conditions")
-    }
-
-    private var header: some View {
-        HStack(spacing: 6) {
-            Label("Atmospheric Conditions", systemImage: "gauge.with.dots.needle.50percent")
-                .symbolVariant(.fill)
-                .sectionLabel()
-        }
     }
 
     private var contentSurface: some View {
         VStack(alignment: .leading, spacing: 0) {
-            leadMetricRow
-                .padding(.bottom, 6)
-
-            Divider()
-                .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.07))
-                .padding(.vertical, 4)
-
             metricsStrip
-                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background {
-            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                .fill(atmosphereBackground)
-                .overlay {
-                    RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 0.8)
-                        .allowsHitTesting(false)
-                }
-        }
-    }
-
-    private var leadMetricRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "drop.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22, alignment: .center)
-                .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Dew Point")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(model.dewPointDescriptor)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
-            dewPointValueControl
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var dewPointValueControl: some View {
-        if let value = model.dewPointValue {
-            Button {
-                activeTip = activeTip == .dewPoint ? nil : .dewPoint
-            } label: {
-                Text(value)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.72))
-                    .monospacedDigit()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 4)
-                .padding(.vertical, 4)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dew Point \(value)")
-            .accessibilityHint("Shows dew point explanation.")
-            .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
-                switch tip {
-                case .dewPoint:
-                    DewPointTipView(
-                        currentValue: value,
-                        dewPointF: model.dewPointFahrenheit
-                    )
-                    .presentationCompactAdaptation(.popover)
-                }
-            }
-        } else {
-            Text("Unavailable")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .todayCardBackground(cornerRadius: SkyAwareRadius.card)
     }
 
     @ViewBuilder
@@ -179,7 +62,7 @@ struct AtmosphericConditionsCard: View {
                 }
             } else {
                 ViewThatFits(in: .horizontal) {
-                    AtmosphericMetricsRail(metrics: model.secondaryMetrics)
+                    AtmosphericMetricsGrid(metrics: model.secondaryMetrics)
                     AtmosphericMetricsStack(metrics: model.secondaryMetrics)
                 }
             }
@@ -191,10 +74,11 @@ struct AtmosphericConditionsCard: View {
 struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
     struct Metric: Identifiable, Sendable, Equatable {
         enum Kind: String, Identifiable, Sendable {
+            case aqi
+            case visibility
+            case pressure
             case humidity
             case wind
-            case pressure
-            case aqi
 
             var id: String { rawValue }
         }
@@ -202,7 +86,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         let kind: Kind
         let title: String
         let value: String
-        let iconName: String
+        let iconName: String?
         let detail: String?
         let semanticAccent: AirQualityPresentation.SemanticAccent?
         let accessibilityValue: String?
@@ -211,7 +95,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
             kind: Kind,
             title: String,
             value: String,
-            iconName: String,
+            iconName: String? = nil,
             detail: String? = nil,
             semanticAccent: AirQualityPresentation.SemanticAccent? = nil,
             accessibilityValue: String? = nil
@@ -228,101 +112,107 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         var id: String { kind.id }
     }
 
-    let dewPointValue: String?
-    let dewPointFahrenheit: Double?
-    let dewPointDescriptor: String
     let secondaryMetrics: [Metric]
 
     init(
         weather: SummaryWeather?,
-        airQuality: AirQualityCurrentResponse? = nil,
-        alwaysShowAirQuality: Bool = false
+        airQuality: AirQualityCurrentResponse? = nil
     ) {
-        guard let weather else {
-            dewPointValue = nil
-            dewPointFahrenheit = nil
-            dewPointDescriptor = DewPointDescriptor.text(for: nil)
-            secondaryMetrics = Self.unavailableMetrics
-            return
-        }
-
-        let dewPoint = weather.dewPoint.converted(to: .fahrenheit).value
-        dewPointValue = Self.formatTemperature(weather.dewPoint)
-        dewPointFahrenheit = dewPoint
-        dewPointDescriptor = DewPointDescriptor.text(for: dewPoint)
-        var metrics: [Metric] = [
+        let visibility = weather.flatMap { Self.visibilityMetric($0.visibility) }
+        let pressureTrend = weather.map { Self.pressureTrendMetric($0.pressureTrend) }
+        let humidity = weather.map { Self.formatHumidity($0.humidity) }
+        let wind = weather.map(Self.windMetric)
+        let aqi = AirQualityPresentation(
+            aqi: airQuality?.aqi,
+            primaryPollutant: airQuality?.primaryPollutant
+        )
+        let metrics: [Metric] = [
             .init(
-                kind: .humidity,
-                title: "Humidity",
-                value: Self.formatHumidity(weather.humidity),
-                iconName: "humidity.fill"
+                kind: .aqi,
+                title: "Air Quality",
+                value: aqi?.value ?? "—",
+                iconName: "circle.hexagongrid.fill",
+                detail: aqi?.shortCategory,
+                semanticAccent: aqi?.semanticAccent,
+                accessibilityValue: aqi?.accessibilityValue ?? "Unavailable"
             ),
             .init(
-                kind: .wind,
-                title: "Wind",
-                value: Self.formatWind(
-                    speed: weather.windSpeed,
-                    direction: weather.windDirection
-                ),
-                iconName: "wind"
+                kind: .visibility,
+                title: "Visibility",
+                value: weather?.visibility.map(Self.formatVisibility) ?? "—",
+                iconName: "eye",
+                detail: visibility,
+                accessibilityValue: visibility.map {
+                    "\(weather?.visibility.map(Self.formatVisibility) ?? "—"), \($0)"
+                } ?? "Unavailable"
             ),
             .init(
                 kind: .pressure,
                 title: "Pressure",
-                value: Self.formatPressure(weather.pressure),
-                iconName: "gauge.with.dots.needle.50percent"
+                value: weather.map { Self.formatPressure($0.pressure) } ?? "—",
+                iconName: pressureTrend?.icon ?? "barometer",
+                detail: pressureTrend?.label,
+                accessibilityValue: weather.map {
+                    "\(Self.formatPressure($0.pressure)), \(pressureTrend?.label ?? "trend unavailable")"
+                } ?? "Unavailable"
+            ),
+            .init(
+                kind: .humidity,
+                title: "Humidity",
+                value: humidity ?? "—",
+                iconName: "humidity.fill",
+                accessibilityValue: humidity ?? "Unavailable"
+            ),
+            .init(
+                kind: .wind,
+                title: "Wind",
+                value: wind?.value ?? "—",
+                iconName: "wind",
+                detail: wind?.gust,
+                accessibilityValue: wind?.accessibilityValue ?? "Unavailable"
             )
         ]
-
-        if let airQuality = AirQualityPresentation(
-            aqi: airQuality?.aqi,
-            primaryPollutant: airQuality?.primaryPollutant,
-            alwaysShow: alwaysShowAirQuality
-        ) {
-            metrics.append(
-                Metric(
-                    kind: .aqi,
-                    title: "AQI",
-                    value: airQuality.value,
-                    iconName: "circle.hexagongrid.fill",
-                    detail: airQuality.shortCategory,
-                    semanticAccent: airQuality.semanticAccent,
-                    accessibilityValue: airQuality.accessibilityValue
-                )
-            )
-        }
-
         secondaryMetrics = metrics
     }
 
-    private static func temperatureFormatter() -> MeasurementFormatter {
-        let formatter = MeasurementFormatter()
-        formatter.numberFormatter.maximumFractionDigits = 0
-        return formatter
-    }
-
-    private static func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
-        temperatureFormatter().string(from: temperature)
-    }
-
     private static func formatHumidity(_ humidity: Double) -> String {
-        let percent = humidity * 100
-        return "\(percent.formatted(.number.precision(.fractionLength(0))))%"
+        "\((humidity * 100).formatted(.number.precision(.fractionLength(0))))%"
     }
 
-    private static func formatWind(
-        speed: Measurement<UnitSpeed>,
-        direction: String
-    ) -> String {
-        let mph = speed.converted(to: .milesPerHour).value
-        let formattedSpeed = "\(mph.formatted(.number.precision(.fractionLength(0)))) mph"
-        let cleanDirection = direction.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard cleanDirection.isEmpty == false else {
-            return formattedSpeed
+    private static func windMetric(
+        _ weather: SummaryWeather
+    ) -> (value: String, gust: String?, accessibilityValue: String) {
+        let speed = weather.windSpeed.converted(to: .milesPerHour).value
+        let speedText = "\(speed.formatted(.number.precision(.fractionLength(0)))) mph"
+        let direction = weather.windDirection.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = direction.isEmpty ? speedText : "\(direction) · \(speedText)"
+        let gustSpeed = weather.windGust?.converted(to: .milesPerHour).value
+        let gust = gustSpeed.flatMap {
+            $0 > speed ? "Gusts \($0.formatted(.number.precision(.fractionLength(0)))) mph" : nil
         }
+        let accessibilityValue = gust.map { "\(value), \($0)" } ?? value
+        return (value, gust, accessibilityValue)
+    }
 
-        return "\(cleanDirection) \(formattedSpeed)"
+    private static func formatVisibility(_ visibility: Measurement<UnitLength>) -> String {
+        let miles = visibility.converted(to: .miles).value
+        return "\(miles.formatted(.number.precision(.fractionLength(1)))) mi"
+    }
+
+    private static func visibilityMetric(_ visibility: Measurement<UnitLength>?) -> String? {
+        guard let visibility else { return nil }
+        return String(localized: visibility.converted(to: .miles).value >= 10 ? "Good" : "Reduced")
+    }
+
+    private static func pressureTrendMetric(_ trend: String) -> (label: String?, icon: String?) {
+        switch trend.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "rising": return (String(localized: "Rising"), "arrow.up")
+        case "falling": return (String(localized: "Falling"), "arrow.down")
+        case "steady": return (String(localized: "Steady"), "arrow.left.and.right")
+        default:
+            let legacyLabel = trend.trimmingCharacters(in: .whitespacesAndNewlines)
+            return legacyLabel.isEmpty ? (nil, nil) : (legacyLabel, nil)
+        }
     }
 
     private static func formatPressure(_ pressure: Measurement<UnitPressure>) -> String {
@@ -330,17 +220,6 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         return "\(inHg.formatted(.number.precision(.fractionLength(2)))) inHg"
     }
 
-    private static var unavailableMetrics: [Metric] {
-        [
-            .init(kind: .humidity, title: "Humidity", value: "—", iconName: "humidity.fill"),
-            .init(kind: .wind, title: "Wind", value: "—", iconName: "wind"),
-            .init(kind: .pressure, title: "Pressure", value: "—", iconName: "gauge.with.dots.needle.50percent")
-        ]
-    }
-}
-
-enum AtmosphericConditionsPreferences {
-    static let alwaysShowAirQualityKey = "alwaysShowAirQuality"
 }
 
 struct AirQualityPresentation: Sendable, Equatable {
@@ -359,8 +238,8 @@ struct AirQualityPresentation: Sendable, Equatable {
     let semanticAccent: SemanticAccent
     let primaryPollutant: String?
 
-    init?(aqi: Int?, primaryPollutant: String?, alwaysShow: Bool = false) {
-        guard let aqi, aqi >= 0, alwaysShow || aqi >= 101 else {
+    init?(aqi: Int?, primaryPollutant: String?) {
+        guard let aqi, aqi >= 0 else {
             return nil
         }
 
@@ -396,82 +275,38 @@ struct AirQualityPresentation: Sendable, Equatable {
     }
 }
 
-enum DewPointDescriptor {
-    static func text(for dewPointF: Double?) -> String {
-        guard let dewPointF else {
-            return "Dew point unavailable"
-        }
-
-        switch dewPointF {
-        case ..<50:
-            return "Dry air in place"
-        case 50..<60:
-            return "Comfortable moisture"
-        case 60..<65:
-            return "Moisture increasing"
-        case 65..<70:
-            return "Moist air may support storms"
-        default:
-            return "Very moist air in place"
-        }
-    }
-}
-
-private enum DewPointTip: String, Identifiable {
-    case dewPoint
-
-    var id: String { rawValue }
-}
-
-private struct DewPointTipView: View {
-    let currentValue: String
-    let dewPointF: Double?
-
-    private var bodyCopy: String {
-        "Dew point measures how much moisture is in the air. Higher values can help storms organize, but dew point alone does not determine severe weather."
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Dew Point")
-                .font(.headline.weight(.semibold))
-
-            Text(bodyCopy)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Current value: \(currentValue)")
-                .font(.subheadline.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let dewPointF {
-                Text(DewPointDescriptor.text(for: dewPointF))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .frame(width: 360, alignment: .leading)
-    }
-}
-
-private struct AtmosphericMetricsRail: View {
+private struct AtmosphericMetricsGrid: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let metrics: [AtmosphericConditionsDisplayModel.Metric]
 
+    private var topRow: [AtmosphericConditionsDisplayModel.Metric] {
+        metrics.filter { [.aqi, .visibility, .pressure].contains($0.kind) }
+    }
+
+    private var bottomRow: [AtmosphericConditionsDisplayModel.Metric] {
+        metrics.filter { [.humidity, .wind].contains($0.kind) }
+    }
+
     var body: some View {
+        VStack(spacing: SkyAwareSpacing.standard) {
+            metricRow(topRow)
+            metricRow(bottomRow)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: metrics)
+    }
+
+    private func metricRow(_ rowMetrics: [AtmosphericConditionsDisplayModel.Metric]) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
+            ForEach(Array(rowMetrics.enumerated()), id: \.element.id) { index, metric in
                 AtmosphericMetricColumn(metric: metric, layout: .rail)
+                    .padding(.horizontal, 4)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
 
-                if index < metrics.count - 1 {
+                if index < rowMetrics.count - 1 {
                     Divider()
                         .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.08))
                         .padding(.vertical, 2)
@@ -480,7 +315,6 @@ private struct AtmosphericMetricsRail: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: metrics)
     }
 }
 
@@ -501,6 +335,9 @@ private struct AtmosphericMetricsStack: View {
 }
 
 private struct AtmosphericMetricColumn: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     enum Layout {
         case rail
         case stacked
@@ -508,7 +345,7 @@ private struct AtmosphericMetricColumn: View {
         var verticalSpacing: CGFloat {
             switch self {
             case .rail:
-                4
+                5
             case .stacked:
                 6
             }
@@ -520,49 +357,63 @@ private struct AtmosphericMetricColumn: View {
 
     var body: some View {
         VStack(alignment: .center, spacing: layout.verticalSpacing) {
-            Image(systemName: metric.iconName)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(iconColor)
-                .accessibilityHidden(true)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                if let iconName = metric.iconName {
+                    Image(systemName: iconName)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(iconColor)
+                        .accessibilityHidden(true)
+                }
 
-            Text(metric.title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                Text(metric.title)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
                 .frame(maxWidth: .infinity)
 
             Text(metric.value)
-                .font(.subheadline.weight(.semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(valueColor)
                 .monospacedDigit()
                 .multilineTextAlignment(.center)
-                .lineLimit(metric.kind == .aqi ? 1 : 2)
-                .minimumScaleFactor(layout == .rail ? 0.88 : 0.84)
+                .lineLimit(metric.kind == .aqi ? 1 : nil)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
 
             if let detail = metric.detail {
                 Text(detail)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(valueColor)
+                    .font(.caption)
+                    .foregroundStyle(
+                        metric.semanticAccent == nil
+                            ? TodaySurfaceStyle.supportingTextForeground(
+                                for: colorScheme,
+                                contrast: colorSchemeContrast
+                            )
+                            : valueColor
+                    )
                     .multilineTextAlignment(.center)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
             }
+
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(metric.title)
         .accessibilityValue(metric.accessibilityValue ?? metric.value)
     }
 
     private var iconColor: Color {
-        metric.semanticAccent == nil ? .secondary : valueColor
+        metric.semanticAccent == nil ? .secondary : semanticColor
     }
 
     private var valueColor: Color {
+        colorScheme == .light || colorSchemeContrast == .increased ? .primary : semanticColor
+    }
+
+    private var semanticColor: Color {
         switch metric.semanticAccent {
         case .good:
             .riskAllClear
@@ -594,7 +445,7 @@ private struct AtmosphericMetricColumn: View {
     AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist, airQuality: nil)
 }
 
-#Preview("Atmospheric Conditions - Hidden AQI") {
+#Preview("Atmospheric Conditions - Good AQI") {
     AtmosphericConditionsCard(
         weather: AtmosphericConditionsPreviewData.calm,
         airQuality: AtmosphericConditionsPreviewData.hiddenAirQuality
@@ -621,6 +472,21 @@ private struct AtmosphericMetricColumn: View {
 
 #Preview("Atmospheric Conditions - Unavailable Weather") {
     AtmosphericConditionsCard(weather: nil, airQuality: nil)
+}
+
+#Preview("Atmospheric Conditions - Cached Offline") {
+    AtmosphericConditionsCard(
+        weather: AtmosphericConditionsPreviewData.stormSupportive,
+        airQuality: nil,
+        isOffline: true
+    )
+}
+
+#Preview("Atmospheric Conditions - Resolving") {
+    AtmosphericConditionsCard(weather: nil, airQuality: nil)
+        .placeholder(true, animated: false)
+        .summaryResolving(true, todayContentState: .noCacheResolving, style: .subtle)
+        .allowsHitTesting(false)
 }
 
 #Preview("Atmospheric Conditions - Light Mode") {

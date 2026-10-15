@@ -6,6 +6,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     let generatedAt: Date
     let stormRisk: WidgetRiskDisplayState
     let severeRisk: WidgetRiskDisplayState
+    let fireRisk: WidgetRiskDisplayState?
     let selectedAlert: WidgetSelectedAlertRowDisplayState?
     let activeAlerts: [WidgetSelectedAlertRowDisplayState]
     let hiddenAlertCount: Int
@@ -26,6 +27,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         generatedAt: Date,
         stormRisk: WidgetRiskDisplayState,
         severeRisk: WidgetRiskDisplayState,
+        fireRisk: WidgetRiskDisplayState? = nil,
         selectedAlert: WidgetSelectedAlertRowDisplayState?,
         activeAlerts: [WidgetSelectedAlertRowDisplayState] = [],
         hiddenAlertCount: Int,
@@ -38,6 +40,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.generatedAt = generatedAt
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
+        self.fireRisk = fireRisk
         self.selectedAlert = selectedAlert
         self.activeAlerts = activeAlerts
         self.hiddenAlertCount = max(0, hiddenAlertCount)
@@ -117,6 +120,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             generatedAt: generatedAt,
             stormRisk: stormRisk,
             severeRisk: severeRisk,
+            fireRisk: fireRisk,
             selectedAlert: activeSelectedAlert,
             activeAlerts: normalizedActiveAlerts,
             hiddenAlertCount: activeHiddenAlertCount,
@@ -284,6 +288,31 @@ struct WidgetRiskDisplayState: Codable, Sendable, Equatable {
     let severity: Int
 
     static let placeholder = WidgetRiskDisplayState(label: "--", severity: 0)
+
+    var stormSupportingSummary: String? {
+        guard label != Self.placeholder.label else { return nil }
+        switch severity {
+        case 0: return "No severe storms expected"
+        case 1: return "Chance of thunderstorms"
+        case 2: return "Low risk, but some stronger storms possible"
+        case 3: return "Chance for a few strong storms"
+        case 4: return "Several severe storms are possible"
+        case 5: return "Widespread severe storms expected"
+        case 6: return "Severe outbreak likely — stay alert"
+        default: return nil
+        }
+    }
+
+    var severeSupportingSummary: String? {
+        guard label != Self.placeholder.label else { return nil }
+        switch severity {
+        case 0: return "No severe threats expected"
+        case 1: return "Damaging wind possible"
+        case 2: return "1 in or larger hail possible"
+        case 3: return "Tornadoes are possible"
+        default: return nil
+        }
+    }
 }
 
 struct WidgetSelectedAlertRowDisplayState: Codable, Sendable, Equatable {
@@ -345,7 +374,7 @@ enum WidgetFreshnessPolicy {
 
 extension WidgetSnapshot {
     private enum CodingKeys: String, CodingKey {
-        case generatedAt, stormRisk, severeRisk, selectedAlert, activeAlerts, hiddenAlertCount
+        case generatedAt, stormRisk, severeRisk, fireRisk, selectedAlert, activeAlerts, hiddenAlertCount
         case freshness, alertFreshness, availability, locationSummary, destination
     }
 
@@ -359,6 +388,7 @@ extension WidgetSnapshot {
             generatedAt: try container.decode(Date.self, forKey: .generatedAt),
             stormRisk: try container.decode(WidgetRiskDisplayState.self, forKey: .stormRisk),
             severeRisk: try container.decode(WidgetRiskDisplayState.self, forKey: .severeRisk),
+            fireRisk: try container.decodeIfPresent(WidgetRiskDisplayState.self, forKey: .fireRisk),
             selectedAlert: selectedAlert,
             activeAlerts: try container.decodeIfPresent(
                 [WidgetSelectedAlertRowDisplayState].self,

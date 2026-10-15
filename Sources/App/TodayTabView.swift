@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 
 struct TodayTabView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var visibleWeatherState = TodayVisibleWeatherState()
     @State private var selectedSummaryAlert: AlertDTO?
     @State private var selectedSummaryAlertDetent: PresentationDetent = .medium
@@ -57,12 +58,24 @@ struct TodayTabView: View {
         )
     }
 
+    private var showsResolvingSurface: Bool {
+#if DEBUG
+        todayContentState.showsResolvingSurface || TodayResolvingPreviewOverride.isEnabled(
+            environment: ProcessInfo.processInfo.environment
+        )
+#else
+        todayContentState.showsResolvingSurface
+#endif
+    }
+
     var body: some View {
+        let canvas = TodaySurfaceStyle.canvas(for: colorScheme)
         NavigationStack {
-            if todayContentState.showsResolvingSurface {
-                LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
+            if showsResolvingSurface {
+                LoadingView()
                     .toolbar(.hidden, for: .navigationBar)
                     .accessibilityIdentifier("today-no-cache-resolving")
+                    .background(canvas)
             } else {
                 ScrollView {
                     SummaryView(
@@ -98,16 +111,16 @@ struct TodayTabView: View {
                         onRefreshStormSetup: refreshStormSetupAction
                     )
                         .toolbar(.hidden, for: .navigationBar)
-                        .background(.skyAwareBackground)
+                        .background(canvas)
                 }
                 .accessibilityIdentifier("summary-scroll")
-                .background(Color(.skyAwareBackground).ignoresSafeArea())
+                .background(canvas.ignoresSafeArea())
                 .refreshable {
                     await refreshAction()
                 }
             }
         }
-        .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .background(canvas.ignoresSafeArea())
         .sheet(item: $selectedSummaryAlert) { alert in
             NavigationStack {
                 GeometryReader { geometry in
@@ -143,6 +156,14 @@ struct TodayTabView: View {
         }
     }
 }
+
+#if DEBUG
+enum TodayResolvingPreviewOverride {
+    static func isEnabled(environment: [String: String]) -> Bool {
+        environment["SKYAWARE_DEBUG_SHOW_NO_CACHE_RESOLVING"] == "1"
+    }
+}
+#endif
 
 private struct TodayVisibleWeatherStateTaskState: Equatable {
     let liveWeather: SummaryWeather?

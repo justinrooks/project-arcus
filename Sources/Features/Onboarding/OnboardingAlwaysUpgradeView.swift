@@ -13,24 +13,25 @@ struct OnboardingAlwaysUpgradeView: View {
     let onEnableAlways: () -> Void
     let onSkip: () -> Void
 
-    @ScaledMetric(relativeTo: .largeTitle)
-    private var symbolSize: CGFloat = 80
-
     var body: some View {
         OnboardingStepShell {
-            Image(systemName: "bell.badge.waveform.fill")
-                .font(.system(size: symbolSize))
-                .foregroundColor(.skyAwareAccent)
+            OnboardingStepHeading(
+                symbol: "location.circle.fill",
+                title: "Better Awareness When You’re Not Here",
+                subtitle: "Optional background location"
+            )
 
-            Text("More Reliable Alerts")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Text("SkyAware can keep severe-weather alerts current when it can refresh your location in the background.")
+            Text("Allowing Always location access lets SkyAware refresh your location when the app isn’t open, helping keep local severe-weather information relevant as you move.")
                 .font(.body)
                 .multilineTextAlignment(.center)
 
-            Text("Enable Always to help keep alerts current. You can continue now and change this later in Settings.")
+            OnboardingInformationCard(
+                symbol: "bell",
+                title: "Stay up to date",
+                detail: "Background location can help refresh relevant local information. iOS controls when background work runs, so alerts and refreshes aren’t guaranteed."
+            )
+
+            Text("You can continue without this access and change your choice later in Settings.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -43,21 +44,13 @@ struct OnboardingAlwaysUpgradeView: View {
                 }
 
                 Button(action: onEnableAlways) {
-                    Text("Enable Always")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                                .fill(Color.skyAwareAccent)
-                        )
+                    Text("Enable Background Location")
                 }
+                .buttonStyle(OnboardingPrimaryActionStyle())
                 .disabled(isWorking)
 
                 Button("Not Now", action: onSkip)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .buttonStyle(OnboardingSecondaryActionStyle())
                     .disabled(isWorking)
             }
         }

@@ -55,7 +55,9 @@ struct AttributionView: View {
             WebContentView(route: route)
         }
         .task {
-            if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
+            let environment = ProcessInfo.processInfo.environment
+            if environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+                || environment["UI_TESTS_STATIC_HOME"] == "1" { return }
             attribution = await weatherClient.weatherAttribution()
         }
     }

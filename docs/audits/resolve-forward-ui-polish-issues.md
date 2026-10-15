@@ -379,6 +379,8 @@ Likely files/components:
   - `WidgetsExtension/WidgetRenderingComponents.swift`
   - `WidgetsExtension/WidgetRenderingStyle.swift`
 
+These are historical audit citations. The retired [Branding and Design Guide](https://github.com/justinrooks/project-arcus/blob/791c94b14db4390b7766080efa8164356dd395ad/docs/SkyAware%20Branding%20and%20Design%20Guide.md) and [North Star Spec](https://github.com/justinrooks/project-arcus/blob/791c94b14db4390b7766080efa8164356dd395ad/docs/SkyAware%20North%20Star%20Spec.md) are recoverable at pre-retirement snapshot `791c94b`; this snapshot is a recovery reference, not a claim about the exact revision originally audited.
+
 ## Non-goals
 - Do not change when `LoadingView` appears.
 - Do not add a blocking splash for cached content.

@@ -10,7 +10,7 @@ struct MapLegend: View {
     let state: MapLegendState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             switch state.layer {
             case .categorical:
                 Text(state.headlineText)
@@ -86,15 +86,10 @@ struct MapLegend: View {
                 }
             }
         }
-        .padding(SkyAwareSpacing.contentInset)
+        .padding(12)
         .frame(minWidth: 144, maxWidth: 260, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.row,
-            shadowOpacity: 0.10,
-            shadowRadius: 8,
-            shadowY: 3
-        )
+        .mapWeatherContentSurface(cornerRadius: SkyAwareRadius.row)
     }
 
     private var hatchingExplanationTransition: AnyTransition {
@@ -103,6 +98,7 @@ struct MapLegend: View {
 }
 
 struct CompactMapLegendTrigger: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let label: String
     let subtitle: String?
     let accessibilityValue: String
@@ -114,18 +110,21 @@ struct CompactMapLegendTrigger: View {
                 HStack(spacing: SkyAwareSpacing.compact) {
                     Text(label)
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Image(systemName: "chevron.up")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
 
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, SkyAwareSpacing.standard)
@@ -134,17 +133,44 @@ struct CompactMapLegendTrigger: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .skyAwareSurface(
-            cornerRadius: SkyAwareRadius.section,
-            tint: .skyAwareAccent.opacity(0.12),
-            interactive: true,
-            shadowOpacity: 0.14,
-            shadowRadius: 8,
-            shadowY: 4
-        )
+        .modifier(MapLegendTriggerSurface())
         .accessibilityLabel("Map legend")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Opens the full map legend.")
+    }
+}
+
+private struct MapLegendTriggerSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if colorScheme == .dark {
+            content.skyAwareSurface(
+                cornerRadius: SkyAwareRadius.section,
+                tint: .skyAwareAccent.opacity(0.12),
+                interactive: true,
+                allowsGlass: true,
+                shadowOpacity: 0.14,
+                shadowRadius: 8,
+                shadowY: 4
+            )
+        } else if #available(iOS 26, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06),
+                            lineWidth: colorSchemeContrast == .increased ? 1 : 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
+        }
     }
 }
 
@@ -152,7 +178,7 @@ struct WarningLegend: View {
     let items: [WarningLegendItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Active Warnings")
                 .font(.caption.weight(.semibold))
 
@@ -160,14 +186,50 @@ struct WarningLegend: View {
                 WarningLegendRow(item: item)
             }
         }
-        .padding(SkyAwareSpacing.contentInset)
+        .padding(12)
         .frame(width: 160, alignment: .leading)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.row,
-            shadowOpacity: 0.10,
-            shadowRadius: 8,
-            shadowY: 3
-        )
+        .mapWeatherContentSurface(cornerRadius: SkyAwareRadius.row)
+    }
+}
+
+private extension View {
+    func mapWeatherContentSurface(cornerRadius: CGFloat) -> some View {
+        modifier(MapWeatherContentSurface(cornerRadius: cornerRadius))
+    }
+}
+
+private struct MapWeatherContentSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if colorScheme == .dark {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.regularMaterial)
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(MapSurfaceStyle.lightWeatherContent)
+                }
+            }
+            .overlay {
+                if colorScheme == .light {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(
+                            .primary.opacity(colorSchemeContrast == .increased ? 0.14 : 0.06),
+                            lineWidth: colorSchemeContrast == .increased ? 1 : 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+            .shadow(
+                color: colorScheme == .dark ? .black.opacity(0.08) : .clear,
+                radius: colorScheme == .dark ? 6 : 0,
+                y: colorScheme == .dark ? 2 : 0
+            )
     }
 }
 

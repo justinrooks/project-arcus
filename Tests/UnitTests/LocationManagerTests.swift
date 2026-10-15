@@ -198,6 +198,80 @@ struct LocationSessionTests {
         func recordedResolveCallCount() -> Int { resolveCallCount }
     }
 
+    private actor ControlledResolver: LocationContextResolving {
+        enum Operation: Equatable {
+            case prepare
+            case resolve
+        }
+
+        private struct PendingRequest {
+            let id: Int
+            let operation: Operation
+            let continuation: CheckedContinuation<LocationContext, Error>
+        }
+
+        private var nextID = 0
+        private var pendingRequests: [PendingRequest] = []
+
+        func prepareCurrentContext(
+            requiresFreshLocation: Bool,
+            showsAuthorizationPrompt: Bool,
+            authorizationTimeout: Double,
+            locationTimeout: Double,
+            maximumAcceptedLocationAge: TimeInterval,
+            placemarkTimeout: Double
+        ) async throws -> LocationContext {
+            try await enqueue(.prepare)
+        }
+
+        func resolveContext(
+            from snapshot: LocationSnapshot,
+            maximumAcceptedLocationAge: TimeInterval?,
+            placemarkTimeout: Double
+        ) async throws -> LocationContext {
+            try await enqueue(.resolve)
+        }
+
+        func pendingIDs(for operation: Operation) -> [Int] {
+            pendingRequests.filter { $0.operation == operation }.map(\.id)
+        }
+
+        func complete(id: Int, with result: Result<LocationContext, LocationContextError>) {
+            guard let index = pendingRequests.firstIndex(where: { $0.id == id }) else { return }
+            let request = pendingRequests.remove(at: index)
+            switch result {
+            case .success(let context):
+                request.continuation.resume(returning: context)
+            case .failure(let error):
+                request.continuation.resume(throwing: error)
+            }
+        }
+
+        private func enqueue(_ operation: Operation) async throws -> LocationContext {
+            nextID += 1
+            let id = nextID
+            return try await withCheckedThrowingContinuation { continuation in
+                pendingRequests.append(PendingRequest(id: id, operation: operation, continuation: continuation))
+            }
+        }
+    }
+
+    @MainActor
+    private func waitUntilAsync(
+        timeout: Duration = .seconds(2),
+        interval: Duration = .milliseconds(10),
+        _ condition: @escaping @MainActor () async -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: interval)
+        }
+        return await condition()
+    }
+
     private actor StubUploadCoordinator: LocationUploadCoordinating {
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
@@ -354,6 +428,135 @@ struct LocationSessionTests {
         #expect(result == nil)
         #expect(session.currentContext == nil)
         #expect(session.startupState == .failed("location-missing-region-context"))
+    }
+
+    @MainActor
+    @Test("older explicit location attempt cannot replace a newer result", arguments: [false, true])
+    func olderExplicitLocationAttemptCannotReplaceNewerResult(olderAttemptFails: Bool) async {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = ControlledResolver()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
+        )
+        let olderContext = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
+        let newerContext = durableContext(timestamp: .now, h3Cell: 2)
+
+        let olderTask = Task {
+            await session.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
+        }
+        let olderStarted = await waitUntilAsync {
+            await resolver.pendingIDs(for: .prepare).count == 1
+        }
+        #expect(olderStarted)
+        let olderRequestID = await resolver.pendingIDs(for: .prepare)[0]
+
+        let newerTask = Task {
+            await session.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
+        }
+        let newerStarted = await waitUntilAsync {
+            await resolver.pendingIDs(for: .prepare).count == 2
+        }
+        #expect(newerStarted)
+        let requestIDs = await resolver.pendingIDs(for: .prepare)
+        let newerRequestID = requestIDs.first { $0 != olderRequestID }
+        #expect(newerRequestID != nil)
+        guard let newerRequestID else { return }
+
+        await resolver.complete(id: newerRequestID, with: .success(newerContext))
+        #expect(await newerTask.value == newerContext)
+
+        await resolver.complete(
+            id: olderRequestID,
+            with: olderAttemptFails ? .failure(.locationTimeout) : .success(olderContext)
+        )
+        #expect(await olderTask.value == nil)
+        #expect(session.currentContext == newerContext)
+        #expect(session.currentSnapshot == newerContext.snapshot)
+        #expect(session.startupState == .ready)
+    }
+
+    @MainActor
+    @Test("new explicit preparation invalidates an older snapshot-driven resolution")
+    func explicitPreparationInvalidatesOlderSnapshotDrivenResolution() async {
+        let initialContext = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
+        let newerContext = durableContext(timestamp: .now, h3Cell: 2)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let updatesSubscription = AsyncStream<Void>.makeStream()
+        let locationClient = LocationClient(
+            snapshot: { initialContext.snapshot },
+            updates: {
+                updatesSubscription.continuation.yield(())
+                return updates.stream
+            }
+        )
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = ControlledResolver()
+        let session = LocationSession(
+            locationClient: locationClient,
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
+        )
+        session.currentSnapshot = initialContext.snapshot
+        session.currentContext = initialContext
+        session.startupState = .ready
+        session.handleScenePhaseChange(.active)
+
+        var subscriptionIterator = updatesSubscription.stream.makeAsyncIterator()
+        _ = await subscriptionIterator.next()
+        updatesSubscription.continuation.finish()
+
+        let movedSnapshot = newerContext.snapshot
+        updates.continuation.yield(movedSnapshot)
+        let oldResolutionStarted = await waitUntilAsync(timeout: .seconds(10)) {
+            await resolver.pendingIDs(for: .resolve).count == 1
+        }
+        guard oldResolutionStarted,
+              let oldRequestID = await resolver.pendingIDs(for: .resolve).first else {
+            Issue.record("The snapshot-driven context resolution did not start before the timeout.")
+            return
+        }
+
+        let newPreparation = Task {
+            await session.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
+        }
+        let newPreparationStarted = await waitUntilAsync(timeout: .seconds(10)) {
+            await resolver.pendingIDs(for: .prepare).count == 1
+        }
+        guard newPreparationStarted,
+              let newRequestID = await resolver.pendingIDs(for: .prepare).first else {
+            Issue.record("The explicit context preparation did not start before the timeout.")
+            return
+        }
+        await resolver.complete(id: newRequestID, with: .success(newerContext))
+        #expect(await newPreparation.value == newerContext)
+
+        await resolver.complete(id: oldRequestID, with: .failure(.locationTimeout))
+        for _ in 0..<5 { await Task.yield() }
+        try? await Task.sleep(for: .milliseconds(20))
+
+        #expect(session.currentContext == newerContext)
+        #expect(session.startupState == .ready)
     }
 
     @MainActor
@@ -725,6 +928,91 @@ struct LocationSessionTests {
         await session.drainPendingLocationUploads()
 
         #expect(await uploader.recordedDrainCount() == 1)
+    }
+
+    @MainActor
+    @Test("equal timestamp enrichment preserves location identity and accepted names",
+          arguments: ["matching", "coordinates", "cell", "older", "named", "namedCoordinates", "namedCell", "blank"])
+    func scheduledReuse_equalTimestampMetadata(variant: String) async throws {
+        let timestamp = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) - 60)
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let cache = DurableLocationContextCache(suiteName: suiteName)
+        let context = durableContext(timestamp: timestamp)
+        cache.save(context)
+        if variant.hasPrefix("named") {
+            var accepted = context.snapshot
+            accepted.placemarkSummary = "Accepted name"
+            LocationSnapshotCache(suiteName: suiteName).save(accepted)
+        }
+        let providerSnapshot = LocationSnapshot(
+            coordinates: .init(latitude: ["coordinates", "namedCoordinates"].contains(variant) ? 40 : context.snapshot.coordinates.latitude,
+                               longitude: context.snapshot.coordinates.longitude),
+            timestamp: variant == "older" ? timestamp.addingTimeInterval(-1) : timestamp,
+            accuracy: context.snapshot.accuracy,
+            placemarkSummary: variant == "blank" ? "  " : "Bennett, CO",
+            h3Cell: ["cell", "namedCell"].contains(variant) ? 2 : context.h3Cell
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in }
+        )
+        let session = LocationSession(
+            locationClient: .init(snapshot: { providerSnapshot }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: manager, locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(), durableContextCache: cache
+        )
+        let result = try #require(await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil, uploadReason: nil, authorizationTimeout: 1, locationTimeout: 1,
+            maximumAcceptedLocationAge: 60, placemarkTimeout: 1
+        ))
+        let expected: String? = variant == "matching" ? "Bennett, CO" : (variant.hasPrefix("named") ? "Accepted name" : nil)
+        #expect(result.snapshot.placemarkSummary == expected)
+        #expect(result.snapshot.timestamp == timestamp)
+        #expect(result.snapshot.coordinates.latitude == context.snapshot.coordinates.latitude)
+        #expect(result.h3Cell == context.h3Cell)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+    }
+
+    @MainActor
+    @Test("restored accepted names follow the 90 minute policy and authorization",
+          arguments: ["eligible", "stale", "denied", "invalidated"])
+    func scheduledReuse_restoredNamePolicy(variant: String) async throws {
+        let age: TimeInterval = variant == "stale" ? 91 * 60 : 70 * 60
+        let timestamp = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) - age)
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let context = durableContext(timestamp: timestamp)
+        var accepted = context.snapshot
+        accepted.placemarkSummary = "Bennett, CO"
+        LocationSnapshotCache(suiteName: suiteName).save(accepted)
+        DurableLocationContextCache(suiteName: suiteName).save(context)
+        let cache = DurableLocationContextCache(suiteName: suiteName)
+        if variant == "invalidated" { cache.invalidate() }
+        let provider = LocationProvider(snapshotCache: LocationSnapshotCache(suiteName: suiteName))
+        #expect(await provider.snapshot() == nil)
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(
+                status: variant == "denied" ? .denied : .authorizedWhenInUse
+            ), onUpdate: { _ in }
+        )
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider), locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            durableContextCache: cache
+        )
+        let result = await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil, uploadReason: nil, authorizationTimeout: 1, locationTimeout: 1,
+            maximumAcceptedLocationAge: 60, placemarkTimeout: 1
+        )
+        if variant == "eligible" {
+            #expect(result?.snapshot.placemarkSummary == "Bennett, CO")
+            #expect(result?.snapshot.timestamp == timestamp)
+        } else {
+            #expect(result == nil)
+        }
+        #expect(await resolver.recordedPrepareCallCount() == 0)
     }
 
     @MainActor

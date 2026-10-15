@@ -7,6 +7,7 @@ enum WidgetPreviewFixtures {
         generatedAt: now,
         stormRisk: WidgetRiskDisplayState(label: "Enhanced Risk", severity: 4),
         severeRisk: WidgetRiskDisplayState(label: "Tornado", severity: 3),
+        fireRisk: WidgetRiskDisplayState(label: "Critical Fire Risk", severity: 8),
         selectedAlert: WidgetSelectedAlertRowDisplayState(
             title: "Tornado Watch 219",
             typeLabel: "Tornado Watch",
@@ -24,6 +25,7 @@ enum WidgetPreviewFixtures {
         generatedAt: now,
         stormRisk: WidgetRiskDisplayState(label: "Slight Risk", severity: 3),
         severeRisk: WidgetRiskDisplayState(label: "Wind", severity: 1),
+        fireRisk: WidgetRiskDisplayState(label: "Elevated Fire Risk", severity: 5),
         selectedAlert: nil,
         hiddenAlertCount: 0,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-420), state: .fresh),
@@ -36,6 +38,7 @@ enum WidgetPreviewFixtures {
         generatedAt: now,
         stormRisk: WidgetRiskDisplayState(label: "No Severe Storm Risk", severity: 0),
         severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
+        fireRisk: WidgetRiskDisplayState(label: "No Elevated Fire Risk", severity: 0),
         selectedAlert: nil,
         hiddenAlertCount: 0,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),

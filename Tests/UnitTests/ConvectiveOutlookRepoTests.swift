@@ -183,6 +183,8 @@ struct ConvectiveOutlookRepoTests {
         let allDay2 = try await repo.fetchConvectiveOutlooks(for: 2)
         #expect(allDay1.count == 1)
         #expect(allDay2.count == 1)
+        #expect(try await repo.collectionSnapshot().outlooks.count == 2)
+        #expect(try await repo.collectionSnapshot(for: 1).outlooks.count == 1)
 
         // Ensure fields are mapped
         let d1 = try #require(allDay1.first)
@@ -572,9 +574,9 @@ struct ConvectiveOutlookRepoTests {
         try await MainActor.run { try container.mainContext.save() }
         #expect(try await repo.collectionSnapshot() == .unavailable)
         try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(populated)))
-        #expect(try await repo.collectionSnapshot().outlooks.count == 1)
+        #expect(try await repo.collectionSnapshot().outlooks.count == 2)
         try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(dayTwoOnly)))
-        #expect(try await repo.collectionSnapshot() == .accepted([]))
+        #expect(try await repo.collectionSnapshot(for: 1) == .accepted([]))
         #expect(try await repo.fetchConvectiveOutlooks(for: 1).isEmpty)
         #expect(try await repo.fetchConvectiveOutlooks(for: 2).count == 1)
 
@@ -587,7 +589,7 @@ struct ConvectiveOutlookRepoTests {
             return try ModelContainer(for: schema, configurations: configuration)
         }
         let reopenedRepo = ConvectiveOutlookRepo(modelContainer: reopened)
-        #expect(try await reopenedRepo.collectionSnapshot() == .accepted([]))
+        #expect(try await reopenedRepo.collectionSnapshot(for: 1) == .accepted([]))
 
         let feedState = FeedStateStore(directoryURL: directory)
         let acceptedAt = Date.now
@@ -1061,9 +1063,6 @@ struct ConvectiveOutlookViewPresentationStateTests {
         #expect(ConvectiveOutlookPresentationState.resolve(
             dtos: [], refreshStatus: .loading, isOffline: true
         ) == .unavailable)
-        #expect(OutlookSummaryCard.outlookSummaryText(
-            outlook: nil, presentationState: .unavailable
-        ).contains("unavailable"))
     }
 
     @Test("an unaccepted empty result is unavailable")

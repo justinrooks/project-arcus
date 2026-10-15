@@ -118,6 +118,7 @@ struct SummaryAvailabilityBadge: View {
 }
 
 struct SummaryView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private static let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -224,10 +225,22 @@ struct SummaryView: View {
     }
 
     private var statusText: String {
-        if let placemark = snap?.placemarkSummary {
+        Self.locationStatusText(snapshot: snap, readinessState: readinessState)
+    }
+
+    static func locationStatusText(
+        snapshot: LocationSnapshot?,
+        readinessState: SummaryReadinessState
+    ) -> String {
+        if let placemark = snapshot?.placemarkSummary?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           placemark.isEmpty == false {
             return placemark
         }
-        return readinessState.statusText
+
+        return readinessState == .locationUnavailable
+            ? "Location not available"
+            : "Finding your location…"
     }
 
     private var isLocationUnavailable: Bool {
@@ -278,6 +291,12 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func summaryContent(now: Date) -> some View {
+        // TODO (Future): Consider an AI-augmented local outlook
+        // summary that explains meaningful forecast changes affecting
+        // the user's location. Deterministic comparisons of accepted
+        // SPC data must establish actual risk changes; on-device AI
+        // may explain supported changes in plain language.
+        // This is exploratory, not an approved feature.
         let stormSetupSlotState = stormSetupSlotState(now: now)
         let sectionPlan = Self.sectionPlan(
             localAlertsDisplayState: localAlertsDisplayState,
@@ -293,7 +312,7 @@ struct SummaryView: View {
     var body: some View {
         let _ = recordPerformanceRenderIfNeeded()
         let now = Date()
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             summaryContent(now: now)
                 .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
 
@@ -312,23 +331,37 @@ struct SummaryView: View {
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: symbol)
-                .sectionLabel()
+                .todaySectionLabel()
             Text(message)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .todaySupportingText()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .cardBackground(
+        .todayCardBackground(
             cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: colorScheme == .dark ? 0.06 : 0.10,
-            shadowRadius: colorScheme == .dark ? 6 : 8,
-            shadowY: colorScheme == .dark ? 2 : 3
+            darkShadowOpacity: 0.06,
+            darkShadowRadius: 6,
+            darkShadowY: 2
         )
     }
 
     private func unavailableCard(title: String, message: String, symbol: String) -> some View {
         emptySectionCard(title: title, message: message, symbol: symbol)
+    }
+
+    private func unavailableContentCard(message: String, symbol: String) -> some View {
+        Label(message, systemImage: symbol)
+            .font(.subheadline)
+            .todaySupportingText()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .todayCardBackground(
+                cornerRadius: SkyAwareRadius.card,
+                darkShadowOpacity: 0.06,
+                darkShadowRadius: 6,
+                darkShadowY: 2
+            )
     }
 
     @ViewBuilder
@@ -393,14 +426,26 @@ struct SummaryView: View {
 
         case .atmosphericConditions:
             if isLocationUnavailable == false {
-                AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
-                    .allowsHitTesting(!isWeatherLoading)
-                    .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
-                    .summaryResolving(
-                        resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
-                        todayContentState: todayContentState,
-                        style: .subtle
-                    )
+                VStack(alignment: .leading, spacing: 8) {
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Text("Atmospheric Conditions")
+                        } else {
+                            Label("Atmospheric Conditions", systemImage: "barometer")
+                        }
+                    }
+                    .todaySectionLabel()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
+                        .allowsHitTesting(!isWeatherLoading)
+                        .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                        .summaryResolving(
+                            resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                            todayContentState: todayContentState,
+                            style: .subtle
+                        )
+                }
             }
 
         case .locationReliability:
@@ -411,19 +456,6 @@ struct SummaryView: View {
                 )
             }
 
-        case .outlookSummary:
-            OutlookSummaryCard(
-                outlook: outlook,
-                presentationState: outlookPresentationState,
-                todayContentState: todayContentState,
-                onBrowseAllOutlooks: onOpenOutlooks
-            )
-            .summaryResolving(
-                resolutionState.isResolving(.outlook),
-                todayContentState: todayContentState,
-                style: .subtle
-            )
-
         case .attribution:
             AttributionView()
         }
@@ -431,38 +463,80 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var localAlertsSection: some View {
-        switch localAlertsPresentationState {
-        case .unavailable:
-            if localAlertsDisplayState == .unavailable(reason: .locationUnavailable) {
-                unavailableCard(
-                    title: "Location Required",
-                    message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                    symbol: "location.slash"
-                )
-            } else {
-                unavailableCard(
-                    title: "Local alerts unavailable",
-                    message: "SkyAware has not confirmed the current local alert state. Check again when the feed is available.",
-                    symbol: "cloud.slash"
-                )
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+
+        VStack(alignment: .leading, spacing: 8) {
+            headerLayout {
+                Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                    .todaySectionLabel()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 12)
+                }
+
+//                if ActiveAlertSummaryView.showsAlertCenter(
+//                    for: localAlertsDisplayState,
+//                    hasRenderableAlerts: hasActiveAlerts,
+//                    isOffline: localAlertsDisplayState.showsOfflineStatusCopy
+//                ) {
+//                    Button(action: onOpenAlerts) {
+//                        HStack(spacing: 6) {
+//                            Text("Alert Center")
+//                            Image(systemName: "arrow.right")
+//                                .font(.caption.weight(.semibold))
+//                        }
+//                        .font(.caption.weight(.semibold))
+//                        .foregroundStyle(.secondary)
+//                        .padding(.horizontal, 10)
+//                        .padding(.vertical, 6)
+//                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+//                        .frame(minHeight: 44)
+//                        .contentShape(Rectangle())
+//                    }
+//                    .buttonStyle(
+//                        SkyAwarePressableButtonStyle(
+//                            cornerRadius: SkyAwareRadius.chipCompact,
+//                            pressedScale: 0.985,
+//                            pressedOverlayOpacity: 0.08
+//                        )
+//                    )
+//                    .accessibilityHint("Opens the full alerts tab.")
+//                }
             }
 
-        case .loading, .alerts, .empty:
-            ActiveAlertSummaryView(
-                mesos: mesos,
-                alerts: alerts,
-                localAlertsDisplayState: localAlertsDisplayState,
-                todayContentState: todayContentState,
-                isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
-                onOpenAlertCenter: onOpenAlerts,
-                onSelectAlert: onSelectAlert
-            )
-            .summaryResolving(
-                localAlertsDisplayState.usesSummaryResolvingTreatment &&
-                resolutionState.isResolving(.alerts),
-                todayContentState: todayContentState,
-                style: .subtle
-            )
+            switch localAlertsPresentationState {
+            case .unavailable:
+                if localAlertsDisplayState == .unavailable(reason: .locationUnavailable) {
+                    unavailableContentCard(
+                        message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                        symbol: "location.slash"
+                    )
+                } else {
+                    unavailableContentCard(
+                        message: "SkyAware has not confirmed the current local alert state. Check again when the feed is available.",
+                        symbol: "cloud.slash"
+                    )
+                }
+
+            case .loading, .alerts, .empty:
+                ActiveAlertSummaryView(
+                    mesos: mesos,
+                    alerts: alerts,
+                    localAlertsDisplayState: localAlertsDisplayState,
+                    todayContentState: todayContentState,
+                    isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
+                    onSelectAlert: onSelectAlert
+                )
+                .summaryResolving(
+                    localAlertsDisplayState.usesSummaryResolvingTreatment &&
+                    resolutionState.isResolving(.alerts),
+                    todayContentState: todayContentState,
+                    style: .subtle
+                )
+            }
         }
     }
 
@@ -478,6 +552,7 @@ struct SummaryView: View {
                 preferences: stormSetupPreferences,
                 forecastLocationTimeZone: locationTimeZone,
                 profileAnalysisResponse: stormSetupProfileAnalysisResponse,
+                dewPointFahrenheit: currentDewPointFahrenheit,
                 now: now
             )
         }
@@ -503,8 +578,15 @@ struct SummaryView: View {
             preferences: stormSetupPreferences,
             forecastLocationTimeZone: locationTimeZone,
             profileAnalysisResponse: stormSetupProfileAnalysisResponse,
+            dewPointFahrenheit: currentDewPointFahrenheit,
             now: now
         )
+    }
+
+    private var currentDewPointFahrenheit: Double? {
+        guard let weather else { return nil }
+        let value = weather.dewPoint.converted(to: .fahrenheit).value
+        return value.isFinite ? value : nil
     }
 
     private func stormSetupSlotState(now: Date) -> StormSetupSlotState {

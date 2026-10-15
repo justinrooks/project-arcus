@@ -20,8 +20,8 @@ struct TodayResolvingSurfaceStateTests {
         )
     }
 
-    @Test("no content while loading local data shows full-screen resolving")
-    func showsEmptyResolving_noContentLoadingLocalData() {
+    @Test("terminal no-cache local data state shows unavailable")
+    func terminalNoCacheLocalDataAttempt_showsUnavailable() {
         #expect(
             TodayContentState.from(
                 readinessState: .loadingLocalData,
@@ -29,7 +29,7 @@ struct TodayResolvingSurfaceStateTests {
                 hasLiveContent: false,
                 isRefreshing: false,
                 isOffline: false
-            ).showsResolvingSurface
+            ) == .unavailable
         )
     }
 
@@ -73,6 +73,41 @@ struct TodayResolvingSurfaceStateTests {
         )
 
         #expect(status.secondaryStatusMessage == "Updating your conditions…")
+        #expect(status.headerStatusMessage == "Updating your conditions…")
+    }
+
+    @Test("offline status takes priority over transient activity in the header")
+    func offlineToken_suppressesHeaderActivityMessage() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .weather, sections: [.conditions])
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .quietRefreshing,
+            showsOfflineToken: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == "Updating your conditions…")
+        #expect(status.headerStatusMessage == nil)
+    }
+
+    @Test("location unavailable suppresses the relocated activity message")
+    func locationUnavailable_suppressesHeaderActivityMessage() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .weather, sections: [.conditions])
+        let status = SummaryStatus(
+            statusText: "Location not available",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .quietRefreshing,
+            showsOfflineToken: false,
+            isLocationUnavailable: true
+        )
+
+        #expect(status.secondaryStatusMessage == "Updating your conditions…")
+        #expect(status.headerStatusMessage == nil)
     }
 
     @Test("manual refresh uses native progress without a duplicate status line")
@@ -139,6 +174,101 @@ struct TodayResolvingSurfaceStateTests {
 
         #expect(status.secondaryStatusMessage == nil)
         #expect(resolutionState.conditionsUpdatedAt == nil)
+    }
+}
+
+@Suite("Today Location Label Presentation")
+@MainActor
+struct TodayLocationLabelPresentationTests {
+    @Test("ready with no usable placemark shows location resolution copy")
+    func readyWithoutPlacemarkShowsLocationResolutionCopy() {
+        #expect(
+            SummaryView.locationStatusText(
+                snapshot: makeLocationSnapshot(placemarkSummary: nil),
+                readinessState: .ready
+            ) == "Finding your location…"
+        )
+        #expect(
+            SummaryView.locationStatusText(snapshot: nil, readinessState: .ready) != "Ready"
+        )
+    }
+
+    @Test("intermediate readiness states use the location placeholder instead of generic progress")
+    func intermediateReadinessStatesUseLocationPlaceholder() {
+        for readinessState in [
+            SummaryReadinessState.loadingLocation,
+            .resolvingLocalContext,
+            .loadingLocalData
+        ] {
+            #expect(
+                SummaryView.locationStatusText(snapshot: nil, readinessState: readinessState)
+                    == "Finding your location…"
+            )
+        }
+    }
+
+    @Test("valid accepted placemark takes precedence over readiness activity")
+    func acceptedPlacemarkTakesPrecedenceOverReadinessActivity() {
+        let snapshot = makeLocationSnapshot(placemarkSummary: "Bennett, CO")
+
+        #expect(SummaryView.locationStatusText(snapshot: snapshot, readinessState: .ready) == "Bennett, CO")
+        #expect(
+            SummaryView.locationStatusText(snapshot: snapshot, readinessState: .loadingLocalData)
+                == "Bennett, CO"
+        )
+    }
+
+    @Test("location unavailable keeps the existing unavailable label")
+    func unavailableLocationKeepsUnavailableLabel() {
+        #expect(
+            SummaryView.locationStatusText(snapshot: nil, readinessState: .locationUnavailable)
+                == "Location not available"
+        )
+    }
+
+    @Test("applicable cached placemark remains visible during refresh")
+    func cachedPlacemarkRemainsVisibleDuringRefresh() {
+        let acceptedCachedSnapshot = makeLocationSnapshot(placemarkSummary: "Bennett, CO")
+
+        #expect(
+            SummaryView.locationStatusText(snapshot: acceptedCachedSnapshot, readinessState: .loadingLocalData)
+                == "Bennett, CO"
+        )
+    }
+
+    @Test("location change does not retain the previous placemark")
+    func locationChangeDoesNotRetainPreviousPlacemark() {
+        let previousLocation = makeLocationSnapshot(placemarkSummary: "Bennett, CO", latitude: 39.75)
+        let newLocationWithoutPlacemark = makeLocationSnapshot(placemarkSummary: nil, latitude: 40.01)
+
+        #expect(SummaryView.locationStatusText(snapshot: previousLocation, readinessState: .ready) == "Bennett, CO")
+        #expect(
+            SummaryView.locationStatusText(snapshot: newLocationWithoutPlacemark, readinessState: .ready)
+                == "Finding your location…"
+        )
+    }
+
+    @Test("blank placemark is treated as unresolved")
+    func blankPlacemarkIsTreatedAsUnresolved() {
+        #expect(
+            SummaryView.locationStatusText(
+                snapshot: makeLocationSnapshot(placemarkSummary: "   "),
+                readinessState: .ready
+            ) == "Finding your location…"
+        )
+    }
+
+    private func makeLocationSnapshot(
+        placemarkSummary: String?,
+        latitude: Double = 39.75
+    ) -> LocationSnapshot {
+        LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: latitude, longitude: -104.44),
+            timestamp: Date(timeIntervalSince1970: 1_790_000_000),
+            accuracy: 20,
+            placemarkSummary: placemarkSummary,
+            h3Cell: nil
+        )
     }
 }
 

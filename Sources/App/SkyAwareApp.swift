@@ -32,6 +32,7 @@ struct SkyAwareApp: App {
     // State
     @State private var didBootstrapBGRefresh = false
     @State private var launchPresentation: LaunchPresentationState?
+    @State private var onboardingLaunchContext = OnboardingLaunchContext()
     private let currentDisclaimerVersion = 1
 
     private var isUITestStaticHome: Bool {
@@ -355,17 +356,23 @@ private extension SkyAwareApp {
         } else if isUITestStaticHome {
             if let fixture = Self.uiTestStormSetupFixture {
                 HomeView(
-                    initialStormRisk: fixture.stormRisk,
+                    initialStormRisk: fixture.stormRisk ?? .allClear,
+                    initialSevereRisk: fixture.stormRisk == nil ? .allClear : .tornado(probability: 0.10),
+                    initialFireRisk: .elevated,
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupCurrentResponse: fixture.currentResponse,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
                     initialMesos: Self.uiTestLaunchMesos,
                     initialAlerts: Self.uiTestLaunchWatches,
                     initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,
-                    initialRefreshInFlight: fixture.isRefreshInFlight
+                    initialRefreshInFlight: fixture.isRefreshInFlight,
+                    initialStormSetupRefreshInFlight: fixture.isRefreshInFlight
                 )
             } else {
                 HomeView(
+                    initialStormRisk: .enhanced,
+                    initialSevereRisk: .tornado(probability: 0.10),
+                    initialFireRisk: .elevated,
                     initialMesos: Self.uiTestLaunchMesos,
                     initialAlerts: Self.uiTestLaunchWatches,
                     initialOutlooks: ConvectiveOutlook.sampleOutlookDtos
@@ -377,7 +384,9 @@ private extension SkyAwareApp {
     }
 
     func onboardingContent(deps: Dependencies) -> some View {
-        OnboardingView()
+        OnboardingView {
+            onboardingLaunchContext.markOnboardingComplete()
+        }
             .environment(\.dependencies, deps)
             .environment(deps.locationSession)
     }
@@ -415,8 +424,13 @@ private extension SkyAwareApp {
             LocationPermissionView(
                 isWorking: false,
                 statusMessage: nil,
+                authorizationStatus: deps?.locationSession.authorizationStatus,
                 onEnable: {
-                    deps?.locationSession.requestInteractiveAuthorization()
+                    LocationPermissionRecoveryAction.perform(
+                        authorizationStatus: deps?.locationSession.authorizationStatus ?? .notDetermined,
+                        openSettings: { deps?.locationSession.openSettings() },
+                        requestAuthorization: { deps?.locationSession.requestInteractiveAuthorization() }
+                    )
                     launchPresentation = nil
                 },
                 onSkip: {
@@ -431,7 +445,7 @@ private extension SkyAwareApp {
 
     func updateLaunchPresentation() {
         guard let locationSession = deps?.locationSession else { return }
-        launchPresentation = LaunchPresentationState.resolve(
+        launchPresentation = onboardingLaunchContext.resolve(
             disclaimerVersion: disclaimerVersion,
             currentDisclaimerVersion: currentDisclaimerVersion,
             authorizationStatus: locationSession.authorizationStatus,
@@ -473,8 +487,11 @@ private extension SkyAwareApp {
         let env = ProcessInfo.processInfo.environment
         let shouldResetOnboarding = env["UI_TESTS_RESET_ONBOARDING"] == "1"
         let shouldForceOnboardingComplete = env["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] == "1"
+        let onboardingCompleteOverride = env["UI_TESTS_ONBOARDING_COMPLETE"].map { $0 == "1" }
+        let disclaimerVersionOverride = env["UI_TESTS_DISCLAIMER_ACCEPTED_VERSION"].flatMap(Int.init)
 
-        guard shouldResetOnboarding || shouldForceOnboardingComplete else { return }
+        guard shouldResetOnboarding || shouldForceOnboardingComplete
+                || onboardingCompleteOverride != nil || disclaimerVersionOverride != nil else { return }
 
         let suiteName = "com.justinrooks.skyaware"
         guard let sharedDefaults = UserDefaults(suiteName: suiteName) else { return }
@@ -493,6 +510,15 @@ private extension SkyAwareApp {
             sharedDefaults.set(0, forKey: "disclaimerAcceptedVersion")
             UserDefaults.standard.removeObject(forKey: "onboardingComplete")
             UserDefaults.standard.removeObject(forKey: "disclaimerAcceptedVersion")
+        }
+
+        if let onboardingCompleteOverride {
+            sharedDefaults.set(onboardingCompleteOverride, forKey: "onboardingComplete")
+            UserDefaults.standard.set(onboardingCompleteOverride, forKey: "onboardingComplete")
+        }
+        if let disclaimerVersionOverride {
+            sharedDefaults.set(disclaimerVersionOverride, forKey: "disclaimerAcceptedVersion")
+            UserDefaults.standard.set(disclaimerVersionOverride, forKey: "disclaimerAcceptedVersion")
         }
 
         sharedDefaults.synchronize()
@@ -554,8 +580,8 @@ private extension SkyAwareApp {
                 id: "ui-test-warning-001",
                 messageId: "ui-test-warning-message-001",
                 currentRevisionSent: warningIssued,
-                title: "UI Test Severe Thunderstorm Warning",
-                headline: "UI Test Severe Thunderstorm Warning Headline",
+                title: "Severe Thunderstorm Warning",
+                headline: "Severe Thunderstorm Warning Headline",
                 issued: warningIssued,
                 expires: ends,
                 ends: ends,
@@ -612,8 +638,8 @@ private extension SkyAwareApp {
                 id: "ui-test-watch-002",
                 messageId: "ui-test-watch-message-002",
                 currentRevisionSent: olderIssued,
-                title: "UI Test Fire Weather Watch",
-                headline: "UI Test Fire Weather Watch Headline",
+                title: "Fire Weather Watch",
+                headline: "Fire Weather Watch Headline",
                 issued: olderIssued,
                 expires: ends,
                 ends: ends,
@@ -1049,13 +1075,14 @@ enum LaunchPresentationState: Identifiable, Equatable {
         disclaimerVersion: Int,
         currentDisclaimerVersion: Int,
         authorizationStatus: CLAuthorizationStatus,
+        didCompleteOnboardingThisSession: Bool = false,
         suppressLocationRestrictedSheet: Bool
     ) -> LaunchPresentationState? {
         if disclaimerVersion < currentDisclaimerVersion {
             return .disclaimerUpdate
         }
 
-        guard suppressLocationRestrictedSheet == false else {
+        guard didCompleteOnboardingThisSession == false, suppressLocationRestrictedSheet == false else {
             return nil
         }
 
@@ -1064,6 +1091,29 @@ enum LaunchPresentationState: Identifiable, Equatable {
         }
 
         return nil
+    }
+}
+
+struct OnboardingLaunchContext {
+    private(set) var didCompleteOnboardingThisSession = false
+
+    mutating func markOnboardingComplete() {
+        didCompleteOnboardingThisSession = true
+    }
+
+    func resolve(
+        disclaimerVersion: Int,
+        currentDisclaimerVersion: Int,
+        authorizationStatus: CLAuthorizationStatus,
+        suppressLocationRestrictedSheet: Bool
+    ) -> LaunchPresentationState? {
+        LaunchPresentationState.resolve(
+            disclaimerVersion: disclaimerVersion,
+            currentDisclaimerVersion: currentDisclaimerVersion,
+            authorizationStatus: authorizationStatus,
+            didCompleteOnboardingThisSession: didCompleteOnboardingThisSession,
+            suppressLocationRestrictedSheet: suppressLocationRestrictedSheet
+        )
     }
 }
 

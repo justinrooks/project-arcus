@@ -380,7 +380,7 @@ actor BackgroundOrchestrator {
                                 stormRisk: stormRisk,
                                 severeRisk: severeRisk,
                                 fireRisk: fireRisk,
-                                placeMark: locationSnapshot.placemarkSummary ?? "Unknown",
+                                placeMark: locationSnapshot.placemarkSummary,
                                 riskProfileChange: settings.riskChangeNotificationsEnabled ? snapshot.riskProfileChange : nil
                             )
                         )

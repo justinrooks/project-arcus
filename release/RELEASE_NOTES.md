@@ -1,6 +1,16 @@
 # Release Notes
 
-## Unreleased
+## v1.4.0(229)
+
+## Overview
+Today, Map, and widgets now share a coordinated visual system in light and dark appearances. Today’s weather and awareness hierarchy, Map controls and legends, and widget layouts have been refreshed while preserving weather meaning and readable content at larger text sizes.
+
+## Highlights
+- Today, Map, and widgets use coordinated light and dark surfaces with clearer content hierarchy.
+- Today’s Atmospheric Conditions panel presents Air Quality, Visibility, Pressure, Humidity, and Wind; dew point appears with Storm Setup fuel and instability details.
+- Today keeps refresh status visible in Current Conditions, and the Map presents active awareness with compact controls and legends.
+- Accessibility-size content, awareness controls, and air-quality text are easier to read and understand.
+- Cached visibility carries forward through the Home projection schema migration.
 
 ## v1.3.0(228)
 
