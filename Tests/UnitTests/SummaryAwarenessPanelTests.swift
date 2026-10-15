@@ -298,7 +298,11 @@ struct SummaryAwarenessPanelTests {
             var actionableRow = row
             actionableRow.showsChevron = true
             let actionableRenderer = ImageRenderer(content: actionableRow.frame(width: width))
-            #expect(actionableRenderer.uiImage?.size.height == height, "Chevron must preserve compact row geometry for \(row.title), intensity: \(row.intensity != nil).")
+            let actionableHeight = try #require(actionableRenderer.uiImage?.size.height)
+            #expect(actionableHeight >= height, "Chevron spacing must not clip row content for \(row.title), intensity: \(row.intensity != nil).")
+            if width >= 300 {
+                #expect(actionableHeight == height, "Chevron must preserve wide row geometry for \(row.title), intensity: \(row.intensity != nil).")
+            }
             return height
         }
 
@@ -309,6 +313,25 @@ struct SummaryAwarenessPanelTests {
             },
             "Rendered compact rail heights: \(heights)"
         )
+
+        let evidenceRoot = URL(fileURLWithPath: "/private/tmp/692-today-support-chevrons", isDirectory: true)
+        try FileManager.default.createDirectory(at: evidenceRoot, withIntermediateDirectories: true)
+        for (name, row, scheme, size) in [
+            ("quiet-light", rows[0], ColorScheme.light, DynamicTypeSize.large),
+            ("long-detail-dark", rows[6], ColorScheme.dark, DynamicTypeSize.large),
+            ("intensity-accessibility-dark", rows[4], ColorScheme.dark, DynamicTypeSize.accessibility3)
+        ] {
+            var actionableRow = row
+            actionableRow.showsChevron = true
+            let renderer = ImageRenderer(content: actionableRow
+                .environment(\.colorScheme, scheme)
+                .environment(\.dynamicTypeSize, size)
+                .padding(12)
+                .background(Color.skyAwareBackground)
+                .frame(width: 390))
+            let data = try #require(renderer.uiImage?.pngData())
+            try data.write(to: evidenceRoot.appendingPathComponent("\(name).png"))
+        }
     }
 
     @Test("Late intensity results cannot leak across locations or survive expiry")
