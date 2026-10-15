@@ -125,16 +125,23 @@ struct OnboardingPrimaryActionStyle: ButtonStyle {
 
 struct OnboardingSecondaryActionStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.medium))
-            .foregroundStyle(isEnabled
-                ? Color.skyAwareAccent.opacity(configuration.isPressed ? 0.7 : 1)
-                : Color.secondary
-            )
+            .foregroundStyle(enabledForeground(isPressed: configuration.isPressed))
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
+    }
+
+    private var enabledColor: Color {
+        colorScheme == .dark ? .primary : .skyAwareAccent
+    }
+
+    private func enabledForeground(isPressed: Bool) -> Color {
+        guard isEnabled else { return .secondary }
+        return enabledColor.opacity(isPressed ? 0.7 : 1)
     }
 }
 
