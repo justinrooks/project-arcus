@@ -122,6 +122,7 @@ private struct MapLayerPickerButtonStyle: ViewModifier {
         if #available(iOS 26, *) {
             content
                 .buttonStyle(.glass)
+                .modifier(DarkMapLayerPickerContrast(isEnabled: colorScheme == .dark))
         } else if colorScheme == .dark {
             content
                 .buttonStyle(.plain)
@@ -149,8 +150,29 @@ private struct MapLayerPickerButtonStyle: ViewModifier {
     }
 }
 
+private struct DarkMapLayerPickerContrast: ViewModifier {
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .foregroundStyle(.white)
+                .background(.black.opacity(0.32), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(.white.opacity(0.28), lineWidth: 0.75)
+                        .allowsHitTesting(false)
+                }
+        } else {
+            content
+        }
+    }
+}
+
 private struct MapLayerMenuLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     let layer: MapLayer
 
@@ -172,7 +194,7 @@ private struct MapLayerMenuLabel: View {
             Image(systemName: layer.symbol)
                 .imageScale(.medium)
                 .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.secondary)
                 .frame(width: 18)
 
             Text(title)
@@ -183,7 +205,7 @@ private struct MapLayerMenuLabel: View {
 
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.secondary)
                 .frame(width: 12)
         }
     }

@@ -44,8 +44,15 @@ struct AwarenessSupportRow: View {
         let rowMetrics = metrics
         content(rowMetrics)
         .padding(.horizontal, rowMetrics.horizontalPadding)
+        .padding(.trailing, category != nil && showsChevron ? 20 : 0)
         .padding(.vertical, category == nil ? rowMetrics.verticalPadding : 6)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .trailing) {
+            if category != nil && showsChevron {
+                categoryChevron
+                    .padding(.trailing, rowMetrics.horizontalPadding)
+            }
+        }
         .background {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                 .fill(category == nil ? Color.clear : TodaySurfaceStyle.content(for: colorScheme))
@@ -147,10 +154,6 @@ struct AwarenessSupportRow: View {
                 Text(category)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
-                if showsChevron, intensity == nil || usesAccessibilityLayout {
-                    Spacer(minLength: 0)
-                    categoryChevron
-                }
             }
             Text(title)
                 .font(.headline.weight(.semibold))
@@ -172,10 +175,6 @@ struct AwarenessSupportRow: View {
                 Text(intensity.title)
                     .font(.caption2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                if showsChevron, category != nil, !usesAccessibilityLayout {
-                    Spacer(minLength: 0)
-                    categoryChevron
-                }
             }
 
             Text(intensity.detail)
