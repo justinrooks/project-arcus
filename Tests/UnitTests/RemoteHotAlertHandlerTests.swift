@@ -203,7 +203,7 @@ struct RemoteHotAlertHandlerTests {
         #expect(await widgetDriver.refreshCallCount() == 0)
     }
 
-    @Test("notification open publishes a focus request for the targeted alert after unified ingestion")
+    @Test("notification open publishes focus without Home ingestion or widget work")
     func notificationOpen_publishesFocusRequest() async throws {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
         let alert = makeAlert(id: "alert-open", revisionSent: revisionSent)
@@ -222,14 +222,13 @@ struct RemoteHotAlertHandlerTests {
             .init(alertID: "alert-open", revisionSent: revisionSent)
         )
 
-        let request = try #require(await coordinator.requests().first)
-        #expect(request.trigger == .remoteHotAlertOpened)
+        #expect(await coordinator.requests().isEmpty)
 
         await MainActor.run {
             #expect(presentationState.focusRequest?.alertID == "alert-open")
             #expect(presentationState.focusRequest?.alert == alert)
         }
-        #expect(await widgetDriver.refreshCallCount() == 1)
+        #expect(await widgetDriver.refreshCallCount() == 0)
     }
 
     @Test("foreground notification open remains functional while persistence is transient")
@@ -250,12 +249,75 @@ struct RemoteHotAlertHandlerTests {
             .init(alertID: "alert-open", revisionSent: revisionSent)
         )
 
-        let request = try #require(await coordinator.requests().first)
-        #expect(request.trigger == .remoteHotAlertOpened)
+        #expect(await coordinator.requests().isEmpty)
         await MainActor.run {
             #expect(presentationState.focusRequest?.alertID == "alert-open")
             #expect(presentationState.focusRequest?.alert == alert)
         }
+    }
+
+    @Test("Typed NWS resource identity and freshness decode without legacy keys")
+    func typedNWSOpenDecoding() {
+        let context = HomeRemoteAlertContext(userInfo: [
+            "productKind": "nwsAlert", "resourceID": "123e4567-e89b-12d3-a456-426614174000",
+            "revisionSent": "2026-05-20T12:34:56Z"
+        ])
+        #expect(context?.alertID == "123e4567-e89b-12d3-a456-426614174000")
+        #expect(context?.revisionSent == ISO8601DateFormatter().date(from: "2026-05-20T12:34:56Z"))
+    }
+
+    @Test("Typed non-NWS, unknown, and conflicting payloads cannot enter NWS routing", arguments: ["mesoscaleDiscussion", "unknown", "nwsAlert"])
+    func typedPayloadRejectsInvalidRouting(kind: String) {
+        let context = HomeRemoteAlertContext(userInfo: [
+            "productKind": kind, "resourceID": "resource-one",
+            "arcusAlertId": kind == "nwsAlert" ? "resource-two" : "resource-one"
+        ])
+        #expect(context == nil)
+    }
+
+    @Test("Unavailable resolution still publishes a consumable focus outcome")
+    func notificationOpenUnavailable() async {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator, arcusAlerts: StubArcusAlertStore(alerts: [nil]), presentationState: state
+        )
+        await handler.handleNotificationOpen(.init(alertID: "missing"))
+        await MainActor.run {
+            #expect(state.focusRequest?.alertID == "missing")
+            #expect(state.focusRequest?.alert == nil)
+        }
+        #expect(await coordinator.requests().isEmpty)
+    }
+
+    @Test("A slow earlier open cannot replace a newer notification focus")
+    func notificationOpenLatestIntentWins() async {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let store = GatedNotificationResolver()
+        let handler = RemoteHotAlertHandler(
+            coordinator: RecordingHomeIngestionCoordinator(), arcusAlerts: store, presentationState: state
+        )
+        let first = Task { await handler.handleNotificationOpen(.init(alertID: "first")) }
+        await store.waitUntilFirstStarted()
+        await handler.handleNotificationOpen(.init(alertID: "second"))
+        await store.releaseFirst()
+        await first.value
+        await MainActor.run { #expect(state.focusRequest?.alertID == "second") }
+    }
+
+    @Test("Cancelled notification opens do not publish focus")
+    func cancelledOpenDoesNotPublish() async {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let store = GatedNotificationResolver()
+        let handler = RemoteHotAlertHandler(
+            coordinator: RecordingHomeIngestionCoordinator(), arcusAlerts: store, presentationState: state
+        )
+        let open = Task { await handler.handleNotificationOpen(.init(alertID: "first")) }
+        await store.waitUntilFirstStarted()
+        open.cancel()
+        await store.releaseFirst()
+        await open.value
+        await MainActor.run { #expect(state.focusRequest == nil) }
     }
 
     @Test("presentation state clears the matching focus request after it is consumed")
@@ -547,7 +609,7 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 }
 
-private actor StubArcusAlertStore: ArcusAlertQuerying {
+private actor StubArcusAlertStore: RemoteAlertResolving {
     private var alerts: [AlertDTO?]
 
     init(alerts: [AlertDTO?]) {
@@ -560,6 +622,10 @@ private actor StubArcusAlertStore: ArcusAlertQuerying {
 
     func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
         []
+    }
+
+    func resolveNotificationAlert(_ context: HomeRemoteAlertContext) async throws -> AlertDTO? {
+        try await getAlert(id: context.alertID)
     }
 
     func getAlert(id: String) async throws -> AlertDTO? {
@@ -626,4 +692,29 @@ private final class RecordingWidgetSnapshotRefresher: WidgetSnapshotRefreshing, 
         defer { lock.unlock() }
         return calls.last
     }
+}
+
+private actor GatedNotificationResolver: RemoteAlertResolving {
+    private var firstWaiter: CheckedContinuation<Void, Never>?
+    private var startedWaiter: CheckedContinuation<Void, Never>?
+    private var started = false
+
+    func resolveNotificationAlert(_ context: HomeRemoteAlertContext) async throws -> AlertDTO? {
+        if context.alertID == "first" {
+            started = true
+            startedWaiter?.resume()
+            startedWaiter = nil
+            await withCheckedContinuation { firstWaiter = $0 }
+        }
+        return nil
+    }
+
+    func waitUntilFirstStarted() async {
+        if !started { await withCheckedContinuation { startedWaiter = $0 } }
+    }
+
+    func releaseFirst() { firstWaiter?.resume(); firstWaiter = nil }
+    func getAlert(id: String) async throws -> AlertDTO? { nil }
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] { [] }
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] { [] }
 }

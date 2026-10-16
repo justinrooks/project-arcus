@@ -11,10 +11,15 @@ import OSLog
 import UIKit
 import ArcusCore
 
-struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
+struct RemoteAlertFocusRequest: Identifiable, Hashable, Sendable {
     let id = UUID()
     let alertID: String
     let alert: AlertDTO?
+    var openStartedAt: ContinuousClock.Instant? = nil
+}
+
+protocol RemoteAlertResolving: ArcusAlertQuerying {
+    func resolveNotificationAlert(_ context: HomeRemoteAlertContext) async throws -> AlertDTO?
 }
 
 @Observable
@@ -22,8 +27,8 @@ struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
 final class RemoteAlertPresentationState {
     var focusRequest: RemoteAlertFocusRequest?
 
-    func present(alertID: String, alert: AlertDTO?) {
-        focusRequest = RemoteAlertFocusRequest(alertID: alertID, alert: alert)
+    func present(alertID: String, alert: AlertDTO?, openStartedAt: ContinuousClock.Instant? = nil) {
+        focusRequest = RemoteAlertFocusRequest(alertID: alertID, alert: alert, openStartedAt: openStartedAt)
     }
 
     func clearFocusRequest(id: RemoteAlertFocusRequest.ID?) {
@@ -38,7 +43,8 @@ actor RemoteHotAlertHandler {
     }
 
     private let coordinator: any HomeIngestionCoordinating
-    private let arcusAlerts: any ArcusAlertQuerying
+    private let arcusAlerts: any RemoteAlertResolving
+    private var latestOpenID: UUID?
     private let presentationState: RemoteAlertPresentationState
     private let widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)?
     private let allowsBackgroundIngestion: @Sendable () async -> Bool
@@ -46,7 +52,7 @@ actor RemoteHotAlertHandler {
 
     init(
         coordinator: any HomeIngestionCoordinating,
-        arcusAlerts: any ArcusAlertQuerying,
+        arcusAlerts: any RemoteAlertResolving,
         presentationState: RemoteAlertPresentationState,
         widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)? = nil,
         allowsBackgroundIngestion: @escaping @Sendable () async -> Bool = { true },
@@ -83,23 +89,24 @@ actor RemoteHotAlertHandler {
     }
 
     func handleNotificationOpen(_ remoteAlertContext: HomeRemoteAlertContext) async {
+        let openID = UUID()
+        latestOpenID = openID
+        let startedAt = ContinuousClock.now
+        logger.info("Notification open started")
+        let alertDTO: AlertDTO?
         do {
-            _ = try await coordinator.enqueueAndWait(
-                .remoteHotAlertOpened,
-                locationContext: nil,
-                remoteAlertContext: remoteAlertContext
-            )
-            await refreshWidgetSnapshotAfterRemoteAlertIngestion()
-            let alertDTO = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
-            await MainActor.run {
-                presentationState.present(alertID: remoteAlertContext.alertID, alert: alertDTO)
-            }
+            alertDTO = try await arcusAlerts.resolveNotificationAlert(remoteAlertContext)
         } catch {
-            logger.error("Remote hot-alert open failed: \(error.localizedDescription, privacy: .public)")
-            await MainActor.run {
-                presentationState.present(alertID: remoteAlertContext.alertID, alert: nil)
-            }
+            logger.error("Remote hot-alert open resolution failed")
+            alertDTO = nil
         }
+        guard latestOpenID == openID, !Task.isCancelled else { return }
+        await presentationState.present(
+            alertID: remoteAlertContext.alertID,
+            alert: alertDTO,
+            openStartedAt: startedAt
+        )
+        logger.info("Notification open focus published elapsed=\(String(describing: startedAt.duration(to: .now)), privacy: .public)")
     }
 
     private func refreshWidgetSnapshotAfterRemoteAlertIngestion() async {
@@ -162,6 +169,22 @@ extension HomeRemoteAlertContext {
     private static let referenceDateEpochOffset: TimeInterval = 978_307_200
 
     init?(userInfo: [AnyHashable: Any]) {
+        // ArcusCore 0.4.4 decodes legacy alerts only. Keep typed NWS routing here
+        // until the app adopts the shared weather-product decoder.
+        if let kind = userInfo["productKind"] {
+            guard kind as? String == "nwsAlert",
+                  let value = userInfo["resourceID"],
+                  let resourceID = Self.normalizedString(from: value) else { return nil }
+            if let legacy = userInfo["arcusAlertId"] {
+                guard let legacyID = Self.normalizedString(from: legacy),
+                      ArcusAlertIdentifier.canonical(legacyID) == ArcusAlertIdentifier.canonical(resourceID) else {
+                    return nil
+                }
+            }
+            self.init(alertID: resourceID, revisionSent: Self.date(in: userInfo))
+            return
+        }
+
         if let payload = Self.sharedPayload(in: userInfo),
            let alertID = payload.resolvedAlertID {
             self.init(

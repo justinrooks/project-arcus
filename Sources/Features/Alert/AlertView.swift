@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct AlertView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -20,7 +21,7 @@ struct AlertView: View {
     let onRefresh: (() async -> Void)?
     let onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)?
     
-    @State private var selectedAlert: AlertDTO?
+    @State private var selectedNotificationAlert: RemoteAlertFocusRequest?
     @State private var activeTip: MesoscaleDiscussionTip?
     
     private var totalAlertCount: Int {
@@ -121,15 +122,29 @@ struct AlertView: View {
             await onRefresh()
         }
         .task(id: focusedAlertRequest?.id) {
-            guard let focusedAlertRequest, let focusedAlert = focusedAlertRequest.alert else { return }
-            selectedAlert = focusedAlert
+            guard let focusedAlertRequest else { return }
+            selectedNotificationAlert = focusedAlertRequest
             onFocusedAlertRequestHandled?(focusedAlertRequest.id)
         }
         .scrollIndicators(.hidden)
         .contentMargins(.top, 0, for: .scrollContent)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .navigationDestination(item: $selectedAlert) { alert in
-            alertDetail(for: alert)
+        .navigationDestination(item: $selectedNotificationAlert) { request in
+            Group {
+                if let alert = request.alert {
+                    alertDetail(for: alert)
+                } else {
+                    ContentUnavailableView(
+                        "Alert unavailable",
+                        systemImage: "exclamationmark.bubble",
+                        description: Text("This alert may have ended, or its latest details could not be loaded.")
+                    )
+                }
+            }
+            .onAppear {
+                guard let startedAt = request.openStartedAt else { return }
+                Logger.notificationsRemote.info("Notification open detail appeared available=\(request.alert != nil, privacy: .public) elapsed=\(String(describing: startedAt.duration(to: .now)), privacy: .public)")
+            }
         }
     }
 
