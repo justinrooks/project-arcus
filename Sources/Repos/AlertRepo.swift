@@ -87,6 +87,18 @@ actor AlertRepo {
         return try modelContext.fetch(descriptor).first.map(AlertDTO.init(from:))
     }
 
+    /// A notification target is independent of the accepted location-scoped Home collection.
+    func notificationAlert(id: String, on date: Date = .now) throws -> AlertDTO? {
+        let canonicalID = ArcusAlertIdentifier.canonical(id)
+        let predicate = #Predicate<Watch> { $0.nwsId == canonicalID }
+        var descriptor = FetchDescriptor<Watch>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        guard let watch = try modelContext.fetch(descriptor).first,
+              watch.isActive(at: date),
+              isRenderableAlertLifecycle(status: watch.status, messageType: watch.messageType) else { return nil }
+        return AlertDTO(from: watch)
+    }
+
     @discardableResult
     func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, and forecastZone: String, in cell: Int64?) async throws -> HTTPResponse.Source {
         let response = try await client.fetchActiveAlertsResponse(for: countyCode, and: fireZone, and: forecastZone, in: cell)
@@ -126,7 +138,10 @@ actor AlertRepo {
 
     @discardableResult
     func refreshAlert(using client: any ArcusClient, id: String, revisionSent: Date?) async throws -> HTTPResponse.Source {
+        let startedAt = ContinuousClock.now
         let response = try await client.fetchAlertResponse(id: id, revisionSent: revisionSent)
+        logger.info("Notification targeted HTTP finished source=\(response.source.description, privacy: .public) elapsed=\(String(describing: startedAt.duration(to: .now)), privacy: .public)")
+        let acceptanceStartedAt = ContinuousClock.now
         guard let data = response.data else { throw ArcusError.missingData }
 
         guard let decoded = decodePayloads(from: data) else {
@@ -158,6 +173,7 @@ actor AlertRepo {
         logger.debug(
             "Persisted targeted Arcus alert refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
         )
+        logger.info("Notification targeted repository acceptance finished elapsed=\(String(describing: acceptanceStartedAt.duration(to: .now)), privacy: .public)")
         return response.source
     }
 
@@ -265,6 +281,11 @@ actor AlertRepo {
             return false
         }
 
+        guard acceptsRevision(
+            item.currentRevisionSent ?? normalizedAlertDate(item.sent),
+            replacing: existing
+        ) else { return false }
+
         let state = item.state.trimmingCharacters(in: .whitespacesAndNewlines)
         if state.isEmpty == false {
             existing.status = state
@@ -365,8 +386,20 @@ actor AlertRepo {
     // MARK: Upsert
     private func upsert(_ items: [Watch]) throws {
         for item in items {
+            let id = item.nwsId
+            let descriptor = FetchDescriptor<Watch>(predicate: #Predicate { $0.nwsId == id })
+            if let existing = try modelContext.fetch(descriptor).first,
+               !acceptsRevision(item.currentRevisionSent ?? item.sent, replacing: existing) {
+                continue
+            }
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func acceptsRevision(_ incoming: Date?, replacing existing: Watch) -> Bool {
+        guard let incoming else { return false }
+        // CAP sent is the revision date for legacy rows without currentRevisionSent.
+        return incoming >= (existing.currentRevisionSent ?? existing.sent)
     }
 }

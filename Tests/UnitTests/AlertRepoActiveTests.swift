@@ -617,6 +617,145 @@ struct AlertRepoActiveTests {
         #expect(geometries.first?.geometry == geometry)
     }
 
+    @Test("Notification cache accepts a matching or newer revision without HTTP", arguments: [0.0, 60.0])
+    func notificationCacheHit(newerBy: Double) async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        try seedNotificationAlert(revision: revision.addingTimeInterval(newerBy))
+        let client = NotificationAlertClient(payload: Data("[]".utf8))
+        let provider = ArcusAlertProvider(alertRepo: repo, client: client)
+
+        let alert = try await provider.resolveNotificationAlert(.init(alertID: notificationID.lowercased(), revisionSent: revision))
+
+        #expect(alert?.currentRevisionSent == revision.addingTimeInterval(newerBy))
+        #expect(await client.callCount == 0)
+    }
+
+    @Test("Missing, older, and unknown revisions fetch the target and accept a newer current record", arguments: ["missing", "older", "unknown"])
+    func notificationTargetedFetch(cache: String) async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        if cache != "missing" {
+            try seedNotificationAlert(revision: cache == "unknown" ? nil : revision.addingTimeInterval(-60))
+        }
+        let client = NotificationAlertClient(payload: try notificationPayload(revision: revision.addingTimeInterval(60)))
+        let provider = ArcusAlertProvider(alertRepo: repo, client: client)
+
+        let alert = try await provider.resolveNotificationAlert(.init(alertID: notificationID, revisionSent: revision))
+
+        #expect(alert?.currentRevisionSent == revision.addingTimeInterval(60))
+        #expect(try await repo.alert(id: notificationID) == alert)
+        #expect(await client.callCount == 1)
+        #expect(await client.requestedID == notificationID)
+        #expect(await client.requestedRevision == revision)
+    }
+
+    @Test("Failed, removed, terminal, and too-old targets never present stale content as current", arguments: ["failure", "removed", "terminal", "older"])
+    func notificationUnavailable(outcome: String) async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        try seedNotificationAlert(revision: revision.addingTimeInterval(-60))
+        let payload = outcome == "removed" ? Data("[]".utf8) : try notificationPayload(
+            revision: outcome == "older" ? revision.addingTimeInterval(-30) : revision,
+            state: outcome == "terminal" ? "expired" : "active"
+        )
+        let client = NotificationAlertClient(payload: payload, fails: outcome == "failure")
+        let provider = ArcusAlertProvider(alertRepo: repo, client: client)
+
+        #expect(try await provider.resolveNotificationAlert(.init(alertID: notificationID, revisionSent: revision)) == nil)
+        #expect(try await repo.alert(id: notificationID) != nil)
+        #expect(await client.callCount == 1)
+    }
+
+    @Test("Concurrent receipt and open share targeted HTTP work")
+    func notificationReceiptAndOpenCoalesce() async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        let client = NotificationAlertClient(payload: try notificationPayload(revision: revision), blocked: true)
+        let provider = ArcusAlertProvider(alertRepo: repo, client: client)
+        let receipt = Task { await provider.syncRemoteAlert(id: notificationID, revisionSent: revision) }
+        await client.waitUntilStarted()
+        let open = Task { try await provider.resolveNotificationAlert(.init(alertID: notificationID.lowercased(), revisionSent: revision)) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while await provider.coalescedRemoteSyncCount == 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        let joined = await provider.coalescedRemoteSyncCount
+        await client.release()
+        #expect(joined == 1)
+        #expect(await receipt.value == .live)
+        #expect(try await open.value?.currentRevisionSent == revision)
+        #expect(await client.callCount == 1)
+    }
+
+    @Test("Delayed location or targeted responses cannot replace a newer accepted revision", arguments: ["location-active", "location-terminal", "targeted-active", "targeted-terminal"])
+    func notificationRevisionNeverRegresses(path: String) async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        let oldClient = NotificationAlertClient(
+            payload: try notificationPayload(revision: revision, state: path.hasSuffix("terminal") ? "expired" : "active"),
+            blocked: true
+        )
+        let oldRequest = Task {
+            if path.hasPrefix("location") {
+                return try await repo.refresh(using: oldClient, for: "", and: "", and: "", in: nil)
+            }
+            return try await repo.refreshAlert(using: oldClient, id: notificationID, revisionSent: revision)
+        }
+        await oldClient.waitUntilStarted()
+        let newer = revision.addingTimeInterval(60)
+        let provider = ArcusAlertProvider(
+            alertRepo: repo, client: NotificationAlertClient(payload: try notificationPayload(revision: newer))
+        )
+        let resolved = try await provider.resolveNotificationAlert(.init(alertID: notificationID, revisionSent: newer))
+        await oldClient.release()
+        _ = try await oldRequest.value
+
+        #expect(resolved?.currentRevisionSent == newer)
+        #expect(try await repo.notificationAlert(id: notificationID)?.currentRevisionSent == newer)
+    }
+
+    @Test("Notification reads reject terminal and invalid validity windows", arguments: ["expired", "cancelled", "future", "ends", "expires"])
+    func notificationLifecycle(state: String) async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        let ctx = ModelContext(container)
+        let watch = makeAlert(
+            number: notificationID,
+            issued: revision,
+            effective: state == "future" ? revision.addingTimeInterval(60) : revision.addingTimeInterval(-60),
+            validEnd: state == "ends" ? revision : revision.addingTimeInterval(600),
+            expires: state == "expires" ? revision : revision.addingTimeInterval(600),
+            status: state == "expired" ? "expired" : "actual",
+            messageType: state == "cancelled" ? "Cancel" : "Alert"
+        )
+        ctx.insert(watch)
+        try ctx.save()
+        #expect(try await repo.notificationAlert(id: notificationID, on: revision) == nil)
+    }
+
+    private var notificationID: String { "123E4567-E89B-12D3-A456-426614174000" }
+
+    private func seedNotificationAlert(revision: Date?) throws {
+        let ctx = ModelContext(container)
+        let watch = makeAlert(
+            number: notificationID,
+            issued: Date(timeIntervalSince1970: 1_700_000_000),
+            effective: Date(timeIntervalSince1970: 1_700_000_000),
+            validEnd: Date(timeIntervalSince1970: 4_000_000_000)
+        )
+        watch.currentRevisionSent = revision
+        ctx.insert(watch)
+        try ctx.save()
+    }
+
+    private func notificationPayload(revision: Date, state: String = "active") throws -> Data {
+        try JSONSerialization.data(withJSONObject: [[
+            "id": notificationID, "currentRevisionUrn": "urn:notification-test",
+            "currentRevisionSent": revision.ISO8601Format(), "messageType": "Alert", "state": state,
+            "event": "Tornado Warning", "created": "2025-01-01T00:00:00Z",
+            "updated": "2025-01-01T00:00:00Z", "lastSeenActive": "2025-01-01T00:00:00Z",
+            "sent": "2025-01-01T00:00:00Z", "effective": "2025-01-01T00:00:00Z",
+            "onset": "2025-01-01T00:00:00Z", "expires": "2100-01-01T00:00:00Z",
+            "severity": "Extreme", "urgency": "Immediate", "certainty": "Observed",
+            "description": "Test warning", "ugc": [], "h3Cells": []
+        ]])
+    }
+
     @Test("Targeted provider sync reports rejected, failed, and fallback outcomes")
     func targetedProviderSync_reportsTypedOutcomes() async {
         let unavailableProvider = ArcusAlertProvider(alertRepo: repo, client: UnavailableArcusClient())
@@ -681,5 +820,47 @@ struct AlertRepoActiveTests {
                 ]
             ]
         )
+    }
+}
+
+private actor NotificationAlertClient: ArcusClient {
+    let payload: Data
+    let fails: Bool
+    private var blocked: Bool
+    private var startedWaiter: CheckedContinuation<Void, Never>?
+    private var responseWaiter: CheckedContinuation<Void, Never>?
+    private(set) var callCount = 0
+    private(set) var requestedID: String?
+    private(set) var requestedRevision: Date?
+
+    init(payload: Data, fails: Bool = false, blocked: Bool = false) {
+        self.payload = payload
+        self.fails = fails
+        self.blocked = blocked
+    }
+
+    func waitUntilStarted() async {
+        if callCount == 0 { await withCheckedContinuation { startedWaiter = $0 } }
+    }
+
+    func release() {
+        blocked = false
+        responseWaiter?.resume()
+        responseWaiter = nil
+    }
+
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
+        try await fetchAlert(id: "location-collection", revisionSent: nil)
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        callCount += 1
+        requestedID = id
+        requestedRevision = revisionSent
+        startedWaiter?.resume()
+        startedWaiter = nil
+        if blocked { await withCheckedContinuation { responseWaiter = $0 } }
+        if fails { throw ArcusError.networkError(status: 503) }
+        return payload
     }
 }
