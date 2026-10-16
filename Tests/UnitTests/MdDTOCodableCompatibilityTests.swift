@@ -32,6 +32,31 @@ struct MdDTOCodableCompatibilityTests {
         #expect(decoded.productID == "SPC-MD-2001-1234")
     }
 
+    @Test("legacy app cache decodes when watchProbabilityText is missing")
+    func legacyAppCacheWithoutWatchProbabilityTextDecodes() throws {
+        let json = #"""
+        {
+          "number": 1234,
+          "title": "Mesoscale Discussion",
+          "link": "https://example.com/md/1234",
+          "issued": 0,
+          "validStart": 0,
+          "validEnd": 60,
+          "areasAffected": "Central Plains",
+          "summary": "Legacy persisted record",
+          "concerning": "Severe potential",
+          "watchProbability": 35,
+          "threats": null,
+          "coordinates": []
+        }
+        """#
+
+        let decoded = try JSONDecoder().decode(MdDTO.self, from: Data(json.utf8))
+
+        #expect(decoded.watchProbability == 35)
+        #expect(decoded.watchProbabilityText == "35")
+    }
+
     @Test("new payload preserves watchProbabilityText on round trip")
     func roundTripPreservesWatchProbabilityText() throws {
         let original = MesoscaleDiscussionPayload(
