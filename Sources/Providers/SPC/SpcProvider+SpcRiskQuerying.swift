@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import ArcusCore
 
 // MARK: SpcRiskQuerying
 extension SpcProvider: SpcRiskQuerying {
@@ -19,7 +20,7 @@ extension SpcProvider: SpcRiskQuerying {
     }
     
     func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
-        try await mesoRepo.active(at: time, point: point)
+        try await mesoRepo.active(at: time, point: point).map(MdDTO.init(payload:))
     }
     
     func getFireRisk(for point: CLLocationCoordinate2D) async throws -> FireRiskLevel {

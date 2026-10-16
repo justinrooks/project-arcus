@@ -5,9 +5,10 @@
 //  Created by Justin Rooks on 9/16/25.
 //
 
+import ArcusCore
 import Foundation
 
-// DTO for transfering across actor boundaries
+// App-local presentation and cache adapter for the shared ArcusCore payload.
 struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
     var alertType: AlertType { .mesoscale }
     
@@ -119,4 +120,30 @@ struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
 //                    coordinates:md.coordinates
 //            )
 //    }
+}
+
+extension MdDTO {
+    init(payload: MesoscaleDiscussionPayload) {
+        number = payload.number
+        title = payload.title
+        link = payload.sourceURL
+        issued = payload.issued
+        validStart = payload.validStart
+        validEnd = payload.validEnd
+        areasAffected = payload.areasAffected
+        summary = payload.summary
+        concerning = payload.concerning
+        watchProbability = payload.watchProbability
+        watchProbabilityText = payload.watchProbabilityText
+        threats = payload.threats.map {
+            MDThreats(
+                peakWindMPH: $0.peakWindMPH,
+                hailRangeInches: $0.hailRangeInches,
+                tornadoStrength: $0.tornadoStrength
+            )
+        }
+        coordinates = payload.coordinates.map {
+            Coordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        }
+    }
 }
