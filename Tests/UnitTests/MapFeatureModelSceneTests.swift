@@ -308,6 +308,125 @@ struct MapFeatureModelSceneTests {
         #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|5|") == true)
     }
 
+    @Test("meso reload replaces changed collections and confirms an empty collection")
+    func reload_replacesChangedAndEmptyMesoCollections() async {
+        let model = MapFeatureModel()
+        let localMesoCalls = MesoMapDataCallCounter()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .failure(StubError()),
+            fireRisk: .success([]),
+            mesoCallCounter: localMesoCalls
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let first = StubArcusMesoQuerying(mesos: .success([
+            makeMesoPayload(number: 1, coordinates: [
+                Coordinate2D(latitude: 35.0, longitude: -97.0),
+                Coordinate2D(latitude: 35.2, longitude: -96.8),
+                Coordinate2D(latitude: 35.3, longitude: -97.1)
+            ])
+        ]), expectsNationwideRequest: true)
+        let changed = StubArcusMesoQuerying(mesos: .success([
+            makeMesoPayload(number: 2, coordinates: [
+                Coordinate2D(latitude: 36.0, longitude: -98.0),
+                Coordinate2D(latitude: 36.2, longitude: -97.8),
+                Coordinate2D(latitude: 36.3, longitude: -98.1)
+            ])
+        ]), expectsNationwideRequest: true)
+
+        await model.reload(using: service, mesoSource: first, warningSource: warnings, selectedLayer: .meso)
+        #expect(model.activeScene.legendState.presentationState == .current)
+        let firstOverlayKeys = overlayKeys(in: model.activeScene)
+        #expect(firstOverlayKeys.isEmpty == false)
+
+        await model.reload(using: service, mesoSource: changed, warningSource: warnings, selectedLayer: .meso)
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(overlayKeys(in: model.activeScene) != firstOverlayKeys)
+
+        let empty = StubArcusMesoQuerying(mesos: .success([]))
+        await model.reload(using: service, mesoSource: empty, warningSource: warnings, selectedLayer: .meso)
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
+        #expect(overlayTitles(in: model.activeScene).isEmpty)
+        #expect(await localMesoCalls.snapshot() == 0)
+    }
+
+    @Test("failed meso replacement retains the previously accepted scene")
+    func reload_failedMesoReplacementRetainsVisibleScene() async {
+        let model = MapFeatureModel()
+        let localMesoCalls = MesoMapDataCallCounter()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .failure(StubError()),
+            fireRisk: .success([]),
+            mesoCallCounter: localMesoCalls
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let accepted = StubArcusMesoQuerying(mesos: .success([
+            makeMesoPayload(number: 3, coordinates: [
+                Coordinate2D(latitude: 35.0, longitude: -97.0),
+                Coordinate2D(latitude: 35.2, longitude: -96.8),
+                Coordinate2D(latitude: 35.3, longitude: -97.1)
+            ])
+        ]), expectsNationwideRequest: true)
+
+        await model.reload(using: service, mesoSource: accepted, warningSource: warnings, selectedLayer: .meso)
+        let acceptedOverlayKeys = overlayKeys(in: model.activeScene)
+        await model.reload(
+            using: service,
+            mesoSource: StubArcusMesoQuerying(mesos: .failure(StubError()), expectsNationwideRequest: true),
+            warningSource: warnings,
+            selectedLayer: .meso
+        )
+
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(overlayKeys(in: model.activeScene) == acceptedOverlayKeys)
+        #expect(await localMesoCalls.snapshot() == 0)
+    }
+
+    @Test("cancelled Arcus meso reload retains the previously accepted scene")
+    func reload_cancelledArcusMesoReplacementRetainsVisibleScene() async {
+        let gate = ReloadGate()
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .failure(StubError()),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let accepted = makeMesoPayload(number: 4, coordinates: [
+            Coordinate2D(latitude: 35.0, longitude: -97.0),
+            Coordinate2D(latitude: 35.2, longitude: -96.8),
+            Coordinate2D(latitude: 35.3, longitude: -97.1)
+        ])
+
+        await model.reload(
+            using: service,
+            mesoSource: StubArcusMesoQuerying(mesos: .success([accepted])),
+            warningSource: warnings,
+            selectedLayer: .meso
+        )
+        let acceptedOverlayKeys = overlayKeys(in: model.activeScene)
+        let reload = Task {
+            await model.reload(
+                using: service,
+                mesoSource: GatedArcusMesoQuerying(gate: gate, mesos: []),
+                warningSource: warnings,
+                selectedLayer: .meso
+            )
+        }
+
+        await gate.waitUntilFirstStormFetchStarts()
+        reload.cancel()
+        await gate.releaseFirstStormFetch()
+        await reload.value
+
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(overlayKeys(in: model.activeScene) == acceptedOverlayKeys)
+    }
+
     @Test("cancelled reload cannot clear a newer scheduled reload")
     func reloadCoordinator_cancelledTaskCannotClearNewerTask() async {
         let gate = IndexedReloadGate()

@@ -51,6 +51,7 @@ final class MapFeatureModel {
 
     func reload(
         using service: any SpcMapData,
+        mesoSource: any ArcusMesoQuerying,
         warningSource: any ArcusAlertQuerying,
         selectedLayer: MapLayer
     ) async {
@@ -71,7 +72,11 @@ final class MapFeatureModel {
 
         while Task.isCancelled == false {
             pendingReload = false
-            let didReplaceRenderPlans = await performReload(using: service, warningSource: warningSource)
+            let didReplaceRenderPlans = await performReload(
+                using: service,
+                mesoSource: mesoSource,
+                warningSource: warningSource
+            )
 
             if pendingReload == false {
                 if didReplaceRenderPlans == false {
@@ -85,12 +90,14 @@ final class MapFeatureModel {
 
     private func performReload(
         using service: any SpcMapData,
+        mesoSource: any ArcusMesoQuerying,
         warningSource: any ArcusAlertQuerying
     ) async -> Bool {
         let selectedLayer = currentSelectedLayer
         let selectedPayload = await fetchSelectedLayerPayload(
             selectedLayer,
             using: service,
+            mesoSource: mesoSource,
             warningSource: warningSource
         )
 
@@ -114,7 +121,8 @@ final class MapFeatureModel {
         let payload = await fetchRemainingPayload(
             selectedLayer,
             selectedPayload: selectedPayload,
-            using: service
+            using: service,
+            mesoSource: mesoSource
         )
 
         guard Task.isCancelled == false, containsCancellation(in: payload) == false else {
@@ -144,6 +152,7 @@ final class MapFeatureModel {
     private func fetchSelectedLayerPayload(
         _ layer: MapLayer,
         using service: any SpcMapData,
+        mesoSource: any ArcusMesoQuerying,
         warningSource: any ArcusAlertQuerying
     ) async -> MapDataPayload {
         async let warnings = fetchActiveWarningGeometry(using: warningSource)
@@ -168,7 +177,7 @@ final class MapFeatureModel {
                 activeWarnings: await warnings
             )
         case .meso:
-            let mesos = await fetchMesoShapes(using: service)
+            let mesos = await fetchMesoShapes(using: mesoSource)
             return MapDataPayload(
                 stormRisk: .failure,
                 severeRisks: .failure,
@@ -191,7 +200,8 @@ final class MapFeatureModel {
     private func fetchRemainingPayload(
         _ selectedLayer: MapLayer,
         selectedPayload: MapDataPayload,
-        using service: any SpcMapData
+        using service: any SpcMapData,
+        mesoSource: any ArcusMesoQuerying
     ) async -> MapDataPayload {
         async let severeRisks = usesSevereRiskShapes(selectedLayer)
             ? selectedPayload.severeRisks
@@ -201,7 +211,7 @@ final class MapFeatureModel {
             : fetchStormRiskShapes(using: service)
         async let mesos = selectedLayer == .meso
             ? selectedPayload.mesos
-            : fetchMesoShapes(using: service)
+            : fetchMesoShapes(using: mesoSource)
         async let fireRisk = selectedLayer == .fire
             ? selectedPayload.fireRisk
             : fetchFireRiskShapes(using: service)
@@ -321,9 +331,10 @@ final class MapFeatureModel {
         }
     }
 
-    private func fetchMesoShapes(using service: any SpcMapData) async -> MapFetchOutcome<[MdDTO]> {
+    private func fetchMesoShapes(using source: any ArcusMesoQuerying) async -> MapFetchOutcome<[MdDTO]> {
         do {
-            return .success(try await service.getMesoMapData())
+            let response = try await source.getActiveMesos(h3Cell: nil)
+            return .success(response.value.map(MdDTO.init(payload:)))
         } catch is CancellationError {
             return .cancelled
         } catch {
