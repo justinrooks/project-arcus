@@ -137,11 +137,12 @@ struct StubArcusAlertQuerying: ArcusAlertQuerying {
 struct StubArcusMesoQuerying: ArcusMesoQuerying {
     let mesos: Result<[MesoscaleDiscussionPayload], Error>
     var expectsNationwideRequest = false
+    var responseSource: HTTPResponse.Source = .live
 
     func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
         if expectsNationwideRequest { #expect(h3Cell == nil) }
         try Task.checkCancellation()
-        return ArcusMesoQueryResponse(value: try mesos.get(), source: .live)
+        return ArcusMesoQueryResponse(value: try mesos.get(), source: responseSource)
     }
 
     func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? {

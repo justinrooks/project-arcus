@@ -351,6 +351,103 @@ struct MapFeatureModelSceneTests {
         #expect(await localMesoCalls.snapshot() == 0)
     }
 
+    @Test("nonauthoritative empty meso responses retain the accepted scene")
+    func reload_nonauthoritativeEmptyMesoResponsesRetainScene() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .failure(StubError()),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let accepted = makeMesoPayload(number: 10, coordinates: [
+            Coordinate2D(latitude: 35.0, longitude: -97.0),
+            Coordinate2D(latitude: 35.2, longitude: -96.8),
+            Coordinate2D(latitude: 35.3, longitude: -97.1)
+        ])
+
+        await model.reload(
+            using: service,
+            mesoSource: StubArcusMesoQuerying(mesos: .success([accepted])),
+            warningSource: warnings,
+            selectedLayer: .meso
+        )
+        let acceptedOverlayKeys = overlayKeys(in: model.activeScene)
+
+        for source in [HTTPResponse.Source.cacheFallback, .localCache] {
+            await model.reload(
+                using: service,
+                mesoSource: StubArcusMesoQuerying(mesos: .success([]), responseSource: source),
+                warningSource: warnings,
+                selectedLayer: .meso
+            )
+            #expect(model.activeScene.legendState.presentationState == .stale)
+            #expect(overlayKeys(in: model.activeScene) == acceptedOverlayKeys)
+        }
+
+        await model.reload(
+            using: service,
+            mesoSource: StubArcusMesoQuerying(
+                mesos: .success([]),
+                responseSource: .cacheRevalidated304
+            ),
+            warningSource: warnings,
+            selectedLayer: .meso
+        )
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
+        #expect(overlayTitles(in: model.activeScene).isEmpty)
+    }
+
+    @Test("nationwide meso response maps every discussion polygon with original coordinates")
+    func reload_nationwideMesosRetainEveryPolygon() async throws {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .failure(StubError()),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let discussions: [(Int, [Coordinate2D])] = [
+            (21, [
+                Coordinate2D(latitude: 35.0, longitude: -97.0),
+                Coordinate2D(latitude: 35.2, longitude: -96.8),
+                Coordinate2D(latitude: 35.3, longitude: -97.1)
+            ]),
+            (22, [
+                Coordinate2D(latitude: 35.1, longitude: -96.9),
+                Coordinate2D(latitude: 35.3, longitude: -96.7),
+                Coordinate2D(latitude: 35.4, longitude: -97.0)
+            ]),
+            (23, [
+                Coordinate2D(latitude: 40.0, longitude: -105.0),
+                Coordinate2D(latitude: 40.2, longitude: -104.8),
+                Coordinate2D(latitude: 40.3, longitude: -105.1)
+            ])
+        ]
+        let source = StubArcusMesoQuerying(
+            mesos: .success(discussions.map { makeMesoPayload(number: $0.0, coordinates: $0.1) }),
+            expectsNationwideRequest: true
+        )
+
+        await model.reload(using: service, mesoSource: source, warningSource: warnings, selectedLayer: .meso)
+
+        let overlays = model.activeScene.canvasState.overlays.compactMap { entry -> (String, MKPolygon)? in
+            guard let overlay = entry.overlay as? RiskPolygonOverlay else { return nil }
+            return (entry.key, overlay.polygon)
+        }
+        #expect(overlays.count == discussions.count)
+        #expect(Set(overlays.map(\.0)).count == discussions.count)
+        for (number, coordinates) in discussions {
+            let polygon = try #require(overlays.first { $0.0.contains("meso|\(number)|") }?.1)
+            #expect(polygon.pointCount == coordinates.count)
+            for (index, coordinate) in coordinates.enumerated() {
+                #expect(coordinatesEqual(polygon.points()[index].coordinate, coordinate.location))
+            }
+        }
+    }
+
     @Test("failed meso replacement retains the previously accepted scene")
     func reload_failedMesoReplacementRetainsVisibleScene() async {
         let model = MapFeatureModel()

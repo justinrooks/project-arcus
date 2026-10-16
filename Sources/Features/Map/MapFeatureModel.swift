@@ -334,6 +334,9 @@ final class MapFeatureModel {
     private func fetchMesoShapes(using source: any ArcusMesoQuerying) async -> MapFetchOutcome<[MdDTO]> {
         do {
             let response = try await source.getActiveMesos(h3Cell: nil)
+            guard response.source == .live || response.source == .cacheRevalidated304 else {
+                return .failure
+            }
             return .success(response.value.map(MdDTO.init(payload:)))
         } catch is CancellationError {
             return .cancelled
