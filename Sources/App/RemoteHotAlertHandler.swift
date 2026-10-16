@@ -169,19 +169,14 @@ extension HomeRemoteAlertContext {
     private static let referenceDateEpochOffset: TimeInterval = 978_307_200
 
     init?(userInfo: [AnyHashable: Any]) {
-        // ArcusCore 0.4.4 decodes legacy alerts only. Keep typed NWS routing here
-        // until the app adopts the shared weather-product decoder.
-        if let kind = userInfo["productKind"] {
-            guard kind as? String == "nwsAlert",
-                  let value = userInfo["resourceID"],
-                  let resourceID = Self.normalizedString(from: value) else { return nil }
-            if let legacy = userInfo["arcusAlertId"] {
-                guard let legacyID = Self.normalizedString(from: legacy),
-                      ArcusAlertIdentifier.canonical(legacyID) == ArcusAlertIdentifier.canonical(resourceID) else {
-                    return nil
-                }
-            }
-            self.init(alertID: resourceID, revisionSent: Self.date(in: userInfo))
+        let hasTypedIdentity = userInfo[HotAlertAPNsPayload.productKindKey] != nil
+            || userInfo[HotAlertAPNsPayload.resourceIDKey] != nil
+
+        if hasTypedIdentity {
+            guard let payload = Self.sharedPayload(in: userInfo),
+                  payload.productKind == .nwsAlert,
+                  let alertID = payload.resolvedAlertID else { return nil }
+            self.init(alertID: alertID, revisionSent: payload.revisionSent)
             return
         }
 

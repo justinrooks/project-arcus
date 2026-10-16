@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 
 // MARK: SpcMapData
 extension SpcProvider: SpcMapData {
@@ -18,7 +19,7 @@ extension SpcProvider: SpcMapData {
     }
     
     func getMesoMapData() async throws -> [MdDTO] {
-        try await mesoRepo.getLatestMapData()
+        try await mesoRepo.getLatestMapData().map(MdDTO.init(payload:))
     }
     
     func getFireRisk() async throws -> [FireRiskDTO] {

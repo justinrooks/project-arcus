@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 import SwiftData
 import CoreLocation
 import OSLog
@@ -48,7 +49,7 @@ actor MesoRepo {
         return response.source
     }
     
-    func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MdDTO] {
+    func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MesoscaleDiscussionPayload] {
         // Filter by our rough box
         let lat = point.latitude
         let lon = point.longitude
@@ -71,28 +72,14 @@ actor MesoRepo {
                 hits.append(md)
             }
         }
-        let dtos = hits.map {
-            MdDTO(
-                number: $0.number,
-                title: $0.title,
-                link: $0.link,
-                issued: $0.issued,
-                validStart: $0.validStart,
-                validEnd: $0.validEnd,
-                areasAffected: $0.areasAffected,
-                summary: $0.summary,
-                watchProbability: $0.watchProbability,
-                threats: $0.threats,
-                coordinates: $0.coordinates
-            )
-        }
+        let dtos = hits.map { payload(from: $0) }
         logger.debug(
             "Resolved active mesos from datastore candidates=\(candidates.count, privacy: .public) matches=\(dtos.count, privacy: .public)"
         )
         return dtos
     }
     
-    func getLatestMapData(asOf date: Date = .init()) throws -> [MdDTO] {
+    func getLatestMapData(asOf date: Date = .init()) throws -> [MesoscaleDiscussionPayload] {
         // 1) Fetch only risks that are currently valid
         let pred = #Predicate<MD> { $0.validStart <= date && date <= $0.validEnd }
         var desc = FetchDescriptor<MD>(predicate: pred)
@@ -103,21 +90,7 @@ actor MesoRepo {
         // 2) Sort by descending risk so we can early-exit on first hit
 //        let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
     
-        return risks.map {
-            MdDTO(
-                number: $0.number,
-                title: $0.title,
-                link: $0.link,
-                issued: $0.issued,
-                validStart: $0.validStart,
-                validEnd: $0.validEnd,
-                areasAffected: $0.areasAffected,
-                summary: $0.summary,
-                watchProbability: $0.watchProbability,
-                threats: $0.threats,
-                coordinates: $0.coordinates
-            )
-        }
+        return risks.map(payload(from:))
         
 //        return bySeverity.map {
 //            StormRiskDTO(riskLevel: $0.riskLevel,
@@ -126,6 +99,33 @@ actor MesoRepo {
 //                         valid: $0.valid,
 //                         polygons: $0.polygons)
 //        }
+    }
+
+    private func payload(from md: MD) -> MesoscaleDiscussionPayload {
+        let probabilityText = md.watchProbability.trimmingCharacters(in: .whitespacesAndNewlines)
+        return MesoscaleDiscussionPayload(
+            number: md.number,
+            title: md.title,
+            sourceURL: md.link,
+            issued: md.issued,
+            validStart: md.validStart,
+            validEnd: md.validEnd,
+            areasAffected: md.areasAffected,
+            summary: md.summary,
+            concerning: md.concerning,
+            watchProbability: Double(probabilityText),
+            watchProbabilityText: probabilityText,
+            threats: md.threats.map {
+                MesoscaleDiscussionThreats(
+                    peakWindMPH: $0.peakWindMPH,
+                    hailRangeInches: $0.hailRangeInches,
+                    tornadoStrength: $0.tornadoStrength
+                )
+            },
+            coordinates: md.coordinates.map {
+                MesoscaleDiscussionCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+            }
+        )
     }
     
     
