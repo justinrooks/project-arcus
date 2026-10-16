@@ -1299,7 +1299,8 @@ private extension BackgroundOrchestratorCadenceTests {
         let snapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
-            arcusAlerts: alertProvider
+            arcusAlerts: alertProvider,
+            arcusMesos: StubHomeMesoQuery(mesos: activeMesos)
         )
         let coordinator = suppliedCoordinator ?? HomeIngestionCoordinator(
             executor: HomeIngestionExecutor(

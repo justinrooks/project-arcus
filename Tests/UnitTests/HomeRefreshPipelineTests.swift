@@ -2303,7 +2303,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(weather: sampleWeather()),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -2335,7 +2335,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(weather: sampleWeather()),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -2389,7 +2389,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(weather: sampleWeather()),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -2443,7 +2443,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(weather: sampleWeather()),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -2609,7 +2609,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(result: .failure),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -2879,7 +2879,7 @@ struct HomeRefreshPipelineTests {
         )
         let alerts = FakeAlertProvider(activeAlerts: [])
         let weather = FakeWeatherClient()
-        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc)
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -2947,7 +2947,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: widgetRecorder
             )
@@ -3026,7 +3026,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: widgetRecorder
             )
@@ -3089,7 +3089,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: locationSession,
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -3140,7 +3140,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: locationSession,
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -3185,7 +3185,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: nil,
                 widgetSnapshotRefresher: nil
             )
@@ -3254,7 +3254,7 @@ struct HomeRefreshPipelineTests {
                     arcusAlertSync: alerts,
                     weatherClient: FakeWeatherClient(),
                     locationSession: locationSession,
-                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                     projectionStore: nil,
                     widgetSnapshotRefresher: nil
                 )
@@ -3309,7 +3309,7 @@ struct HomeRefreshPipelineTests {
                     arcusAlertSync: alerts,
                     weatherClient: FakeWeatherClient(),
                     locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                     projectionStore: projectionStore,
                     widgetSnapshotRefresher: widgetRecorder
                 )
@@ -3325,6 +3325,54 @@ struct HomeRefreshPipelineTests {
             #expect((projection.lastHotAlertsLoadAt != priorLoadAt) == acceptsHotSnapshot, "\(name)")
             #expect((snapshot.freshness.lastHotFeedSyncAt != nil) == acceptsHotSnapshot, "\(name)")
             #expect(widgetRecorder.refreshCallCount() == (acceptsHotSnapshot ? 1 : 0), "\(name)")
+        }
+    }
+
+    @Test("Signal meso responses replace only canonically accepted Home slices")
+    func signalMesos_preserveOrReplaceAcceptedProjection() async throws {
+        let context = makeContext()
+        let original = MD.sampleDiscussionDTOs[0]
+        let changed = MD.sampleDiscussionDTOs[1]
+        let cases: [(String, StubHomeMesoQuery, Bool)] = [
+            ("changed", .init(mesos: [changed]), true),
+            ("revalidated", .init(mesos: [changed], source: .cacheRevalidated304), true),
+            ("empty", .init(), true),
+            ("fallback", .init(mesos: [changed], source: .cacheFallback), false),
+            ("cached empty", .init(source: .localCache), false),
+            ("failed", .init(fails: true), false)
+        ]
+        for (name, query, accepts) in cases {
+            let store = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+            let priorDate = Date(timeIntervalSince1970: 200)
+            _ = try await store.updateHotAlerts(alerts: [], mesos: [original], for: context, loadedAt: priorDate)
+            let cached = try #require(await store.projection(for: context))
+            #expect(cached.activeMesos == [original])
+            // The remaining local consumer may fail independently of the Home server read.
+            let spc = FakeSpcProvider(mesoSyncOutcome: .failed)
+            let alerts = FakeAlertProvider()
+            var checkedQuery = query
+            checkedQuery.expectedH3Cell = context.h3Cell
+            checkedQuery.expectedMode = .background
+            let widgets = RecordingWidgetSnapshotRefresher()
+            let executor = HomeIngestionExecutor(environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "SignalHomeMesos"),
+                spcSync: spc, arcusAlertSync: alerts, weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts,
+                                                arcusMesos: checkedQuery),
+                projectionStore: store, widgetSnapshotRefresher: widgets
+            ))
+            var plan = HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
+            plan.lanes = [.hotAlerts]
+            let snapshot = try await executor.run(plan: plan)
+            let stored = try #require(await store.projection(for: context))
+            #expect(stored.activeMesos == (accepts ? query.mesos : [original]), "\(name)")
+            #expect(snapshot.mesos == stored.activeMesos, "\(name)")
+            #expect((stored.lastHotAlertsLoadAt != priorDate) == accepts, "\(name)")
+            #expect((snapshot.freshness.lastHotFeedSyncAt != nil) == accepts, "\(name)")
+            #expect(widgets.refreshCallCount() == (accepts ? 1 : 0), "\(name)")
+            #expect(await spc.activeMesosQueryCount() == 0)
+            #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
         }
     }
 
@@ -3358,6 +3406,7 @@ struct HomeRefreshPipelineTests {
         let snapshot = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
 
         #expect(await secondSpc.syncMesoscaleDiscussionsCount() == 0)
+        #expect(await secondSpc.signalMesoQueryCount() == 0)
         #expect(await secondAlerts.syncCount() == 0)
         #expect(snapshot.freshness.lastHotFeedSyncAt == accepted.lastCanonicalAcceptanceAt)
     }
@@ -3486,6 +3535,7 @@ struct HomeRefreshPipelineTests {
             remoteAlertContext: .init(alertID: Watch.sampleWatchRows[0].id)
         )))
         #expect(try await store.record(for: firstFeedID) == nil)
+        #expect(await spc.signalMesoQueryCount() == 0)
 
         _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: firstContext)))
         _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: secondContext)))
@@ -3524,7 +3574,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: widgetRecorder
             )
@@ -3565,7 +3615,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -3602,7 +3652,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil
             )
@@ -3647,7 +3697,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: nil,
                 widgetSnapshotRefresher: nil
             )
@@ -3764,7 +3814,7 @@ struct HomeRefreshPipelineTests {
             arcusAlertSync: alerts,
             weatherClient: FakeWeatherClient(),
             locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
             projectionStore: projectionStore,
             widgetSnapshotRefresher: nil
         ))
@@ -3969,7 +4019,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: nil,
                 widgetSnapshotRefresher: nil
             )
@@ -4025,7 +4075,7 @@ struct HomeRefreshPipelineTests {
         )
         let alerts = FakeAlertProvider(activeAlerts: [])
         let weather = FakeWeatherClient()
-        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc)
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -4083,7 +4133,7 @@ struct HomeRefreshPipelineTests {
         )
         let alerts = FakeAlertProvider(activeAlerts: [])
         let weather = FakeWeatherClient()
-        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc)
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -4376,7 +4426,7 @@ struct HomeRefreshPipelineTests {
         let spc = FakeSpcProvider()
         let alerts = FakeAlertProvider()
         let weather = FakeWeatherClient()
-        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc)
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -4422,7 +4472,7 @@ struct HomeRefreshPipelineTests {
             let spc = FakeSpcProvider()
             let alerts = FakeAlertProvider()
             let weather = FakeWeatherClient()
-            let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+            let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc)
             let executor = HomeIngestionExecutor(
                 environment: .init(
                     logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -4454,7 +4504,7 @@ struct HomeRefreshPipelineTests {
         let spc = FakeSpcProvider()
         let alerts = FakeAlertProvider()
         let weather = FakeWeatherClient()
-        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc)
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -4504,7 +4554,7 @@ struct HomeRefreshPipelineTests {
                     arcusAlertSync: alerts,
                     weatherClient: FakeWeatherClient(),
                     locationSession: locationSession,
-                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                     projectionStore: nil,
                     widgetSnapshotRefresher: nil
                 )
@@ -4553,7 +4603,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: nil,
                 feedStateStore: feedStateStore,
                 widgetSnapshotRefresher: nil
@@ -4574,7 +4624,7 @@ struct HomeRefreshPipelineTests {
             arcusAlertSync: alerts,
             weatherClient: FakeWeatherClient(),
             locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
             projectionStore: projectionStore,
             feedStateStore: feedStateStore,
             widgetSnapshotRefresher: nil
@@ -4596,7 +4646,7 @@ struct HomeRefreshPipelineTests {
             arcusAlertSync: alerts,
             weatherClient: weather,
             locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-            snapshotStore: snapshotStore ?? HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+            snapshotStore: snapshotStore ?? HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
             projectionStore: projectionStore,
             feedStateStore: feedStateStore,
             widgetSnapshotRefresher: nil
@@ -4635,7 +4685,8 @@ struct HomeRefreshPipelineTests {
         let snapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
-            arcusAlerts: alerts
+            arcusAlerts: alerts,
+            arcusMesos: spc
         )
         let executor = HomeIngestionExecutor(
             environment: .init(
@@ -4842,7 +4893,7 @@ struct HomeRefreshPipelineTests {
                 arcusAlertSync: alerts,
                 weatherClient: FakeWeatherClient(),
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
-                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
                 projectionStore: nil,
                 widgetSnapshotRefresher: nil
             )
@@ -5317,13 +5368,14 @@ private struct FailingHomeSnapshotReader: HomeSnapshotReading {
     func loadSnapshot(
         for context: LocationContext?,
         weather: SummaryWeather?,
-        freshness: HomeFreshnessState
+        freshness: HomeFreshnessState,
+        refreshMesos: Bool
     ) async throws -> HomeSnapshot {
         throw TestFailure.failedRead
     }
 }
 
-private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
+private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying, ArcusMesoQuerying {
     private let activeMesos: [MdDTO]
     private let outlookValues: [ConvectiveOutlookDTO]
     private let locationReadError: Error?
@@ -5349,6 +5401,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private var severeRiskQueries = 0
     private var fireRiskQueries = 0
     private var activeMesosQueries = 0
+    private var signalMesoQueries = 0
     private var outlookQueries = 0
 
     init(
@@ -5383,6 +5436,17 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.severeRiskValue = severeRiskValue
         self.fireRiskValue = fireRiskValue
     }
+
+    func signalMesoQueryCount() -> Int { signalMesoQueries }
+
+    func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        signalMesoQueries += 1
+        if let locationReadError { throw locationReadError }
+        guard mesoSyncOutcome.authorizesLocationScopedAcceptance else { throw ArcusError.parsingError }
+        return try await StubHomeMesoQuery(mesos: activeMesos).getActiveMesos(h3Cell: h3Cell)
+    }
+
+    func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? { nil }
 
     func sync() async {}
 
@@ -5628,4 +5692,35 @@ private func waitUntil(
         try? await Task.sleep(for: .milliseconds(10))
     }
     return await condition()
+}
+
+struct StubHomeMesoQuery: ArcusMesoQuerying {
+    var mesos: [MdDTO] = []
+    var source: HTTPResponse.Source = .live
+    var fails = false
+    var expectedH3Cell: Int64?
+    var expectedMode: HTTPExecutionMode?
+
+    func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        if let expectedH3Cell { #expect(h3Cell == expectedH3Cell) }
+        if let expectedMode { #expect(HTTPExecutionMode.current == expectedMode) }
+        if fails { throw ArcusError.parsingError }
+        return .init(value: mesos.map { meso in
+            MesoscaleDiscussionPayload(
+                number: meso.number, title: meso.title, sourceURL: meso.link,
+                issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd,
+                areasAffected: meso.areasAffected, summary: meso.summary, concerning: meso.concerning,
+                watchProbability: meso.watchProbability, watchProbabilityText: meso.watchProbabilityText,
+                threats: meso.threats.map {
+                    MesoscaleDiscussionThreats(peakWindMPH: $0.peakWindMPH, hailRangeInches: $0.hailRangeInches,
+                                              tornadoStrength: $0.tornadoStrength)
+                },
+                coordinates: meso.coordinates.map {
+                    MesoscaleDiscussionCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+                }
+            )
+        }, source: source)
+    }
+
+    func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? { nil }
 }

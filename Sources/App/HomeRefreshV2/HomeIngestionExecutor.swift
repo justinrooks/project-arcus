@@ -502,11 +502,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         )
         let weatherRefresh = weatherAttempt.result
 
-        var snapshot = try await environment.snapshotStore.loadSnapshot(
-            for: context,
-            weather: weatherRefresh.weather,
-            freshness: freshness
-        )
+        var snapshot = try await HTTPExecutionMode.$current.withValue(executionMode) {
+            try await environment.snapshotStore.loadSnapshot(
+                for: context,
+                weather: weatherRefresh.weather,
+                freshness: freshness,
+                refreshMesos: hotFeedSyncOutcome == .completeLocationScopedAcceptance
+            )
+        }
+        if hotFeedSyncOutcome == .completeLocationScopedAcceptance, snapshot.hasAcceptedMesoCollection == false {
+            hotFeedSyncOutcome = .incomplete
+            freshness.lastHotFeedSyncAt = nil
+        }
         snapshot.locationContext = context
         snapshot.weatherRefreshResult = weatherRefresh
         if let context {
@@ -543,11 +550,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             snapshot.freshness.lastHotFeedSyncAt = freshness.lastHotFeedSyncAt
             snapshot.freshness.lastWeatherSyncAt = freshness.lastWeatherSyncAt
             switch persistenceResult {
-            case .unavailable, .notRequired:
+            case .unavailable:
                 break
+            case .notRequired(let retainedProjection):
+                if snapshot.hasAcceptedMesoCollection == false, let retainedProjection {
+                    snapshot.mesos = retainedProjection.activeMesos
+                }
             case .committed(let acknowledgement):
+                if snapshot.hasAcceptedMesoCollection == false {
+                    snapshot.mesos = acknowledgement.record.activeMesos
+                }
                 snapshot.riskProfileChange = acknowledgement.riskProfileChange
-            case .failed:
+            case .failed(let retainedProjection):
+                if snapshot.hasAcceptedMesoCollection == false {
+                    snapshot.mesos = retainedProjection?.activeMesos ?? []
+                }
                 snapshot.riskProfileChange = nil
             }
 
@@ -950,15 +967,14 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                     await environment.arcusAlertSync.sync(context: context)
                 }
             }()
-            let (mesoResult, _, locationAlertResult) = await (
+            let (_, _, locationAlertResult) = await (
                 mesoOutcome,
                 remoteAlertOutcome,
                 locationAlertOutcome
             )
 
             guard plan.lanes != [.hotAlerts] else { return .targeted }
-            guard mesoResult.authorizesLocationScopedAcceptance,
-                  locationAlertResult?.authorizesLocationScopedAcceptance == true else {
+            guard locationAlertResult?.authorizesLocationScopedAcceptance == true else {
                 return .incomplete
             }
             return .completeLocationScopedAcceptance
@@ -968,8 +984,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         return await HTTPExecutionMode.$current.withValue(executionMode) {
             async let mesoSync = environment.spcSync.syncMesoscaleDiscussions()
             async let alertSync = environment.arcusAlertSync.sync(context: context)
-            let (mesoOutcome, alertOutcome) = await (mesoSync, alertSync)
-            return mesoOutcome.authorizesLocationScopedAcceptance && alertOutcome.authorizesLocationScopedAcceptance
+            // Local ingestion remains for map and notification consumers; Home accepts the Signal read below.
+            let (_, alertOutcome) = await (mesoSync, alertSync)
+            return alertOutcome.authorizesLocationScopedAcceptance
                 ? .completeLocationScopedAcceptance
                 : .incomplete
         }

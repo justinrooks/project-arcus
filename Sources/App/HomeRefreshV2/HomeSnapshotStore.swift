@@ -7,34 +7,40 @@
 
 import Foundation
 import CoreLocation
+import OSLog
 
 protocol HomeSnapshotReading: Sendable {
     func loadSnapshot(
         for context: LocationContext?,
         weather: SummaryWeather?,
-        freshness: HomeFreshnessState
+        freshness: HomeFreshnessState,
+        refreshMesos: Bool
     ) async throws -> HomeSnapshot
 }
 
 actor HomeSnapshotStore: HomeSnapshotReading {
     private let spcRisk: any SpcRiskQuerying
     private let spcOutlook: any SpcOutlookQuerying
+    private let arcusMesos: any ArcusMesoQuerying
     private let arcusAlerts: any ArcusAlertQuerying
 
     init(
         spcRisk: any SpcRiskQuerying,
         spcOutlook: any SpcOutlookQuerying,
-        arcusAlerts: any ArcusAlertQuerying
+        arcusAlerts: any ArcusAlertQuerying,
+        arcusMesos: any ArcusMesoQuerying
     ) {
         self.spcRisk = spcRisk
         self.spcOutlook = spcOutlook
         self.arcusAlerts = arcusAlerts
+        self.arcusMesos = arcusMesos
     }
 
     func loadSnapshot(
         for context: LocationContext?,
         weather: SummaryWeather?,
-        freshness: HomeFreshnessState
+        freshness: HomeFreshnessState,
+        refreshMesos: Bool
     ) async throws -> HomeSnapshot {
         guard let context else {
             let collection = try await spcOutlook.getConvectiveOutlookSnapshot()
@@ -54,7 +60,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         async let stormRisk = spcRisk.getStormRisk(for: coord)
         async let severeRisk = spcRisk.getSevereRisk(for: coord)
         async let fireRisk = spcRisk.getFireRisk(for: coord)
-        async let mesos = spcRisk.getActiveMesos(at: .now, for: coord)
+        async let mesoCollection = refreshMesos ? loadMesos(for: context) : (mesos: [], isAccepted: false)
         async let alerts = arcusAlerts.getActiveAlerts(context: context)
         async let collection = spcOutlook.getConvectiveOutlookSnapshot()
 
@@ -62,6 +68,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         let resolvedOutlooks = resolvedCollection.outlooks
         let latestOutlook = resolvedOutlooks.max(by: { $0.published < $1.published })
 
+        let resolvedMesos = try await mesoCollection
         return try await HomeSnapshot(
             locationSnapshot: context.snapshot,
             refreshKey: context.refreshKey,
@@ -69,12 +76,31 @@ actor HomeSnapshotStore: HomeSnapshotReading {
             stormRisk: stormRisk,
             severeRisk: severeRisk,
             fireRisk: fireRisk,
-            mesos: mesos,
+            mesos: resolvedMesos.mesos,
+            hasAcceptedMesoCollection: resolvedMesos.isAccepted,
             alerts: alerts,
             outlooks: resolvedOutlooks,
             latestOutlook: latestOutlook,
             hasAcceptedOutlookCollection: resolvedCollection.isAccepted,
             freshness: freshness
         )
+    }
+
+    private func loadMesos(for context: LocationContext) async throws -> (mesos: [MdDTO], isAccepted: Bool) {
+        do {
+            let response = try await arcusMesos.getActiveMesos(h3Cell: context.h3Cell)
+            try Task.checkCancellation()
+            switch response.source {
+            case .live, .cacheRevalidated304:
+                return (response.value.map(MdDTO.init(payload:)), true)
+            case .localCache, .cacheFallback:
+                return ([], false)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            Logger.appHomeRefresh.error("Home meso read failed; preserving accepted projection")
+            return ([], false)
+        }
     }
 }

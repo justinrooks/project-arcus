@@ -1980,7 +1980,8 @@ struct StormSetupIngestionTests {
                 snapshotStore: HomeSnapshotStore(
                     spcRisk: stormSetupSpc,
                     spcOutlook: stormSetupSpc,
-                    arcusAlerts: arcusProvider
+                    arcusAlerts: arcusProvider,
+                    arcusMesos: StubHomeMesoQuery(mesos: activeMesos)
                 ),
                 projectionStore: resolvedProjectionStore,
                 widgetSnapshotRefresher: widgetSnapshotRefresher,
