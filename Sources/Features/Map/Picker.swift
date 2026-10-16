@@ -68,6 +68,8 @@ struct MapLayerMenuAccessibilityState: Equatable, Sendable {
 // MARK: - Menu
 
 struct MapLayerMenu: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @Binding var selection: MapLayer
     @Binding var showsWarningGeometry: Bool
 
@@ -83,6 +85,7 @@ struct MapLayerMenu: View {
                         .accessibilityAddTraits(accessibilityState.isSelected ? .isSelected : [])
                 }
             }
+            .tint(colorScheme == .dark ? .white : .skyAwareAccent)
 
             Divider()
 
