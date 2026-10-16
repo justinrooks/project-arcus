@@ -371,6 +371,110 @@ struct RemoteHotAlertHandlerTests {
         #expect(await widgetDriver.refreshCallCount() == 1)
     }
 
+    @Test("typed meso routing preserves identity and rejects conflicting or incomplete payloads")
+    func typedMesoRouting() {
+        #expect(RemoteNotificationContext(userInfo: ["productKind": "mesoscaleDiscussion", "resourceID": "SPC-MD-2035-1234"])
+            == .mesoscaleDiscussion(productID: "SPC-MD-2035-1234"))
+        #expect(RemoteNotificationContext(userInfo: ["productKind": "mesoscaleDiscussion", "resourceID": "SPC-MD-2035-1234", "arcusAlertId": "legacy"]) == nil)
+        #expect(RemoteNotificationContext(userInfo: ["productKind": "mesoscaleDiscussion"]) == nil)
+        #expect(RemoteNotificationContext(userInfo: ["productKind": "unknown", "resourceID": "target"]) == nil)
+        #expect(RemoteNotificationContext(userInfo: ["productKind": "nwsAlert", "resourceID": "alert"])
+            == .nwsAlert(.init(alertID: "alert")))
+        #expect(RemoteNotificationContext(userInfo: ["arcusAlertId": "legacy"])
+            == .nwsAlert(.init(alertID: "legacy")))
+    }
+
+    @Test("meso focus publishes resolved or unavailable detail without unrelated work", arguments: [true, false])
+    func mesoOpenDoesNotWaitForHome(available: Bool) async {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let widgets = RecordingWidgetSnapshotRefreshDriver()
+        let resolver = StubRemoteMesoResolver(available: available)
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator, arcusAlerts: StubArcusAlertStore(alerts: []),
+            presentationState: state, arcusMesos: resolver, widgetSnapshotRefreshDriver: widgets
+        )
+        await handler.handleNotificationOpen(.mesoscaleDiscussion(productID: "SPC-MD-2035-1234"))
+        await MainActor.run {
+            #expect(state.focusRequest?.alertID == "SPC-MD-2035-1234")
+            #expect(state.focusRequest?.isMeso == true)
+            #expect((state.focusRequest?.meso != nil) == available)
+        }
+        #expect(await coordinator.requests().isEmpty)
+        #expect(await widgets.refreshCallCount() == 0)
+    }
+
+    @Test("meso background receipt accepts target then reconciles complete Home before widgets")
+    func mesoReceiptAndReplay() async throws {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let coordinator = RecordingHomeIngestionCoordinator(gated: true)
+        let widgets = RecordingWidgetSnapshotRefreshDriver()
+        let resolver = StubRemoteMesoResolver()
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator, arcusAlerts: StubArcusAlertStore(alerts: []),
+            presentationState: state, arcusMesos: resolver, widgetSnapshotRefreshDriver: widgets
+        )
+        let context = RemoteNotificationContext.mesoscaleDiscussion(productID: "SPC-MD-2035-1234")
+        let receipt = Task { await handler.handleRemoteNotification(context) }
+        await coordinator.waitUntilStarted()
+        #expect(await resolver.acceptedNotificationMeso(productID: "SPC-MD-2035-1234") != nil)
+        #expect(await widgets.refreshCallCount() == 0)
+        await coordinator.release()
+        #expect(await receipt.value == .newData)
+        #expect(await handler.handleRemoteNotification(context) == .noData)
+        let requests = await coordinator.requests()
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { $0.trigger == .remoteHotAlertReceived && $0.remoteAlertContext == nil })
+        #expect(await widgets.refreshCallCount() == 2)
+        await MainActor.run { #expect(state.focusRequest == nil) }
+    }
+
+    @Test("meso background receipt respects storage gate and unavailable targets", arguments: [true, false])
+    func mesoReceiptFailure(isAllowed: Bool) async {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let widgets = RecordingWidgetSnapshotRefreshDriver()
+        let resolver = StubRemoteMesoResolver(available: false)
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator, arcusAlerts: StubArcusAlertStore(alerts: []),
+            presentationState: state, arcusMesos: resolver, widgetSnapshotRefreshDriver: widgets,
+            allowsBackgroundIngestion: { isAllowed }
+        )
+        #expect(await handler.handleRemoteNotification(.mesoscaleDiscussion(productID: "missing")) == .failed)
+        #expect(await resolver.resolveCount == (isAllowed ? 1 : 0))
+        #expect(await coordinator.requests().isEmpty)
+        #expect(await widgets.refreshCallCount() == 0)
+    }
+
+    @Test("latest open wins across meso and NWS kinds", arguments: [true, false])
+    func mesoAndNWSOpenOrdering(mesoFirst: Bool) async {
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let mesos = StubRemoteMesoResolver(gated: mesoFirst)
+        let alerts = GatedNotificationResolver()
+        let handler = RemoteHotAlertHandler(
+            coordinator: RecordingHomeIngestionCoordinator(), arcusAlerts: alerts,
+            presentationState: state, arcusMesos: mesos
+        )
+        let first = Task {
+            if mesoFirst { await handler.handleNotificationOpen(.mesoscaleDiscussion(productID: "meso")) }
+            else { await handler.handleNotificationOpen(.init(alertID: "first")) }
+        }
+        if mesoFirst {
+            await mesos.waitUntilStarted()
+            await handler.handleNotificationOpen(.init(alertID: "second"))
+            await mesos.release()
+        } else {
+            await alerts.waitUntilFirstStarted()
+            await handler.handleNotificationOpen(.mesoscaleDiscussion(productID: "meso"))
+            await alerts.releaseFirst()
+        }
+        await first.value
+        await MainActor.run {
+            #expect(state.focusRequest?.alertID == (mesoFirst ? "second" : "meso"))
+            #expect(state.focusRequest?.isMeso == !mesoFirst)
+        }
+    }
+
     private func makeAlert(id: String, revisionSent: Date) -> AlertDTO {
         AlertDTO(
             id: id,
@@ -561,6 +665,17 @@ private enum TestError: Error {
 
 private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private var submittedRequests: [HomeIngestionRequest] = []
+    private var gated: Bool
+    private var gate: CheckedContinuation<Void, Never>?
+    private var startedWaiter: CheckedContinuation<Void, Never>?
+
+    init(gated: Bool = false) { self.gated = gated }
+
+    func waitUntilStarted() async {
+        if submittedRequests.isEmpty { await withCheckedContinuation { startedWaiter = $0 } }
+    }
+
+    func release() { gated = false; gate?.resume(); gate = nil }
 
     func enqueue(
         _ trigger: HomeRefreshTrigger,
@@ -601,6 +716,8 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         _ = progress
         _ = publication
         submittedRequests.append(request)
+        startedWaiter?.resume(); startedWaiter = nil
+        if gated { await withCheckedContinuation { gate = $0 } }
         return .empty
     }
 
@@ -717,4 +834,38 @@ private actor GatedNotificationResolver: RemoteAlertResolving {
     func getAlert(id: String) async throws -> AlertDTO? { nil }
     func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] { [] }
     func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] { [] }
+}
+
+
+private actor StubRemoteMesoResolver: RemoteMesoResolving {
+    let available: Bool
+    let gated: Bool
+    private var accepted: MesoscaleDiscussionPayload?
+    private var gate: CheckedContinuation<Void, Never>?
+    private var startedWaiter: CheckedContinuation<Void, Never>?
+    private(set) var resolveCount = 0
+
+    init(available: Bool = true, gated: Bool = false) {
+        self.available = available; self.gated = gated
+    }
+    func acceptedNotificationMeso(productID: String) -> MesoscaleDiscussionPayload? { accepted }
+    func resolveNotificationMeso(productID: String) async throws -> MesoscaleDiscussionPayload? {
+        resolveCount += 1
+        startedWaiter?.resume(); startedWaiter = nil
+        if gated { await withCheckedContinuation { gate = $0 } }
+        guard available else { return nil }
+        let date = Date(timeIntervalSince1970: 2_064_333_600)
+        let meso = MesoscaleDiscussionPayload(
+            number: 1234, title: "Discussion", sourceURL: URL(string: "https://www.spc.noaa.gov/products/md/md1234.html")!,
+            issued: date, validStart: date, validEnd: date.addingTimeInterval(10_800),
+            areasAffected: "Colorado", summary: "Storms possible", concerning: nil,
+            watchProbability: nil, watchProbabilityText: "Unknown", threats: nil, coordinates: []
+        )
+        accepted = meso
+        return meso
+    }
+    func waitUntilStarted() async {
+        if resolveCount == 0 { await withCheckedContinuation { startedWaiter = $0 } }
+    }
+    func release() { gate?.resume(); gate = nil }
 }

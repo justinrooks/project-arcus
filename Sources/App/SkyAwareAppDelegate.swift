@@ -61,7 +61,7 @@ final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
+        guard let remoteAlertContext = RemoteNotificationContext(userInfo: userInfo) else {
             logger.notice("Ignoring remote notification without a supported hot-alert payload")
             completionHandler(.noData)
             return
@@ -95,7 +95,7 @@ extension SkyAwareAppDelegate: @MainActor UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
+        guard let remoteAlertContext = RemoteNotificationContext(userInfo: userInfo) else {
             logger.notice("Ignoring notification open without a supported hot-alert payload")
             completionHandler()
             return

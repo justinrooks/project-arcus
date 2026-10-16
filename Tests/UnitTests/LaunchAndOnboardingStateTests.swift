@@ -110,16 +110,18 @@ struct AppStartupTests {
             "store-open-failed domain=NSCocoaErrorDomain code=256 protectedDataAvailable=true underlyingDomain=NSPOSIXErrorDomain underlyingCode=13")
     }
 
-    @Test("the latest notification open survives blocked startup and is consumed once after recovery")
-    func deferredNotificationResumesOnce() {
+    @Test("the latest notification open survives blocked startup and is consumed once after recovery", arguments: [true, false])
+    func deferredNotificationResumesOnce(meso: Bool) {
         var storageAvailable = false
         let startup = AppStartup(makeDependencies: {
             guard storageAvailable else { throw CocoaError(.fileReadNoPermission) }
             return .unconfigured
         })
         startup.retry()
-        startup.deferNotificationOpen(.init(alertID: "older"))
-        startup.deferNotificationOpen(.init(alertID: "latest"))
+        startup.deferNotificationOpen(.nwsAlert(.init(alertID: "older")))
+        let latest: RemoteNotificationContext = meso ? .mesoscaleDiscussion(productID: "SPC-MD-2035-1234")
+            : .nwsAlert(.init(alertID: "latest"))
+        startup.deferNotificationOpen(latest)
         startup.markHomePresented()
         #expect(startup.hasPresentedHome == false)
         #expect(startup.takePendingNotificationOpen() == nil)
@@ -127,7 +129,7 @@ struct AppStartupTests {
         startup.retry()
         #expect(startup.takePendingNotificationOpen() == nil)
         startup.markHomePresented()
-        #expect(startup.takePendingNotificationOpen()?.alertID == "latest")
+        #expect(startup.takePendingNotificationOpen() == latest)
         #expect(startup.takePendingNotificationOpen() == nil)
     }
 }

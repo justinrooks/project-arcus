@@ -11,10 +11,28 @@ import OSLog
 import UIKit
 import ArcusCore
 
+enum RemoteNotificationContext: Sendable, Equatable {
+    case nwsAlert(HomeRemoteAlertContext)
+    case mesoscaleDiscussion(productID: String)
+
+    init?(userInfo: [AnyHashable: Any]) {
+        if let payload = HomeRemoteAlertContext.sharedPayload(in: userInfo),
+           payload.productKind == .mesoscaleDiscussion, let productID = payload.resourceID {
+            self = .mesoscaleDiscussion(productID: productID)
+        } else if let alert = HomeRemoteAlertContext(userInfo: userInfo) {
+            self = .nwsAlert(alert)
+        } else {
+            return nil
+        }
+    }
+}
+
 struct RemoteAlertFocusRequest: Identifiable, Hashable, Sendable {
     let id = UUID()
     let alertID: String
     let alert: AlertDTO?
+    var meso: MdDTO? = nil
+    var isMeso: Bool = false
     var openStartedAt: ContinuousClock.Instant? = nil
 }
 
@@ -31,6 +49,13 @@ final class RemoteAlertPresentationState {
         focusRequest = RemoteAlertFocusRequest(alertID: alertID, alert: alert, openStartedAt: openStartedAt)
     }
 
+    func presentMeso(productID: String, meso: MesoscaleDiscussionPayload?, openStartedAt: ContinuousClock.Instant) {
+        focusRequest = RemoteAlertFocusRequest(
+            alertID: productID, alert: nil, meso: meso.map(MdDTO.init(payload:)),
+            isMeso: true, openStartedAt: openStartedAt
+        )
+    }
+
     func clearFocusRequest(id: RemoteAlertFocusRequest.ID?) {
         guard let id, focusRequest?.id == id else { return }
         focusRequest = nil
@@ -44,6 +69,7 @@ actor RemoteHotAlertHandler {
 
     private let coordinator: any HomeIngestionCoordinating
     private let arcusAlerts: any RemoteAlertResolving
+    private let arcusMesos: (any RemoteMesoResolving)?
     private var latestOpenID: UUID?
     private let presentationState: RemoteAlertPresentationState
     private let widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)?
@@ -54,16 +80,60 @@ actor RemoteHotAlertHandler {
         coordinator: any HomeIngestionCoordinating,
         arcusAlerts: any RemoteAlertResolving,
         presentationState: RemoteAlertPresentationState,
+        arcusMesos: (any RemoteMesoResolving)? = nil,
         widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)? = nil,
         allowsBackgroundIngestion: @escaping @Sendable () async -> Bool = { true },
         logger: Logger = .notificationsRemote
     ) {
         self.coordinator = coordinator
         self.arcusAlerts = arcusAlerts
+        self.arcusMesos = arcusMesos
         self.presentationState = presentationState
         self.widgetSnapshotRefreshDriver = widgetSnapshotRefreshDriver
         self.allowsBackgroundIngestion = allowsBackgroundIngestion
         self.logger = logger
+    }
+
+    func handleRemoteNotification(_ context: RemoteNotificationContext) async -> UIBackgroundFetchResult {
+        switch context {
+        case .nwsAlert(let alert):
+            return await handleRemoteNotification(alert)
+        case .mesoscaleDiscussion(let productID):
+            guard await allowsBackgroundIngestion(), let arcusMesos else { return .failed }
+            do {
+                let before = try await arcusMesos.acceptedNotificationMeso(productID: productID)
+                guard let accepted = try await arcusMesos.resolveNotificationMeso(productID: productID) else {
+                    return .failed
+                }
+                // Reconcile a complete location-scoped collection independently of targeted acceptance.
+                _ = try await coordinator.enqueueAndWait(.remoteHotAlertReceived)
+                await refreshWidgetSnapshotAfterRemoteAlertIngestion()
+                return before == accepted ? .noData : .newData
+            } catch {
+                logger.error("Remote meso receipt failed")
+                return .failed
+            }
+        }
+    }
+
+    func handleNotificationOpen(_ context: RemoteNotificationContext) async {
+        switch context {
+        case .nwsAlert(let alert):
+            await handleNotificationOpen(alert)
+        case .mesoscaleDiscussion(let productID):
+            let openID = UUID()
+            latestOpenID = openID
+            let startedAt = ContinuousClock.now
+            let meso: MesoscaleDiscussionPayload?
+            do {
+                meso = try await arcusMesos?.resolveNotificationMeso(productID: productID)
+            } catch {
+                logger.error("Remote meso open resolution failed")
+                meso = nil
+            }
+            guard latestOpenID == openID, !Task.isCancelled else { return }
+            await presentationState.presentMeso(productID: productID, meso: meso, openStartedAt: startedAt)
+        }
     }
 
     func handleRemoteNotification(_ remoteAlertContext: HomeRemoteAlertContext) async -> UIBackgroundFetchResult {
@@ -278,7 +348,7 @@ extension HomeRemoteAlertContext {
         return Date(timeIntervalSince1970: seconds)
     }
 
-    private static func sharedPayload(in userInfo: [AnyHashable: Any]) -> HotAlertAPNsPayload? {
+    fileprivate static func sharedPayload(in userInfo: [AnyHashable: Any]) -> HotAlertAPNsPayload? {
         let dictionary = userInfo.reduce(into: [String: Any]()) { result, entry in
             guard let key = entry.key as? String else { return }
             result[key] = entry.value

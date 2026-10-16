@@ -113,6 +113,7 @@ struct SkyAwareApp: App {
                         coordinator: deps.homeIngestionCoordinator,
                         arcusAlerts: deps.arcusProvider,
                         presentationState: remoteAlertPresentationState,
+                        arcusMesos: deps.arcusMesoProvider,
                         widgetSnapshotRefreshDriver: widgetDriver,
                         allowsBackgroundIngestion: deps.allowsBackgroundPersistence
                     )
