@@ -83,6 +83,7 @@ struct MapScreenView: View {
         reloadCoordinator.schedule {
             await model.reload(
                 using: dependencies.spcMapData,
+                mesoSource: dependencies.arcusMesoProvider,
                 warningSource: dependencies.arcusProvider,
                 selectedLayer: selected
             )

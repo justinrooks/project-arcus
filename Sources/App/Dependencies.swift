@@ -49,6 +49,7 @@ final class Dependencies: Sendable {
     private let _spcProvider: SpcProvider?
     private let _nwsProvider: NwsProvider?
     private let _arcusProvider: ArcusAlertProvider?
+    private let _arcusMesoProvider: (any ArcusMesoQuerying)?
     
     // MARK: Background orchestration
     
@@ -182,6 +183,13 @@ final class Dependencies: Sendable {
         }
         return value
     }
+
+    var arcusMesoProvider: any ArcusMesoQuerying {
+        guard let value = _arcusMesoProvider else {
+            fatalError("Dependencies.arcusMesoProvider used while unconfigured")
+        }
+        return value
+    }
     
     var refreshPolicy: RefreshPolicy {
         guard let value = _refreshPolicy else {
@@ -278,6 +286,7 @@ final class Dependencies: Sendable {
         spcProvider: SpcProvider?,
         nwsProvider: NwsProvider?,
         arcusProvider: ArcusAlertProvider?,
+        arcusMesoProvider: (any ArcusMesoQuerying)?,
         refreshPolicy: RefreshPolicy?,
         cadencePolicy: CadencePolicy?,
         orchestrator: BackgroundOrchestrator?,
@@ -306,6 +315,7 @@ final class Dependencies: Sendable {
         self._spcProvider = spcProvider
         self._nwsProvider = nwsProvider
         self._arcusProvider = arcusProvider
+        self._arcusMesoProvider = arcusMesoProvider
         self._refreshPolicy = refreshPolicy
         self._cadencePolicy = cadencePolicy
         self._orchestrator = orchestrator
@@ -526,15 +536,16 @@ final class Dependencies: Sendable {
             }
         }
 
+        let arcusMesoProvider = ArcusMesoProvider(client: ArcusMesoHTTPClient(
+            baseURL: arcusBaseURL,
+            http: httpClient,
+            reachabilityReporter: arcusReachabilityTracker
+        ))
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
             arcusAlerts: arcus,
-            arcusMesos: ArcusMesoProvider(client: ArcusMesoHTTPClient(
-                baseURL: arcusBaseURL,
-                http: httpClient,
-                reachabilityReporter: arcusReachabilityTracker
-            ))
+            arcusMesos: arcusMesoProvider
         )
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
         if let widgetSnapshotStore = try? WidgetSnapshotStore() {
@@ -611,6 +622,7 @@ final class Dependencies: Sendable {
             spcProvider: spcProvider,
             nwsProvider: nwsProvider,
             arcusProvider: arcusProvider,
+            arcusMesoProvider: arcusMesoProvider,
             refreshPolicy: refreshPolicy,
             cadencePolicy: cadencePolicy,
             orchestrator: orchestrator,
@@ -641,6 +653,7 @@ final class Dependencies: Sendable {
                                                          spcProvider: nil,
                                                          nwsProvider: nil,
                                                          arcusProvider: nil,
+                                                         arcusMesoProvider: nil,
                                                          refreshPolicy: nil,
                                                          cadencePolicy: nil,
                                                          orchestrator: nil,

@@ -98,6 +98,7 @@ struct StubSpcMapData: SpcMapData {
     let stormRisk: Result<[StormRiskDTO], Error>
     let mesos: Result<[MdDTO], Error>
     let fireRisk: Result<[FireRiskDTO], Error>
+    var mesoCallCounter: MesoMapDataCallCounter?
 
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
         try severeRisks.get()
@@ -108,7 +109,8 @@ struct StubSpcMapData: SpcMapData {
     }
 
     func getMesoMapData() async throws -> [MdDTO] {
-        try mesos.get()
+        await mesoCallCounter?.record()
+        return try mesos.get()
     }
 
     func getFireRisk() async throws -> [FireRiskDTO] {
@@ -132,6 +134,111 @@ struct StubArcusAlertQuerying: ArcusAlertQuerying {
     }
 }
 
+struct StubArcusMesoQuerying: ArcusMesoQuerying {
+    let mesos: Result<[MesoscaleDiscussionPayload], Error>
+    var expectsNationwideRequest = false
+    var responseSource: HTTPResponse.Source = .live
+
+    func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        if expectsNationwideRequest { #expect(h3Cell == nil) }
+        try Task.checkCancellation()
+        return ArcusMesoQueryResponse(value: try mesos.get(), source: responseSource)
+    }
+
+    func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? {
+        nil
+    }
+}
+
+struct GatedArcusMesoQuerying: ArcusMesoQuerying {
+    let gate: ReloadGate
+    let mesos: [MesoscaleDiscussionPayload]
+
+    func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        await gate.markFirstStormFetchStarted()
+        await gate.waitForRelease()
+        try Task.checkCancellation()
+        return ArcusMesoQueryResponse(value: mesos, source: .live)
+    }
+
+    func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? {
+        nil
+    }
+}
+
+func makeMesoPayload(number: Int, coordinates: [Coordinate2D]) -> MesoscaleDiscussionPayload {
+    let issued = mapFeatureModelTestNow
+    return MesoscaleDiscussionPayload(
+        number: number,
+        title: "Mesoscale Discussion \(number)",
+        sourceURL: URL(string: "https://www.spc.noaa.gov/products/md/\(number).html")!,
+        issued: issued,
+        validStart: issued,
+        validEnd: issued.addingTimeInterval(3_600),
+        areasAffected: "Central Plains",
+        summary: "Severe storms possible.",
+        concerning: "Severe potential",
+        watchProbability: 40,
+        watchProbabilityText: "40%",
+        threats: nil,
+        coordinates: coordinates.map {
+            MesoscaleDiscussionCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+        }
+    )
+}
+
+extension MapFeatureModel {
+    func reload(
+        using service: any SpcMapData,
+        warningSource: any ArcusAlertQuerying,
+        selectedLayer: MapLayer
+    ) async {
+        await reload(
+            using: service,
+            mesoSource: SpcMesoQueryingForExistingTests(service: service),
+            warningSource: warningSource,
+            selectedLayer: selectedLayer
+        )
+    }
+}
+
+private struct SpcMesoQueryingForExistingTests: ArcusMesoQuerying {
+    let service: any SpcMapData
+
+    func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        let payloads = try await service.getMesoMapData().map { meso in
+            MesoscaleDiscussionPayload(
+                number: meso.number,
+                title: meso.title,
+                sourceURL: meso.link,
+                issued: meso.issued,
+                validStart: meso.validStart,
+                validEnd: meso.validEnd,
+                areasAffected: meso.areasAffected,
+                summary: meso.summary,
+                concerning: meso.concerning,
+                watchProbability: meso.watchProbability,
+                watchProbabilityText: meso.watchProbabilityText,
+                threats: meso.threats.map {
+                    MesoscaleDiscussionThreats(
+                        peakWindMPH: $0.peakWindMPH,
+                        hailRangeInches: $0.hailRangeInches,
+                        tornadoStrength: $0.tornadoStrength
+                    )
+                },
+                coordinates: meso.coordinates.map {
+                    MesoscaleDiscussionCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+                }
+            )
+        }
+        return ArcusMesoQueryResponse(value: payloads, source: .live)
+    }
+
+    func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? {
+        nil
+    }
+}
+
 actor MapDataCallCounter {
     private(set) var severe = 0
     private(set) var storm = 0
@@ -146,6 +253,13 @@ actor MapDataCallCounter {
     func snapshot() -> (severe: Int, storm: Int, meso: Int, fire: Int) {
         (severe, storm, meso, fire)
     }
+}
+
+actor MesoMapDataCallCounter {
+    private(set) var count = 0
+
+    func record() { count += 1 }
+    func snapshot() -> Int { count }
 }
 
 actor MutableResultMapDataStore {
