@@ -8,29 +8,32 @@ struct ArcusMesoProvider: ArcusMesoQuerying {
         self.client = client
     }
 
-    func getActiveMesos(h3Cell: Int64? = nil) async throws -> [MesoscaleDiscussionPayload] {
-        let data = try await client.fetchActiveMesos(h3Cell: h3Cell)
+    func getActiveMesos(
+        h3Cell: Int64? = nil
+    ) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        let response = try await client.fetchActiveMesos(h3Cell: h3Cell)
+        let mesos = try Self.decodeMesos(from: response)
+        return ArcusMesoQueryResponse(value: mesos, source: response.source)
+    }
+
+    func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? {
         do {
-            return try DecoderFactory.iso8601.decode([MesoscaleDiscussionPayload].self, from: data)
-        } catch {
-            throw ArcusError.parsingError
+            let response = try await client.fetchMeso(productID: productID)
+            guard let meso = try Self.decodeMesos(from: response).first else { throw ArcusError.parsingError }
+            return ArcusMesoQueryResponse(value: meso, source: response.source)
+        } catch ArcusError.networkError(status: 404) {
+            return nil
         }
     }
 
-    func getMeso(productID: String) async throws -> MesoscaleDiscussionPayload? {
+    private static func decodeMesos(from response: HTTPResponse) throws -> [MesoscaleDiscussionPayload] {
+        guard let data = response.data else { throw ArcusError.missingData }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .deferredToDate
         do {
-            let data = try await client.fetchMeso(productID: productID)
-            do {
-                let mesos = try DecoderFactory.iso8601.decode([MesoscaleDiscussionPayload].self, from: data)
-                guard let meso = mesos.first else { throw ArcusError.parsingError }
-                return meso
-            } catch let error as ArcusError {
-                throw error
-            } catch {
-                throw ArcusError.parsingError
-            }
-        } catch ArcusError.networkError(status: 404) {
-            return nil
+            return try decoder.decode([MesoscaleDiscussionPayload].self, from: data)
+        } catch {
+            throw ArcusError.parsingError
         }
     }
 }

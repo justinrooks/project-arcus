@@ -68,21 +68,28 @@ struct ArcusMesoClientTests {
     @Test("provider decodes empty and full shared meso payloads including geometry")
     func providerDecodesEmptyAndFullPayload() async throws {
         let emptyClient = ArcusMesoProvider(client: StubArcusMesoClient(activeData: Data("[]".utf8)))
-        #expect(try await emptyClient.getActiveMesos().isEmpty)
+        let emptyResult = try await emptyClient.getActiveMesos()
+        #expect(emptyResult.value.isEmpty)
+        #expect(emptyResult.source == .live)
 
-        let payload = Data("""
-        [{"number":1234,"title":"Mesoscale Discussion 1234","sourceURL":"https://www.spc.noaa.gov/products/md/2026/md1234.html","issued":"2026-06-01T18:00:00Z","validStart":"2026-06-01T18:00:00Z","validEnd":"2026-06-01T21:00:00Z","areasAffected":"Eastern Colorado","summary":"Severe storms possible.","concerning":"Severe potential","watchProbability":40,"watchProbabilityText":"40%","threats":{"peakWindMPH":70,"hailRangeInches":1.5,"tornadoStrength":"EF2"},"coordinates":[{"latitude":39.5,"longitude":-104.8}]}]
-        """.utf8)
+        let issued = try #require(ISO8601DateFormatter().date(from: "2035-06-01T18:00:00Z"))
+        let payload = try encodedMesoPayload(issued: issued)
+        let json = try #require(JSONSerialization.jsonObject(with: payload) as? [[String: Any]])
+        let firstJSON = try #require(json.first)
+        #expect(firstJSON["issued"] as? Double == issued.timeIntervalSinceReferenceDate)
+
         let provider = ArcusMesoProvider(client: StubArcusMesoClient(activeData: payload))
-        let meso = try #require(try await provider.getActiveMesos().first)
-        #expect(meso.productID == "SPC-MD-2026-1234")
-        #expect(meso.issueYear == 2026)
+        let result = try await provider.getActiveMesos()
+        let meso = try #require(result.value.first)
+        #expect(result.source == .live)
+        #expect(meso.productID == "SPC-MD-2035-1234")
+        #expect(meso.issueYear == 2035)
         #expect(meso.number == 1234)
         #expect(meso.title == "Mesoscale Discussion 1234")
-        #expect(meso.sourceURL == URL(string: "https://www.spc.noaa.gov/products/md/2026/md1234.html"))
-        #expect(meso.issued == ISO8601DateFormatter().date(from: "2026-06-01T18:00:00Z"))
-        #expect(meso.validStart == ISO8601DateFormatter().date(from: "2026-06-01T18:00:00Z"))
-        #expect(meso.validEnd == ISO8601DateFormatter().date(from: "2026-06-01T21:00:00Z"))
+        #expect(meso.sourceURL == URL(string: "https://www.spc.noaa.gov/products/md/2035/md1234.html"))
+        #expect(meso.issued == issued)
+        #expect(meso.validStart == issued)
+        #expect(meso.validEnd == issued.addingTimeInterval(3 * 60 * 60))
         #expect(meso.areasAffected == "Eastern Colorado")
         #expect(meso.summary == "Severe storms possible.")
         #expect(meso.concerning == "Severe potential")
@@ -107,9 +114,8 @@ struct ArcusMesoClientTests {
 
     @Test("targeted read requests the stable product identifier and accepts revalidated cache data")
     func targetedRequestUsesProductIDAndRevalidatedResponse() async throws {
-        let payload = Data("""
-        [{"number":1234,"title":"Mesoscale Discussion 1234","sourceURL":"https://www.spc.noaa.gov/products/md/2026/md1234.html","issued":"2026-06-01T18:00:00Z","validStart":"2026-06-01T18:00:00Z","validEnd":"2026-06-01T21:00:00Z","areasAffected":"Eastern Colorado","summary":"Severe storms possible.","concerning":"Severe potential","watchProbability":40,"watchProbabilityText":"40%","threats":{"peakWindMPH":70,"hailRangeInches":1.5,"tornadoStrength":"EF2"},"coordinates":[{"latitude":39.5,"longitude":-104.8}]}]
-        """.utf8)
+        let issued = try #require(ISO8601DateFormatter().date(from: "2035-06-01T18:00:00Z"))
+        let payload = try encodedMesoPayload(issued: issued)
         let http = ArcusMesoMockHTTPClient(
             response: HTTPResponse(status: 304, headers: [:], data: payload, source: .cacheRevalidated304)
         )
@@ -120,16 +126,17 @@ struct ArcusMesoClientTests {
             reachabilityReporter: reachability
         )
 
-        let meso = try #require(
-            await ArcusMesoProvider(client: client).getMeso(productID: "SPC-MD-2026-1234")
+        let result = try #require(
+            await ArcusMesoProvider(client: client).getMeso(productID: "SPC-MD-2035-1234")
         )
 
         let request = try #require(await http.recordedRequest())
         let components = try #require(URLComponents(url: request.url, resolvingAgainstBaseURL: false))
-        #expect(components.queryItems == [URLQueryItem(name: "id", value: "SPC-MD-2026-1234")])
+        #expect(components.queryItems == [URLQueryItem(name: "id", value: "SPC-MD-2035-1234")])
         #expect(request.fallbackPolicy == .maximumAge(2 * 60))
-        #expect(meso.productID == "SPC-MD-2026-1234")
-        #expect(meso.coordinates.count == 1)
+        #expect(result.source == .cacheRevalidated304)
+        #expect(result.value.productID == "SPC-MD-2035-1234")
+        #expect(result.value.coordinates.count == 1)
         #expect(await reachability.lastState == .reachable)
     }
 
@@ -145,25 +152,46 @@ struct ArcusMesoClientTests {
             reachabilityReporter: reachability
         )
 
-        _ = try await client.fetchActiveMesos(h3Cell: nil)
+        let result = try await ArcusMesoProvider(client: client).getActiveMesos()
 
         #expect(await reachability.lastState == .unavailable)
+        #expect(result.value.isEmpty)
+        #expect(result.source == .cacheFallback)
     }
 }
 
 private struct StubArcusMesoClient: ArcusMesoClient {
-    let activeData: Data
+    let activeResponse: HTTPResponse
     var mesoError: ArcusError?
 
     init(activeData: Data = Data("[]".utf8), mesoError: ArcusError? = nil) {
-        self.activeData = activeData
+        self.activeResponse = HTTPResponse(status: 200, headers: [:], data: activeData)
         self.mesoError = mesoError
     }
 
-    func fetchActiveMesos(h3Cell: Int64?) async throws -> Data { activeData }
+    func fetchActiveMesos(h3Cell: Int64?) async throws -> HTTPResponse { activeResponse }
 
-    func fetchMeso(productID: String) async throws -> Data {
+    func fetchMeso(productID: String) async throws -> HTTPResponse {
         if let mesoError { throw mesoError }
-        return activeData
+        return activeResponse
     }
+}
+
+private func encodedMesoPayload(issued: Date) throws -> Data {
+    let payload = MesoscaleDiscussionPayload(
+        number: 1234,
+        title: "Mesoscale Discussion 1234",
+        sourceURL: URL(string: "https://www.spc.noaa.gov/products/md/2035/md1234.html")!,
+        issued: issued,
+        validStart: issued,
+        validEnd: issued.addingTimeInterval(3 * 60 * 60),
+        areasAffected: "Eastern Colorado",
+        summary: "Severe storms possible.",
+        concerning: "Severe potential",
+        watchProbability: 40,
+        watchProbabilityText: "40%",
+        threats: MesoscaleDiscussionThreats(peakWindMPH: 70, hailRangeInches: 1.5, tornadoStrength: "EF2"),
+        coordinates: [MesoscaleDiscussionCoordinate(latitude: 39.5, longitude: -104.8)]
+    )
+    return try JSONEncoder().encode([payload])
 }

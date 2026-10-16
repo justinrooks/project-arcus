@@ -2,8 +2,8 @@ import Foundation
 import OSLog
 
 protocol ArcusMesoClient: Sendable {
-    func fetchActiveMesos(h3Cell: Int64?) async throws -> Data
-    func fetchMeso(productID: String) async throws -> Data
+    func fetchActiveMesos(h3Cell: Int64?) async throws -> HTTPResponse
+    func fetchMeso(productID: String) async throws -> HTTPResponse
 }
 
 struct ArcusMesoHTTPClient: ArcusMesoClient {
@@ -23,16 +23,16 @@ struct ArcusMesoHTTPClient: ArcusMesoClient {
         self.reachabilityReporter = reachabilityReporter
     }
 
-    func fetchActiveMesos(h3Cell: Int64?) async throws -> Data {
+    func fetchActiveMesos(h3Cell: Int64?) async throws -> HTTPResponse {
         let queryItems = h3Cell.map { [URLQueryItem(name: "h3", value: String($0))] } ?? []
         return try await fetch(queryItems: queryItems)
     }
 
-    func fetchMeso(productID: String) async throws -> Data {
+    func fetchMeso(productID: String) async throws -> HTTPResponse {
         try await fetch(queryItems: [URLQueryItem(name: "id", value: productID)])
     }
 
-    private func fetch(queryItems: [URLQueryItem]) async throws -> Data {
+    private func fetch(queryItems: [URLQueryItem]) async throws -> HTTPResponse {
         guard let url = ArcusSignalConfiguration.url(
             from: baseURL,
             path: ArcusSignalConfiguration.mesosPath,
@@ -52,13 +52,13 @@ struct ArcusMesoHTTPClient: ArcusMesoClient {
 
             switch response.classifyStatus() {
             case .success, .notModified:
-                guard let data = response.data else { throw ArcusError.missingData }
+                guard response.data != nil else { throw ArcusError.missingData }
                 switch response.source {
                 case .live, .cacheRevalidated304: await reachabilityReporter.markReachable()
                 case .cacheFallback: await reachabilityReporter.markUnavailable()
                 case .localCache: break
                 }
-                return data
+                return response
             case .rateLimited(let retryAfter): throw ArcusError.rateLimited(retryAfterSeconds: retryAfter)
             case .serviceUnavailable(let retryAfter): throw ArcusError.serviceUnavailable(retryAfterSeconds: retryAfter)
             case .failure(let status): throw ArcusError.networkError(status: status)
