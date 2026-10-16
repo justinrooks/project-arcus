@@ -140,6 +140,7 @@ struct SettingsView: View {
                         Toggle("Mesoscale Discussion Alerts", isOn: $mesoNotificationEnabled)
                             .onChange(of: mesoNotificationEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Mesoscale Discussion Alerts")
+                                Task { await locationSession.syncMesoNotificationPreference() }
                             }
                         Text("Receive alerts when new mesoscale discussions are issued for your area.")
                             .font(.caption)

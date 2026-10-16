@@ -265,6 +265,10 @@ final class LocationSession {
         await syncPreference(forceUpload: true, reason: "notification", isSubscribedOverride: enabled)
     }
 
+    func syncMesoNotificationPreference() async {
+        await syncPreference(forceUpload: true, reason: "meso-notification")
+    }
+
     func syncLocationSharingPreference(enabled _: Bool) async {
         await syncPreference(forceUpload: true, reason: "location-sharing")
     }
@@ -288,6 +292,7 @@ final class LocationSession {
 
     func drainPendingLocationUploads() async {
         await locationUploadCoordinator.drainPendingUploads()
+        await syncMesoNotificationPreference()
     }
 
     private func syncPreference(
