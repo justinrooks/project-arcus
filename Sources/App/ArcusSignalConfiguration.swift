@@ -17,6 +17,7 @@ enum ArcusSignalConfiguration {
     }
 
     static let alertsPath = "/v2/alerts"
+    static let mesosPath = "/v1/mesos"
     static let locationSnapshotsPath = "/v1/devices/location-snapshots"
     static let devicePreferencesPath = "/v1/devices/preferences"
     static let foregroundActivityPath = "/v1/devices/foreground-activity"

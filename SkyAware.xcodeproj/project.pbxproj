@@ -78,6 +78,7 @@
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/AirQualityHTTPClientTests.swift,
+				UnitTests/ArcusMesoClientTests.swift,
 				UnitTests/AlertDetailReconciliationTests.swift,
 				UnitTests/AlertNotificationTests.swift,
 				UnitTests/AlertPresentationOrderingTests.swift,
@@ -172,6 +173,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				UnitTests/AirQualityHTTPClientTests.swift,
+				UnitTests/ArcusMesoClientTests.swift,
 				UnitTests/AlertDetailReconciliationTests.swift,
 				UnitTests/AlertNotificationTests.swift,
 				UnitTests/AlertPresentationOrderingTests.swift,
