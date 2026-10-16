@@ -256,6 +256,8 @@ struct LocationProviderTests {
             unblockContinuation = nil
         }
 
+        func uploadedPayloads() -> [DevicePreferenceSyncPayload] { payloads }
+
         func attemptCount() -> Int {
             payloads.count
         }
@@ -619,6 +621,189 @@ struct LocationProviderTests {
         #expect(snapshot.h3Cell == sampleH3Cell)
     }
     
+    private struct UnavailableContextResolver: LocationContextResolving {
+        func prepareCurrentContext(
+            requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
+            authorizationTimeout: Double, locationTimeout: Double,
+            maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double
+        ) async throws -> LocationContext { throw LocationContextError.locationUnavailable }
+
+        func resolveContext(
+            from snapshot: LocationSnapshot, maximumAcceptedLocationAge: TimeInterval?, placemarkTimeout: Double
+        ) async throws -> LocationContext { throw LocationContextError.locationUnavailable }
+    }
+
+    @MainActor
+    @Test("startup and token drain advertise meso preference without location or Settings")
+    func mesoPreference_sessionDrainSynchronizesWithoutLocation() async throws {
+        let preferences = MockPreferenceUploader()
+        let snapshots = MockSnapshotUploader()
+        let token = TokenBox("")
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: snapshots, preferenceUploader: preferences,
+            apnsTokenProvider: { token.value() }, installationIdProvider: { "meso-install" },
+            subscriptionStatusProvider: { false }, mesoNotificationEnabledProvider: { false },
+            locationUploadEnabledProvider: { false }, authorizationStatusProvider: { .denied },
+            retryDelaysSeconds: [0], queueStore: store
+        )
+        let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: LocationManager(onUpdate: { _ in }),
+            locationContextResolver: UnavailableContextResolver(), locationUploadCoordinator: pusher
+        )
+        await session.drainPendingLocationUploads()
+        #expect(await store.current().count == 1)
+        #expect(await preferences.uploadedPayloads().isEmpty)
+        token.set("token")
+        await session.drainPendingLocationUploads()
+        let payload = try #require(await preferences.uploadedPayloads().last)
+        #expect(payload.mesoNotificationsEnabled == false)
+        #expect(payload.isSubscribed == false)
+        #expect(await snapshots.uploadedPayloads().isEmpty)
+    }
+
+    @Test("in-flight meso toggle round trip sends current consent last")
+    func mesoPreference_inFlightRoundTrip() async throws {
+        let state = TokenBox("true")
+        let uploader = GateablePreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(), preferenceUploader: uploader,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "meso-install" },
+            mesoNotificationEnabledProvider: { state.value() == "true" },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
+        )
+        let first = Task {
+            await pusher.enqueuePreferenceSync(
+                source: .settingsPreference, requestReason: .preferenceChanged,
+                forceUpload: true, detail: "meso-notification"
+            )
+        }
+        await uploader.waitForFirstAttempt()
+        state.set("false")
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "meso-notification"
+        )
+        state.set("true")
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "meso-notification"
+        )
+        await uploader.unblock()
+        await first.value
+        #expect(await uploader.uploadedPayloads().map(\.mesoNotificationsEnabled) == [true, true])
+    }
+
+    @Test("legacy and explicit meso pending keys stay stable across preference changes")
+    func mesoPreference_legacyPendingKeysAreStable() async throws {
+        let suite = "meso-legacy-\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        await store.savePendingRequests([persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10))])
+        let state = TokenBox("true")
+        let first = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(), preferenceUploader: MockPreferenceUploader(),
+            apnsTokenProvider: { "" }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            mesoNotificationEnabledProvider: { state.value() == "true" },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+        )
+        await first.drainPendingUploads()
+        state.set("false")
+        await first.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        let reopened = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let snapshots = MockSnapshotUploader()
+        let second = LocationSnapshotPusher(
+            locationUploader: snapshots, preferenceUploader: MockPreferenceUploader(),
+            apnsTokenProvider: { "token" }, mesoNotificationEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: reopened
+        )
+        await second.drainPendingUploads()
+        #expect(await reopened.loadPendingRequests().isEmpty)
+        let payloads = await snapshots.uploadedPayloads()
+        #expect(payloads.count == 2)
+        #expect(payloads.allSatisfy { $0.mesoNotificationsEnabled == false })
+    }
+
+    @Test("meso preference survives a durable queue reopen and bounded drain", arguments: [false, true])
+    func mesoPreference_survivesQueueReopen(enabled: Bool) async throws {
+        let suite = "meso-queue-\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let first = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: MockPreferenceUploader(),
+            apnsTokenProvider: { "" },
+            installationIdProvider: { "meso-install" },
+            subscriptionStatusProvider: { false },
+            mesoNotificationEnabledProvider: { enabled },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .denied },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        await first.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        await first.enqueuePreferenceSync(
+            source: .settingsPreference, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "meso-notification"
+        )
+        let reopened = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let requests = await reopened.loadPendingRequests()
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { $0.mesoNotificationsEnabled == enabled })
+        let snapshots = MockSnapshotUploader()
+        let preferences = MockPreferenceUploader()
+        let second = LocationSnapshotPusher(
+            locationUploader: snapshots, preferenceUploader: preferences,
+            apnsTokenProvider: { "new-token" },
+            mesoNotificationEnabledProvider: { !enabled },
+            authorizationStatusProvider: { .denied },
+            retryDelaysSeconds: [0], queueStore: reopened
+        )
+        let outcome = await second.drainPendingUploads(
+            using: .init(uploadQuota: 2, deadline: .now.advanced(by: .seconds(10)))
+        )
+        #expect(outcome == .drained)
+        let snapshot = try #require(await snapshots.uploadedPayloads().first)
+        let preference = try #require(await preferences.uploadedPayloads().first)
+        #expect(snapshot.mesoNotificationsEnabled == !enabled)
+        #expect(preference.mesoNotificationsEnabled == !enabled)
+        #expect(snapshot.isSubscribed == false)
+        #expect(preference.isSubscribed == false)
+    }
+
+    @Test("meso preference change bypasses semantic deduplication")
+    func mesoPreference_changeSynchronizes() async throws {
+        let state = TokenBox("true")
+        let uploader = MockPreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(), preferenceUploader: uploader,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "meso-install" },
+            mesoNotificationEnabledProvider: { state.value() == "true" },
+            authorizationStatusProvider: { .authorizedAlways },
+            retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+        )
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "meso-notification"
+        )
+        state.set("false")
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "meso-notification"
+        )
+        state.set("true")
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "meso-notification"
+        )
+        #expect(await uploader.uploadedPayloads().map(\.mesoNotificationsEnabled) == [true, false, true])
+    }
+
     @Test("location context pusher payload includes timestamp and apns token")
     func locationContextPusher_includesTimestampAndApnsToken() async throws {
         let uploader = MockSnapshotUploader()

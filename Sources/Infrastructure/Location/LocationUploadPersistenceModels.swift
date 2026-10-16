@@ -13,6 +13,7 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
     let installationId: String
     let requestedAt: Date
     let isSubscribed: Bool
+    let mesoNotificationsEnabled: Bool?
     let authorizationState: String
     let apnsToken: String
     let operation: PersistedUploadOperation
@@ -24,6 +25,7 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
         case installationId
         case requestedAt
         case isSubscribed
+        case mesoNotificationsEnabled
         case authorizationState
         case apnsToken
         case operation
@@ -39,7 +41,8 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
         isSubscribed: Bool,
         authorizationState: String,
         apnsToken: String,
-        operation: PersistedUploadOperation
+        operation: PersistedUploadOperation,
+        mesoNotificationsEnabled: Bool? = nil
     ) {
         self.source = source
         self.reason = reason
@@ -47,6 +50,7 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
         self.installationId = installationId
         self.requestedAt = requestedAt
         self.isSubscribed = isSubscribed
+        self.mesoNotificationsEnabled = mesoNotificationsEnabled
         self.authorizationState = authorizationState
         self.apnsToken = apnsToken
         self.operation = operation
@@ -60,6 +64,7 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
         installationId = try container.decode(String.self, forKey: .installationId)
         requestedAt = try container.decode(Date.self, forKey: .requestedAt)
         isSubscribed = try container.decode(Bool.self, forKey: .isSubscribed)
+        mesoNotificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .mesoNotificationsEnabled)
         authorizationState = try container.decode(String.self, forKey: .authorizationState)
         apnsToken = try container.decode(String.self, forKey: .apnsToken)
 
@@ -80,6 +85,7 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
         try container.encode(installationId, forKey: .installationId)
         try container.encode(requestedAt, forKey: .requestedAt)
         try container.encode(isSubscribed, forKey: .isSubscribed)
+        try container.encodeIfPresent(mesoNotificationsEnabled, forKey: .mesoNotificationsEnabled)
         try container.encode(authorizationState, forKey: .authorizationState)
         try container.encode(apnsToken, forKey: .apnsToken)
         try container.encode(operation, forKey: .operation)

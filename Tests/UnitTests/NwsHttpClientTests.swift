@@ -451,12 +451,46 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         )
     }
 
+    @Test("ownership acknowledgment persists across defaults reopen and clears for older servers",
+          arguments: [false, true])
+    func ownershipAcknowledgment_isDurable(ownsDelivery: Bool) async throws {
+        let suite = "meso-ownership-\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let response = DevicePreferenceSyncAcceptedResponse(
+            status: "accepted", receivedAt: Date(timeIntervalSince1970: 1_780_358_400),
+            serverOwnsMesoNotificationDelivery: ownsDelivery
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let http = ArcusMockHTTPClient(response: HTTPResponse(
+            status: 202, headers: [:], data: try encoder.encode(response)
+        ))
+        let uploader = HTTPDevicePreferenceSyncUploader(
+            baseURL: URL(string: "https://arcus.example.com")!, http: http, defaultsSuiteName: suite
+        )
+        try await uploader.upload(makePreferencePayload(isSubscribed: true, token: "token"))
+        #expect(UserDefaults(suiteName: suite)?.object(
+            forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey
+        ) as? Bool == ownsDelivery)
+        let legacy = HTTPDevicePreferenceSyncUploader(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil)),
+            defaultsSuiteName: suite
+        )
+        try await legacy.upload(makePreferencePayload(isSubscribed: true, token: "token"))
+        #expect(UserDefaults(suiteName: suite)?.object(
+            forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey
+        ) == nil)
+    }
+
     @Test("upload builds preferences endpoint from Arcus signal base URL")
     func upload_buildsPreferencesURL() async throws {
+        let suite = "meso-http-\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
         let uploader = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http
+            http: http, defaultsSuiteName: suite
         )
 
         let payload = makePreferencePayload(isSubscribed: true, token: "abc123")
@@ -476,10 +510,12 @@ struct HTTPDevicePreferenceSyncUploaderTests {
 
     @Test("non-2xx response throws status without embedding APNs token")
     func upload_errorDoesNotExposeToken() async throws {
+        let suite = "meso-http-\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let http = ArcusMockHTTPClient(response: HTTPResponse(status: 500, headers: [:], data: nil))
         let uploader = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http
+            http: http, defaultsSuiteName: suite
         )
         let payload = makePreferencePayload(isSubscribed: false, token: "super-secret-token")
 

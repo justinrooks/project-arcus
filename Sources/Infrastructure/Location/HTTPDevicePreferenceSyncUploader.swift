@@ -8,13 +8,21 @@ protocol DevicePreferenceSyncUploading: Sendable {
 }
 
 actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
+    static let ownershipDefaultsKey = "serverOwnsMesoNotificationDelivery"
+
+    private let defaults: UserDefaults
     private let endpoint: URL
     private let http: HTTPClient
     private let encoder = JSONEncoder()
     private let decoder: JSONDecoder
     private let logger = Logger.locationPushUploader
 
-    init(baseURL: URL, http: HTTPClient = URLSessionHTTPClient()) {
+    init(
+        baseURL: URL,
+        http: HTTPClient = URLSessionHTTPClient(),
+        defaultsSuiteName: String = "com.justinrooks.skyaware"
+    ) {
+        self.defaults = UserDefaults(suiteName: defaultsSuiteName) ?? .standard
         guard let endpoint = ArcusSignalConfiguration.url(
             from: baseURL,
             path: ArcusSignalConfiguration.devicePreferencesPath
@@ -36,9 +44,11 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
             throw LocationPushError.invalidResponseStatus(response.status)
         }
 
-        if let data = response.data, data.isEmpty == false {
-            _ = try? decoder.decode(DevicePreferenceSyncAcceptedResponse.self, from: data)
+        let accepted = response.data.flatMap {
+            try? decoder.decode(DevicePreferenceSyncAcceptedResponse.self, from: $0)
         }
+        // Missing or malformed acknowledgments must not preserve a prior ownership claim.
+        defaults.set(accepted?.serverOwnsMesoNotificationDelivery, forKey: Self.ownershipDefaultsKey)
 
         logger.info("Device preference sync uploaded")
     }
