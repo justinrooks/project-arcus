@@ -33,6 +33,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var riskProfileChange: RiskProfileChange?
     var riskComparisonLocationKey: String?
     var mesos: [MdDTO]
+    var hasAcceptedMesoCollection: Bool
     var alerts: [AlertDTO]
     var outlooks: [ConvectiveOutlookDTO]
     var latestOutlook: ConvectiveOutlookDTO?
@@ -55,6 +56,7 @@ struct HomeSnapshot: Sendable, Equatable {
         riskProfileChange: RiskProfileChange? = nil,
         riskComparisonLocationKey: String? = nil,
         mesos: [MdDTO] = [],
+        hasAcceptedMesoCollection: Bool = false,
         alerts: [AlertDTO] = [],
         outlooks: [ConvectiveOutlookDTO] = [],
         latestOutlook: ConvectiveOutlookDTO? = nil,
@@ -76,6 +78,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.riskProfileChange = riskProfileChange
         self.riskComparisonLocationKey = riskComparisonLocationKey
         self.mesos = mesos
+        self.hasAcceptedMesoCollection = hasAcceptedMesoCollection
         self.alerts = alerts
         self.outlooks = outlooks
         self.latestOutlook = latestOutlook

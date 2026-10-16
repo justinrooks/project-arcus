@@ -529,7 +529,12 @@ final class Dependencies: Sendable {
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
-            arcusAlerts: arcus
+            arcusAlerts: arcus,
+            arcusMesos: ArcusMesoProvider(client: ArcusMesoHTTPClient(
+                baseURL: arcusBaseURL,
+                http: httpClient,
+                reachabilityReporter: arcusReachabilityTracker
+            ))
         )
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
         if let widgetSnapshotStore = try? WidgetSnapshotStore() {
