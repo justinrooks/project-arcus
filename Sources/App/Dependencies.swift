@@ -676,6 +676,10 @@ final class Dependencies: Sendable {
                     riskChangeNotificationsEnabled: readBoolSetting(
                         forKey: "riskChangeNotificationEnabled",
                         defaultValue: true
+                    ),
+                    serverOwnsMesoNotificationDelivery: readBoolSetting(
+                        forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey,
+                        defaultValue: false
                     )
                 )
             }

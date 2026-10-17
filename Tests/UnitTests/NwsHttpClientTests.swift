@@ -472,6 +472,8 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         #expect(UserDefaults(suiteName: suite)?.object(
             forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey
         ) as? Bool == ownsDelivery)
+        let backgroundSettings = Dependencies.UserDefaultsNotificationSettingsProvider(suiteName: suite)
+        #expect(await backgroundSettings.current().serverOwnsMesoNotificationDelivery == ownsDelivery)
         let legacy = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
             http: ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil)),
@@ -481,6 +483,26 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         #expect(UserDefaults(suiteName: suite)?.object(
             forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey
         ) == nil)
+        #expect(await backgroundSettings.current().serverOwnsMesoNotificationDelivery == false)
+    }
+
+    @Test("Background settings require an explicit ownership acknowledgment",
+          arguments: [false, true], [false, true])
+    func backgroundSettings_readPersistedOwnership(mesoEnabled: Bool, subscribed: Bool) async throws {
+        let suite = "meso-background-settings-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(mesoEnabled, forKey: "mesoNotificationEnabled")
+        defaults.set(subscribed, forKey: "serverNotificationEnabled")
+        let provider = Dependencies.UserDefaultsNotificationSettingsProvider(suiteName: suite)
+        #expect(await provider.current().serverOwnsMesoNotificationDelivery == false)
+        for owns in [true, false, true] {
+            defaults.set(owns, forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey)
+            let reopened = Dependencies.UserDefaultsNotificationSettingsProvider(suiteName: suite)
+            let settings = await reopened.current()
+            #expect(settings.serverOwnsMesoNotificationDelivery == owns)
+            #expect(settings.mesoNotificationsEnabled == mesoEnabled)
+        }
     }
 
     @Test("upload builds preferences endpoint from Arcus signal base URL")

@@ -42,7 +42,11 @@ struct MesoEngine: Sendable {
         }
     }
 
-    func run(ctx: NotificationContext, mesos: [MdDTO]) async -> Bool {
+    func run(
+        ctx: NotificationContext,
+        mesos: [MdDTO],
+        allowsDelivery: @Sendable () async -> Bool = { true }
+    ) async -> Bool {
         let updatedCtx = MesoContext(
             now: .now,
             localTZ: ctx.localTZ,
@@ -56,6 +60,12 @@ struct MesoEngine: Sendable {
 
         logger.debug("Checking gate")
         guard await gate.allow(event, now: updatedCtx.now) else { return false }
+
+        // Gate admission can await persisted claims while preference sync transfers ownership.
+        guard await allowsDelivery() else {
+            await gate.finish(event, didSchedule: false)
+            return false
+        }
 
         logger.debug("Building notification")
         let msg = composer.compose(event)
