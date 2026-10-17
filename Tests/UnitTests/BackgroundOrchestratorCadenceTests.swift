@@ -711,6 +711,107 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(health.ingestionOutcome == .expired)
     }
 
+    @Test("Only acknowledged server ownership suppresses local meso delivery",
+          arguments: [false, true], [false, true])
+    func mesoOwnership_selectsOneDeliveryPath(serverOwns: Bool, preferenceEnabled: Bool) async throws {
+        let sender = RecordingRiskSender()
+        let settings = MutableSettingsProvider(settings: .init(
+            morningSummariesEnabled: false,
+            mesoNotificationsEnabled: preferenceEnabled,
+            serverOwnsMesoNotificationDelivery: serverOwns
+        ))
+        let setup = try await makeSystem(
+            activeMesos: [Self.makeMeso()], activeAlerts: [],
+            settings: await settings.current(),
+            mesoEngine: MesoEngine(
+                rule: MesoRule(), gate: AllowAllGate(), composer: NoopComposer(),
+                sender: sender, spc: FakeSpcProvider(activeMesos: [])
+            ),
+            settingsProvider: settings
+        )
+        let outcome = await setup.orchestrator.run()
+        let localOwns = preferenceEnabled && !serverOwns
+        #expect(outcome.didNotify == localOwns)
+        #expect(await sender.sent().count == (localOwns ? 1 : 0))
+        #expect(outcome.feedsChanged.contains(.meso))
+        #expect(try await setup.latestCadence() == Cadence.short.minutes)
+
+        // A later acknowledgment changes the path without rebuilding the orchestrator.
+        await settings.update(.init(
+            morningSummariesEnabled: false,
+            mesoNotificationsEnabled: preferenceEnabled,
+            serverOwnsMesoNotificationDelivery: !serverOwns
+        ))
+        let next = await setup.orchestrator.run()
+        #expect(next.didNotify == (preferenceEnabled && serverOwns))
+        #expect(await sender.sent().count == (preferenceEnabled ? 1 : 0))
+    }
+
+    @Test("Ownership acknowledged during ingestion suppresses the same run's local delivery")
+    func mesoOwnership_duringIngestionIsObserved() async throws {
+        let sender = RecordingRiskSender()
+        let settings = MutableSettingsProvider(settings: .init(
+            morningSummariesEnabled: false, mesoNotificationsEnabled: true
+        ))
+        let gate = AsyncGate()
+        var snapshot = Self.makeRiskSnapshot(change: nil)
+        snapshot.mesos = [Self.makeMeso()]
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot, runGate: gate)
+        let setup = try await makeSystem(
+            activeMesos: [], activeAlerts: [], settings: await settings.current(),
+            coordinator: coordinator,
+            mesoEngine: MesoEngine(
+                rule: MesoRule(), gate: AllowAllGate(), composer: NoopComposer(),
+                sender: sender, spc: FakeSpcProvider(activeMesos: [])
+            ),
+            settingsProvider: settings
+        )
+        let task = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        await settings.update(.init(
+            morningSummariesEnabled: false, mesoNotificationsEnabled: true,
+            serverOwnsMesoNotificationDelivery: true
+        ))
+        await gate.open()
+        let outcome = await task.value
+        #expect(outcome.result == .success)
+        #expect(!outcome.didNotify)
+        #expect(await sender.sent().isEmpty)
+        #expect(outcome.feedsChanged.contains(.meso))
+        #expect(try await setup.latestCadence() == Cadence.short.minutes)
+    }
+
+    @Test("Ownership acquired during gate admission releases the local claim without sending")
+    func mesoOwnership_duringGateAdmissionIsObserved() async throws {
+        let sender = RecordingRiskSender()
+        let settings = MutableSettingsProvider(settings: .init(
+            morningSummariesEnabled: false, mesoNotificationsEnabled: true
+        ))
+        let gate = SuspendedMesoGate()
+        let setup = try await makeSystem(
+            activeMesos: [Self.makeMeso()], activeAlerts: [], settings: await settings.current(),
+            mesoEngine: MesoEngine(
+                rule: MesoRule(), gate: gate, composer: NoopComposer(),
+                sender: sender, spc: FakeSpcProvider(activeMesos: [])
+            ),
+            settingsProvider: settings
+        )
+        let task = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await gate.hasStarted() })
+        await settings.update(.init(
+            morningSummariesEnabled: false, mesoNotificationsEnabled: true,
+            serverOwnsMesoNotificationDelivery: true
+        ))
+        await gate.resume()
+        #expect(!(await task.value).didNotify)
+        #expect(await sender.sent().isEmpty)
+        #expect(await gate.finishedWithoutScheduling())
+
+        await settings.update(.init(morningSummariesEnabled: false, mesoNotificationsEnabled: true))
+        #expect((await setup.orchestrator.run()).didNotify)
+        #expect(await sender.sent().count == 1)
+    }
+
     @Test("Active meso tightens cadence to short")
     func activeMeso_tightensCadenceToShort() async throws {
         let setup = try await makeSystem(
@@ -1244,6 +1345,8 @@ private extension BackgroundOrchestratorCadenceTests {
         pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator(),
         coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil,
         morningEngine suppliedMorningEngine: MorningEngine? = nil,
+        mesoEngine suppliedMesoEngine: MesoEngine? = nil,
+        settingsProvider: (any NotificationSettingsProviding)? = nil,
         riskChangeEngine suppliedRiskChangeEngine: RiskChangeEngine? = nil,
         executionContextFactory: @escaping @Sendable (
             ContinuousClock.Instant
@@ -1289,7 +1392,7 @@ private extension BackgroundOrchestratorCadenceTests {
             composer: NoopComposer(),
             sender: NoopSender()
         )
-        let mesoEngine = MesoEngine(
+        let mesoEngine = suppliedMesoEngine ?? MesoEngine(
             rule: NoopMesoRule(),
             gate: AllowAllGate(),
             composer: NoopComposer(),
@@ -1325,7 +1428,7 @@ private extension BackgroundOrchestratorCadenceTests {
             riskChangeEngine: suppliedRiskChangeEngine ?? makeRiskChangeEngine(sender: NoopSender()),
             health: healthStore,
             cadence: CadencePolicy(),
-            notificationSettingsProvider: StaticSettingsProvider(settings: settings),
+            notificationSettingsProvider: settingsProvider ?? StaticSettingsProvider(settings: settings),
             pendingUploadDrainer: pendingUploadDrainer,
             executionContextFactory: executionContextFactory,
             workDeadlineWaiter: workDeadlineWaiter
@@ -1818,6 +1921,26 @@ private actor RecordingPendingUploadDrainer: PendingLocationUploadDraining {
     func observedCancellation() -> Bool {
         didObserveCancellation
     }
+}
+
+private actor SuspendedMesoGate: NotificationGating {
+    private let barrier = AsyncGate()
+    private var started = false
+    private var released = false
+
+    func allow(_ event: NotificationEvent, now: Date) async -> Bool {
+        started = true
+        await barrier.wait()
+        return true
+    }
+
+    func finish(_ event: NotificationEvent, didSchedule: Bool) async {
+        released = !didSchedule
+    }
+
+    func hasStarted() -> Bool { started }
+    func finishedWithoutScheduling() -> Bool { released }
+    func resume() async { await barrier.open() }
 }
 
 private struct StaticSettingsProvider: NotificationSettingsProviding {

@@ -22,15 +22,18 @@ struct NotificationSettings: Sendable {
     let morningSummariesEnabled: Bool
     let mesoNotificationsEnabled: Bool
     let riskChangeNotificationsEnabled: Bool
+    let serverOwnsMesoNotificationDelivery: Bool
 
     init(
         morningSummariesEnabled: Bool,
         mesoNotificationsEnabled: Bool,
-        riskChangeNotificationsEnabled: Bool = true
+        riskChangeNotificationsEnabled: Bool = true,
+        serverOwnsMesoNotificationDelivery: Bool = false
     ) {
         self.morningSummariesEnabled = morningSummariesEnabled
         self.mesoNotificationsEnabled = mesoNotificationsEnabled
         self.riskChangeNotificationsEnabled = riskChangeNotificationsEnabled
+        self.serverOwnsMesoNotificationDelivery = serverOwnsMesoNotificationDelivery
     }
 }
 
@@ -395,7 +398,12 @@ actor BackgroundOrchestrator {
                     }
                     try Task.checkCancellation()
 
-                    if settings.mesoNotificationsEnabled {
+                    // Sync may acknowledge a handoff while ingestion or morning delivery is awaiting.
+                    let mesoSettings = await notificationSettingsProvider.current()
+                    try Task.checkCancellation()
+                    if mesoSettings.serverOwnsMesoNotificationDelivery {
+                        noNotifyReasons.append("Meso notification owned by Signal")
+                    } else if mesoSettings.mesoNotificationsEnabled {
                         signposter.emitEvent("Meso Notification")
                         didMesoNotify = await mesoEngine.run(
                             ctx: .init(
@@ -404,7 +412,11 @@ actor BackgroundOrchestrator {
                                 location: locationSnapshot.coordinates,
                                 placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
                             ),
-                            mesos: activeMesos
+                            mesos: activeMesos,
+                            allowsDelivery: {
+                                let latest = await notificationSettingsProvider.current()
+                                return latest.mesoNotificationsEnabled && !latest.serverOwnsMesoNotificationDelivery
+                            }
                         )
                         if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                     } else { noNotifyReasons.append("Meso notification disabled") }
