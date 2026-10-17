@@ -15,6 +15,40 @@ import OSLog
 actor MesoRepo {
     private let logger = Logger.reposMeso
     private let parser: RSSFeedParser = RSSFeedParser()
+
+    /// Targeted acceptance never writes a HomeProjection or marks an H3 collection complete.
+    func acceptNotificationMeso(_ meso: MesoscaleDiscussionPayload, at date: Date) throws -> MesoscaleDiscussionPayload? {
+        guard meso.validStart <= date, date < meso.validEnd else { return nil }
+        let number = meso.number
+        let existing = try modelContext.fetch(FetchDescriptor<MD>(predicate: #Predicate { $0.number == number })).first
+        guard let model = MD(from: MdDTO(payload: meso)) else { return nil }
+        // MD has one legacy probability scalar. Prefer the canonical numeric value when
+        // display wording (for example "80 percent") cannot reconstruct that value.
+        if let probability = meso.watchProbability,
+           Double(model.watchProbability.replacingOccurrences(of: "%", with: "")) != probability {
+            model.watchProbability = String(probability)
+        }
+        let candidate = payload(from: model)
+        if let existing, existing.issued > meso.issued || payload(from: existing) == candidate {
+            return try notificationMeso(productID: meso.productID, at: date)
+        }
+        do {
+            modelContext.insert(model)
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+        return try notificationMeso(productID: meso.productID, at: date)
+    }
+
+    func notificationMeso(productID: String, at date: Date) throws -> MesoscaleDiscussionPayload? {
+        guard let suffix = productID.split(separator: "-").last, let number = Int(suffix) else { return nil }
+        let models = try modelContext.fetch(FetchDescriptor<MD>(predicate: #Predicate { $0.number == number }))
+        guard let model = models.first, model.validStart <= date, date < model.validEnd else { return nil }
+        let meso = payload(from: model)
+        return meso.productID == productID ? meso : nil
+    }
  
     @discardableResult
     func refreshMesoscaleDiscussions(using client: SpcClient) async throws -> HTTPResponse.Source {
@@ -113,7 +147,7 @@ actor MesoRepo {
             areasAffected: md.areasAffected,
             summary: md.summary,
             concerning: md.concerning,
-            watchProbability: Double(probabilityText),
+            watchProbability: Double(probabilityText.replacingOccurrences(of: "%", with: "")),
             watchProbabilityText: probabilityText,
             threats: md.threats.map {
                 MesoscaleDiscussionThreats(

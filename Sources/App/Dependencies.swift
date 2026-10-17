@@ -49,7 +49,7 @@ final class Dependencies: Sendable {
     private let _spcProvider: SpcProvider?
     private let _nwsProvider: NwsProvider?
     private let _arcusProvider: ArcusAlertProvider?
-    private let _arcusMesoProvider: (any ArcusMesoQuerying)?
+    private let _arcusMesoProvider: (any ArcusMesoQuerying & RemoteMesoResolving)?
     
     // MARK: Background orchestration
     
@@ -184,7 +184,7 @@ final class Dependencies: Sendable {
         return value
     }
 
-    var arcusMesoProvider: any ArcusMesoQuerying {
+    var arcusMesoProvider: any ArcusMesoQuerying & RemoteMesoResolving {
         guard let value = _arcusMesoProvider else {
             fatalError("Dependencies.arcusMesoProvider used while unconfigured")
         }
@@ -286,7 +286,7 @@ final class Dependencies: Sendable {
         spcProvider: SpcProvider?,
         nwsProvider: NwsProvider?,
         arcusProvider: ArcusAlertProvider?,
-        arcusMesoProvider: (any ArcusMesoQuerying)?,
+        arcusMesoProvider: (any ArcusMesoQuerying & RemoteMesoResolving)?,
         refreshPolicy: RefreshPolicy?,
         cadencePolicy: CadencePolicy?,
         orchestrator: BackgroundOrchestrator?,
@@ -540,7 +540,7 @@ final class Dependencies: Sendable {
             baseURL: arcusBaseURL,
             http: httpClient,
             reachabilityReporter: arcusReachabilityTracker
-        ))
+        ), repo: mesoRepo, homeProjections: homeProjectionStore)
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,

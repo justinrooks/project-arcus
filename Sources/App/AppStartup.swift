@@ -16,7 +16,7 @@ final class AppStartup {
     private(set) var status: Status = .unavailable
     private(set) var failureDiagnostic: String?
     @ObservationIgnored private var isStarting = false
-    @ObservationIgnored private var pendingNotificationOpen: HomeRemoteAlertContext?
+    @ObservationIgnored private var pendingNotificationOpen: RemoteNotificationContext?
     @ObservationIgnored private(set) var hasPresentedHome = false
     private let makeDependencies: () throws -> Dependencies
     private let protectedDataAvailable: () -> Bool
@@ -62,7 +62,7 @@ final class AppStartup {
         return dependencies
     }
 
-    func deferNotificationOpen(_ context: HomeRemoteAlertContext) {
+    func deferNotificationOpen(_ context: RemoteNotificationContext) {
         // Retain only the latest explicit navigation intent while storage is unavailable.
         pendingNotificationOpen = context
     }
@@ -72,7 +72,7 @@ final class AppStartup {
         hasPresentedHome = true
     }
 
-    func takePendingNotificationOpen() -> HomeRemoteAlertContext? {
+    func takePendingNotificationOpen() -> RemoteNotificationContext? {
         guard hasPresentedHome else { return nil }
         defer { pendingNotificationOpen = nil }
         return pendingNotificationOpen

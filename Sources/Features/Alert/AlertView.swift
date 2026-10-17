@@ -131,7 +131,17 @@ struct AlertView: View {
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationDestination(item: $selectedNotificationAlert) { request in
             Group {
-                if let alert = request.alert {
+                if request.isMeso {
+                    if let meso = request.meso, meso.validStart <= Date(), Date() < meso.validEnd {
+                        mesoDetail(for: meso)
+                    } else {
+                        ContentUnavailableView(
+                            "Discussion unavailable",
+                            systemImage: "exclamationmark.bubble",
+                            description: Text("This mesoscale discussion may have ended, or its details could not be loaded.")
+                        )
+                    }
+                } else if let alert = request.alert {
                     alertDetail(for: alert)
                 } else {
                     ContentUnavailableView(
@@ -143,7 +153,7 @@ struct AlertView: View {
             }
             .onAppear {
                 guard let startedAt = request.openStartedAt else { return }
-                Logger.notificationsRemote.info("Notification open detail appeared available=\(request.alert != nil, privacy: .public) elapsed=\(String(describing: startedAt.duration(to: .now)), privacy: .public)")
+                Logger.notificationsRemote.info("Notification open detail appeared available=\(request.alert != nil || request.meso != nil, privacy: .public) elapsed=\(String(describing: startedAt.duration(to: .now)), privacy: .public)")
             }
         }
     }
