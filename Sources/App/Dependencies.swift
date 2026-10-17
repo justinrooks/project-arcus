@@ -540,7 +540,7 @@ final class Dependencies: Sendable {
             baseURL: arcusBaseURL,
             http: httpClient,
             reachabilityReporter: arcusReachabilityTracker
-        ), repo: mesoRepo)
+        ), repo: mesoRepo, homeProjections: homeProjectionStore)
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,

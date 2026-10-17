@@ -178,7 +178,7 @@ private struct StubArcusMesoClient: ArcusMesoClient {
     }
 }
 
-private func encodedMesoPayload(issued: Date) throws -> Data {
+private func encodedMesoPayload(issued: Date, probability: Double = 40, text: String = "40%") throws -> Data {
     let payload = MesoscaleDiscussionPayload(
         number: 1234,
         title: "Mesoscale Discussion 1234",
@@ -189,8 +189,8 @@ private func encodedMesoPayload(issued: Date) throws -> Data {
         areasAffected: "Eastern Colorado",
         summary: "Severe storms possible.",
         concerning: "Severe potential",
-        watchProbability: 40,
-        watchProbabilityText: "40%",
+        watchProbability: probability,
+        watchProbabilityText: text,
         threats: MesoscaleDiscussionThreats(peakWindMPH: 70, hailRangeInches: 1.5, tornadoStrength: "EF2"),
         coordinates: [MesoscaleDiscussionCoordinate(latitude: 39.5, longitude: -104.8)]
     )
@@ -271,16 +271,21 @@ struct RemoteMesoResolutionTests {
         #expect(try await provider.acceptedNotificationMeso(productID: "SPC-MD-2035-1234") != nil)
     }
 
-    @Test("accepted target survives disk reopen without changing Home projection state")
+    @Test("accepted target preserves canonical probability across disk reopen without changing Home state",
+          arguments: ["40%", "80 percent"])
     @MainActor
-    func targetedAcceptanceSurvivesReopen() async throws {
+    func targetedAcceptanceSurvivesReopen(text: String) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let schema = Schema([MD.self, HomeProjection.self])
         let config = ModelConfiguration(schema: schema, url: root.appendingPathComponent("meso.store"))
         let id = "SPC-MD-2035-1234"
-        let payload = try JSONDecoder().decode([MesoscaleDiscussionPayload].self, from: encodedMesoPayload(issued: now))[0]
+        let probability: Double = text == "80 percent" ? 80 : 40
+        let payload = try JSONDecoder().decode(
+            [MesoscaleDiscussionPayload].self,
+            from: encodedMesoPayload(issued: now, probability: probability, text: text)
+        )[0]
         do {
             let container = try ModelContainer(for: schema, configurations: config)
             let context = ModelContext(container)
@@ -302,7 +307,10 @@ struct RemoteMesoResolutionTests {
             context.insert(home)
             try context.save()
             let repo = MesoRepo(modelContainer: container)
-            _ = try await repo.acceptNotificationMeso(payload, at: now)
+            let accepted = try #require(try await repo.acceptNotificationMeso(payload, at: now))
+            #expect(accepted.watchProbability == probability)
+            // The existing detail consumes this adapter's numeric percentage directly.
+            #expect(MdDTO(payload: accepted).watchProbability == probability)
             let firstID = try #require(try context.fetch(FetchDescriptor<MD>()).first?.id)
             _ = try await repo.acceptNotificationMeso(payload, at: now)
             #expect(try context.fetchCount(FetchDescriptor<MD>()) == 1)
@@ -312,9 +320,63 @@ struct RemoteMesoResolutionTests {
         }
         let reopened = try ModelContainer(for: schema, configurations: config)
         let repo = MesoRepo(modelContainer: reopened)
-        #expect(try await repo.notificationMeso(productID: id, at: now) == payload)
+        let reopenedMeso = try #require(try await repo.notificationMeso(productID: id, at: now))
+        #expect(reopenedMeso.watchProbability == probability)
+        #expect(MdDTO(payload: reopenedMeso).watchProbability == probability)
+        #expect(reopenedMeso.watchProbabilityText == (text == "80 percent" ? "80.0" : text))
         #expect(try await repo.notificationMeso(productID: "SPC-MD-2034-1234", at: now) == nil)
         #expect(try await repo.notificationMeso(productID: id, at: now.addingTimeInterval(10_800)) == nil)
+    }
+
+    @Test("Home-only accepted meso cache avoids HTTP; invalid or unaccepted targets still fetch",
+          arguments: ["valid", "expired", "future", "wrongYear", "wrongID", "unaccepted"])
+    @MainActor
+    func homeProjectionCache(scenario: String) async throws {
+        let schema = Schema([MD.self, HomeProjection.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let issued = scenario == "expired" ? now.addingTimeInterval(-10_800)
+            : scenario == "future" ? now.addingTimeInterval(60) : now
+        let payload = try JSONDecoder().decode(
+            [MesoscaleDiscussionPayload].self,
+            from: encodedMesoPayload(issued: issued, probability: 80, text: "80 percent")
+        )[0]
+        let snapshot = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                        timestamp: now, accuracy: 25, placemarkSummary: "Colorado", h3Cell: 123)
+        let grid = GridPointSnapshot(
+            nwsId: "BOU/10,20", latitude: 39, longitude: -104, gridId: "BOU", gridX: 10, gridY: 20,
+            forecastURL: nil, forecastHourlyURL: nil, forecastGridDataURL: nil, observationStationsURL: nil,
+            city: "Denver", state: "CO", timeZoneId: "America/Denver", radarStationId: nil,
+            forecastZone: "COZ001", countyCode: "COC001", fireZone: "COZ201", countyLabel: nil, fireZoneLabel: nil
+        )
+        let home = HomeProjection(context: LocationContext(snapshot: snapshot, h3Cell: 123, grid: grid), createdAt: now)
+        home.activeMesos = [MdDTO(payload: payload)]
+        let acceptedAt: Date? = scenario == "unaccepted" ? nil : now.addingTimeInterval(-60)
+        home.lastHotAlertsLoadAt = acceptedAt
+        context.insert(home)
+        try context.save()
+        let client = NotificationMesoClient(data: Data(), status: 503)
+        let provider = ArcusMesoProvider(client: client, repo: MesoRepo(modelContainer: container),
+                                         homeProjections: HomeProjectionStore(modelContainer: container), now: { now })
+        let id = scenario == "wrongYear" ? "SPC-MD-2034-1234"
+            : scenario == "wrongID" ? "SPC-MD-2035-1235" : payload.productID
+        if scenario == "valid" {
+            let resolved = try #require(try await provider.resolveNotificationMeso(productID: id))
+            #expect(resolved == payload)
+            #expect(MdDTO(payload: resolved).watchProbability == 80)
+            #expect(await client.targetCalls.isEmpty)
+        } else {
+            do { _ = try await provider.resolveNotificationMeso(productID: id); Issue.record("Expected unavailable network") }
+            catch { #expect(error as? ArcusError == .networkError(status: 503)) }
+            #expect(await client.targetCalls == [id])
+        }
+        #expect(await client.collectionCalls == 0)
+        #expect(try context.fetchCount(FetchDescriptor<MD>()) == 0)
+        // Read from a fresh context to verify persisted state, not a stale registered model.
+        let saved = try #require(try ModelContext(container).fetch(FetchDescriptor<HomeProjection>()).first)
+        #expect(saved.activeMesos == [MdDTO(payload: payload)])
+        #expect(saved.lastHotAlertsLoadAt == acceptedAt)
+        #expect(saved.updatedAt == now)
     }
 
     @MainActor

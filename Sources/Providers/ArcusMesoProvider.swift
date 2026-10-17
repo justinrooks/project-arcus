@@ -9,13 +9,20 @@ protocol RemoteMesoResolving: Sendable {
 actor ArcusMesoProvider: ArcusMesoQuerying, RemoteMesoResolving {
     private let client: any ArcusMesoClient
     private let repo: MesoRepo?
+    private let homeProjections: (any AcceptedHomeMesoReading)?
     private let now: @Sendable () -> Date
     private var inFlightTargets: [String: Task<MesoscaleDiscussionPayload?, Error>] = [:]
     private(set) var coalescedTargetCount = 0
 
-    init(client: any ArcusMesoClient, repo: MesoRepo? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        client: any ArcusMesoClient,
+        repo: MesoRepo? = nil,
+        homeProjections: (any AcceptedHomeMesoReading)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.client = client
         self.repo = repo
+        self.homeProjections = homeProjections
         self.now = now
     }
 
@@ -38,6 +45,7 @@ actor ArcusMesoProvider: ArcusMesoQuerying, RemoteMesoResolving {
     }
 
     func acceptedNotificationMeso(productID: String) async throws -> MesoscaleDiscussionPayload? {
+        if let meso = try await homeProjections?.notificationMeso(productID: productID, at: now()) { return meso }
         guard let repo else { return nil }
         return try await repo.notificationMeso(productID: productID, at: now())
     }

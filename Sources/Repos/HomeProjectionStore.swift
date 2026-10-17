@@ -298,6 +298,10 @@ extension HomeProjectionPersisting {
     }
 }
 
+protocol AcceptedHomeMesoReading: Actor {
+    func notificationMeso(productID: String, at date: Date) throws -> MesoscaleDiscussionPayload?
+}
+
 @ModelActor
 actor HomeProjectionStore {
     static let recentRetentionAge: TimeInterval = 30 * 24 * 60 * 60
@@ -353,6 +357,31 @@ actor HomeProjectionStore {
 
     func latestProjectionForWidgetSnapshotRefresh() throws -> HomeProjectionRecord? {
         try fetchLatestProjection()?.record
+    }
+
+    /// Read accepted Signal state without changing its location scope or freshness.
+    func notificationMeso(productID: String, at date: Date) throws -> MesoscaleDiscussionPayload? {
+        let projections = try modelContext.fetch(HomeProjection.orderedProjectionsDescriptor())
+        for projection in projections where projection.lastHotAlertsLoadAt != nil {
+            for meso in projection.activeMesos where meso.validStart <= date && date < meso.validEnd {
+                let payload = MesoscaleDiscussionPayload(
+                    number: meso.number, title: meso.title, sourceURL: meso.link,
+                    issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd,
+                    areasAffected: meso.areasAffected, summary: meso.summary, concerning: meso.concerning,
+                    watchProbability: meso.watchProbability, watchProbabilityText: meso.watchProbabilityText,
+                    threats: meso.threats.map {
+                        MesoscaleDiscussionThreats(peakWindMPH: $0.peakWindMPH,
+                                                  hailRangeInches: $0.hailRangeInches,
+                                                  tornadoStrength: $0.tornadoStrength)
+                    },
+                    coordinates: meso.coordinates.map {
+                        MesoscaleDiscussionCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+                    }
+                )
+                if payload.productID == productID { return payload }
+            }
+        }
+        return nil
     }
 
     func newestDisplayReadyProjection() throws -> HomeProjectionRecord? {
@@ -989,3 +1018,4 @@ private enum HomeProjectionStoreTestingError: Error {
 #endif
 
 extension HomeProjectionStore: HomeProjectionPersisting {}
+extension HomeProjectionStore: AcceptedHomeMesoReading {}
