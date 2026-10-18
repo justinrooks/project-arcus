@@ -48,6 +48,13 @@ private struct SourcedRssSpcClient: SpcClient {
     }
 }
 
+private struct LegacyGeoJSONSpcClient: SpcClient {
+    let data: Data
+
+    func fetchRssData(for product: RssProduct) async throws -> Data { data }
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data { data }
+}
+
 private enum TestError: Error { case boom }
 
 // MARK: - Sample RSS payloads
@@ -693,6 +700,57 @@ private final class SpcMockHTTPClient: HTTPClient, @unchecked Sendable {
 
 @Suite("SpcHttpClient")
 struct SpcHttpClientTests {
+    @Test("forecast capability policy exposes only supported day and product pairs")
+    func forecastCapabilities_areBounded() {
+        #expect(SPCForecastProduct.categorical.supportedDays == [.day1, .day2, .day3])
+        #expect(SPCForecastProduct.tornado.supportedDays == [.day1, .day2])
+        #expect(SPCForecastProduct.hail.supportedDays == [.day1, .day2])
+        #expect(SPCForecastProduct.wind.supportedDays == [.day1, .day2])
+        #expect(SPCForecastProduct.fire.supportedDays == [.current])
+        #expect(SPCForecastProduct.meso.supportedDays == [.current])
+    }
+
+    @Test("legacy client defaults preserve only requests whose day they can honor")
+    func legacyClientDefaults_preserveDayIdentity() async throws {
+        let payload = Data("legacy".utf8)
+        let client = LegacyGeoJSONSpcClient(data: payload)
+
+        let legacySupportedPairs: [(GeoJSONProduct, SPCForecastDay)] = [
+            (.categorical, .day1),
+            (.tornado, .day1),
+            (.hail, .day1),
+            (.wind, .day1),
+            (.fireRH, .current)
+        ]
+        for (product, day) in legacySupportedPairs {
+            #expect(try await client.fetchGeoJsonData(for: product, day: day) == payload)
+            #expect(try await client.fetchGeoJsonResponse(for: product, day: day).data == payload)
+        }
+
+        let legacyUnsupportedPairs: [(GeoJSONProduct, SPCForecastDay, SPCForecastProduct)] = [
+            (.categorical, .day2, .categorical),
+            (.categorical, .day3, .categorical),
+            (.tornado, .day2, .tornado),
+            (.hail, .day2, .hail),
+            (.wind, .day2, .wind)
+        ]
+        for (product, day, forecastProduct) in legacyUnsupportedPairs {
+            let expectedError = SpcError.dayAwareFetchRequired(day: day, product: forecastProduct)
+            do {
+                _ = try await client.fetchGeoJsonData(for: product, day: day)
+                Issue.record("Expected legacy data request to require day-aware support")
+            } catch let error as SpcError {
+                #expect(error == expectedError)
+            }
+            do {
+                _ = try await client.fetchGeoJsonResponse(for: product, day: day)
+                Issue.record("Expected legacy response request to require day-aware support")
+            } catch let error as SpcError {
+                #expect(error == expectedError)
+            }
+        }
+    }
+
     @Test("fetchRssData builds RSS endpoint and xml accept headers")
     func fetchRssData_buildsRequest() async throws {
         let payload = Data("<rss/>".utf8)
@@ -724,6 +782,46 @@ struct SpcHttpClientTests {
         #expect((request.headers["Accept"] ?? "").contains("application/geo+json"))
     }
 
+    @Test("day-scoped GeoJSON requests address SPC Day 2 and Day 3 products")
+    func fetchGeoJsonData_buildsDayScopedRequests() async throws {
+        let payload = Data("{\"type\":\"FeatureCollection\",\"features\":[]}".utf8)
+
+        for (product, day, expectedPath) in [
+            (GeoJSONProduct.categorical, SPCForecastDay.day2, "/products/outlook/day2otlk_cat.lyr.geojson"),
+            (GeoJSONProduct.categorical, .day3, "/products/outlook/day3otlk_cat.lyr.geojson"),
+            (GeoJSONProduct.tornado, .day2, "/products/outlook/day2otlk_torn.lyr.geojson"),
+            (GeoJSONProduct.hail, .day2, "/products/outlook/day2otlk_hail.lyr.geojson"),
+            (GeoJSONProduct.wind, .day2, "/products/outlook/day2otlk_wind.lyr.geojson")
+        ] {
+            let http = SpcMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: payload))
+            let client = SpcHttpClient(http: http)
+            _ = try await client.fetchGeoJsonData(for: product, day: day)
+            #expect(try #require(await http.firstRequest()).url.path == expectedPath)
+        }
+    }
+
+    @Test("unsupported day and product requests fail before transport")
+    func fetchGeoJsonData_rejectsUnsupportedRequests() async throws {
+        let http = SpcMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: Data()))
+        let client = SpcHttpClient(http: http)
+
+        do {
+            _ = try await client.fetchGeoJsonData(for: .tornado, day: .day3)
+            Issue.record("Expected Day 3 tornado request to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .unsupportedForecastRequest(day: .day3, product: .tornado))
+        }
+        #expect(await http.firstRequest() == nil)
+
+        do {
+            _ = try await client.fetchGeoJsonData(for: .fireRH, day: .day1)
+            Issue.record("Expected day-scoped fire request to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .unsupportedForecastRequest(day: .day1, product: .fire))
+        }
+        #expect(await http.firstRequest() == nil)
+    }
+
     @Test("fetchGeoJsonResponse preserves cache transport provenance")
     func fetchGeoJsonResponse_preservesTransportSource() async throws {
         let payload = Data("{\"type\":\"FeatureCollection\",\"features\":[]}".utf8)
@@ -735,6 +833,8 @@ struct SpcHttpClientTests {
         let response = try await client.fetchGeoJsonResponse(for: .fireRH)
         #expect(response.data == payload)
         #expect(response.source == .cacheRevalidated304)
+        let request = try #require(await http.firstRequest())
+        #expect(request.url.path == "/products/fire_wx/day1fw_windrh.lyr.geojson")
     }
 
     @Test("429 maps to SpcError.rateLimited")

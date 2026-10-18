@@ -8,6 +8,56 @@
 import Foundation
 import OSLog
 
+enum SPCForecastDay: Int, CaseIterable, Equatable, Sendable {
+    case current = 0
+    case day1 = 1
+    case day2 = 2
+    case day3 = 3
+}
+
+enum SPCForecastProduct: Equatable, Sendable, CustomStringConvertible {
+    case categorical
+    case tornado
+    case hail
+    case wind
+    case fire
+    case meso
+
+    var description: String {
+        switch self {
+        case .categorical: "categorical"
+        case .tornado: "tornado"
+        case .hail: "hail"
+        case .wind: "wind"
+        case .fire: "fire"
+        case .meso: "mesoscale"
+        }
+    }
+
+    var supportedDays: Set<SPCForecastDay> {
+        switch self {
+        case .categorical: [.day1, .day2, .day3]
+        case .tornado, .hail, .wind: [.day1, .day2]
+        case .fire, .meso: [.current]
+        }
+    }
+
+    func supports(_ day: SPCForecastDay) -> Bool {
+        supportedDays.contains(day)
+    }
+}
+
+extension SPCForecastDay: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .current: "current"
+        case .day1: "Day 1"
+        case .day2: "Day 2"
+        case .day3: "Day 3"
+        }
+    }
+}
+
 /// Mapping enum that associates a product to its gis spc url
 enum GeoJSONProduct: String, CustomStringConvertible {
     case categorical = "cat"       // this corresponds to the url builder, see buildUrl func below
@@ -53,16 +103,57 @@ protocol SpcClient: Sendable {
     /// Fetches the backing data for geojson
     /// includes Categorical, Hail, Wind, Tornado geojson polygons
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data
+    func fetchGeoJsonData(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> Data
     func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse
+    func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse
 }
 
 extension SpcClient {
+    func fetchGeoJsonData(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> Data {
+        guard product.forecastProduct.supports(day) else {
+            throw SpcError.unsupportedForecastRequest(day: day, product: product.forecastProduct)
+        }
+        guard product.supportsLegacyRequest(on: day) else {
+            throw SpcError.dayAwareFetchRequired(day: day, product: product.forecastProduct)
+        }
+        return try await fetchGeoJsonData(for: product)
+    }
+
+    func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse {
+        guard product.forecastProduct.supports(day) else {
+            throw SpcError.unsupportedForecastRequest(day: day, product: product.forecastProduct)
+        }
+        guard product.supportsLegacyRequest(on: day) else {
+            throw SpcError.dayAwareFetchRequired(day: day, product: product.forecastProduct)
+        }
+        return try await fetchGeoJsonResponse(for: product)
+    }
+
     func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
         .init(status: 200, headers: [:], data: try await fetchRssData(for: product))
     }
 
     func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
         .init(status: 200, headers: [:], data: try await fetchGeoJsonData(for: product))
+    }
+}
+
+private extension GeoJSONProduct {
+    func supportsLegacyRequest(on day: SPCForecastDay) -> Bool {
+        switch self {
+        case .fireRH: day == .current
+        case .categorical, .tornado, .hail, .wind: day == .day1
+        }
+    }
+
+    var forecastProduct: SPCForecastProduct {
+        switch self {
+        case .categorical: .categorical
+        case .tornado: .tornado
+        case .hail: .hail
+        case .wind: .wind
+        case .fireRH: .fire
+        }
     }
 }
 
@@ -80,13 +171,27 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the Data
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
-        let response = try await fetchGeoJsonResponse(for: product)
+        let day: SPCForecastDay = product == .fireRH ? .current : .day1
+        return try await fetchGeoJsonData(for: product, day: day)
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> Data {
+        let response = try await fetchGeoJsonResponse(for: product, day: day)
         guard let data = response.data else { throw SpcError.missingData }
         return data
     }
 
     func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
-        let url = try getGeoJSONUrl(for: product)
+        let day: SPCForecastDay = product == .fireRH ? .current : .day1
+        return try await fetchGeoJsonResponse(for: product, day: day)
+    }
+
+    func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse {
+        guard product.forecastProduct.supports(day) else {
+            throw SpcError.unsupportedForecastRequest(day: day, product: product.forecastProduct)
+        }
+
+        let url = try getGeoJSONUrl(for: product, day: day)
         logger.info(
             "SPC request started kind=geojson product=\(product.description, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) endpoint=\(url.path, privacy: .public)"
         )
@@ -155,10 +260,13 @@ struct SpcHttpClient: SpcClient {
     /// standardizes that creation process
     /// - Parameter product: the product to fetch
     /// - Returns: a url to use to fetch geojson data for the provided product
-    private func getGeoJSONUrl(for product: GeoJSONProduct) throws -> URL {
+    private func getGeoJSONUrl(for product: GeoJSONProduct, day: SPCForecastDay) throws -> URL {
         switch product {
-        case .fireRH: return try makeSPCURL(path: "/products/fire_wx/day1fw_\(product.rawValue).lyr.geojson")
-        default: return try makeSPCURL(path: "/products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
+        case .fireRH:
+            return try makeSPCURL(path: "/products/fire_wx/day1fw_\(product.rawValue).lyr.geojson")
+        case .categorical, .tornado, .hail, .wind:
+            let prefix = "day\(day.rawValue)otlk"
+            return try makeSPCURL(path: "/products/outlook/\(prefix)_\(product.rawValue).lyr.geojson")
         }
     }
     
