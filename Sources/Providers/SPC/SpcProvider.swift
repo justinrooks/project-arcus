@@ -47,7 +47,8 @@ actor SpcProvider {
     var pendingOutlookSyncWaiterCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
     #endif
     var lastMapSyncFinishedAt: Date?
-    private let mapSyncCooldownSeconds: TimeInterval = 20
+    var futureCategoricalAcceptedAt: [SPCForecastDay: Date] = [:]
+    let mapSyncCooldownSeconds: TimeInterval = 20
     
     init(outlookRepo: ConvectiveOutlookRepo,
          mesoRepo: MesoRepo,

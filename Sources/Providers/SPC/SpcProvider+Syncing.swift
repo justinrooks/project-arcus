@@ -33,11 +33,6 @@ extension SpcProvider: SpcSyncing {
             return await inFlight.value
         }
 
-        if shouldSkipMapSync() {
-            logger.debug("Skipping SPC map sync because a recent run already completed")
-            return .skipped
-        }
-
         logger.info("SPC map sync started")
         let task = Task { [self] in
             await runMapProductsSync()
@@ -60,15 +55,43 @@ extension SpcProvider: SpcSyncing {
             )
         }
 
-        await record(failure: .cancelled, feedID: "spc.map.convective")
-        await record(failure: .cancelled, feedID: "spc.map.fire")
         if Task.isCancelled { return .failed }
-
-        let stagedBatch = await stageMapProducts(now: Date())
-        mapSyncOutcome = await persistStagedMapProducts(stagedBatch)
+        if shouldSkipMapSync() {
+            mapSyncOutcome = .skipped
+        } else {
+            await record(failure: .cancelled, feedID: "spc.map.convective")
+            await record(failure: .cancelled, feedID: "spc.map.fire")
+            let stagedBatch = await stageMapProducts(now: Date())
+            mapSyncOutcome = await persistStagedMapProducts(stagedBatch)
+        }
+        // Retry each failed future day without fetching or republishing accepted current domains.
+        _ = await syncFutureCategoricalForecast(for: .day2)
+        _ = await syncFutureCategoricalForecast(for: .day3)
         return mapSyncOutcome
     }
     
+    private func syncFutureCategoricalForecast(for day: SPCForecastDay) async -> Bool {
+        if let acceptedAt = futureCategoricalAcceptedAt[day],
+           Date().timeIntervalSince(acceptedAt) < mapSyncCooldownSeconds { return true }
+        let feedID = "spc.map.categorical.day\(day.rawValue)"
+        var source: HTTPResponse.Source?
+        do {
+            try Task.checkCancellation()
+            let response = try await client.fetchGeoJsonResponse(for: .categorical, day: day)
+            source = response.source
+            guard let data = response.data else { throw SpcError.missingData }
+            try await spcMapBatchPersistenceRepo.acceptCategoricalForecast(
+                data, day: day, source: response.source, now: Date()
+            )
+            futureCategoricalAcceptedAt[day] = Date()
+            await recordMapDomain(outcome: .accepted, source: source, feedID: feedID)
+            return true
+        } catch {
+            await recordMapDomain(outcome: .rejected, source: source, feedID: feedID)
+            return false
+        }
+    }
+
     func syncTextProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Text")
         async let convectiveSync = syncConvectiveOutlooks()

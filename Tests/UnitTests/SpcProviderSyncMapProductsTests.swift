@@ -1862,3 +1862,223 @@ private func makeUTCDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ m
         )
     )!
 }
+
+@Suite("Future categorical forecast acceptance", .serialized)
+@MainActor
+struct SPCFutureCategoricalForecastTests {
+    private let now = Date(timeIntervalSince1970: 1_809_368_000)
+
+    private func payload(
+        day: SPCForecastDay, at date: Date, noArea: Bool = false, label: String = "MRGL"
+    ) -> Data {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = .gmt
+        let valid = utc.startOfDay(for: date).addingTimeInterval(Double(day.rawValue - 1) * 86400 + 43200)
+        if noArea {
+            return makeNoAreaData(issue: spcTimestamp(date), valid: spcTimestamp(valid),
+                                  expire: spcTimestamp(valid.addingTimeInterval(86400)))
+        }
+        return makeCategoricalData(label: label, issue: spcTimestamp(date), valid: spcTimestamp(valid),
+                                   expire: spcTimestamp(valid.addingTimeInterval(86400)))
+    }
+
+    @Test("Day updates and replacements are independent, bounded and isolated from Day 1")
+    func independentReplacement() async throws {
+        let container = try TestStore.container(for: [SPCCategoricalForecast.self, StormRisk.self])
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        #expect(try await repo.categoricalForecast(for: .day2) == nil)
+        let day2 = payload(day: .day2, at: now)
+        let day3 = payload(day: .day3, at: now)
+        try await repo.acceptCategoricalForecast(day2, day: .day2, source: .live, now: now)
+        try await repo.acceptCategoricalForecast(day3, day: .day3, source: .cacheRevalidated304, now: now)
+        let updated = now.addingTimeInterval(3600)
+        try await repo.acceptCategoricalForecast(payload(day: .day2, at: updated, label: "SLGT"),
+                                                 day: .day2, source: .live, now: updated)
+        let second = try #require(await repo.categoricalForecast(for: .day2))
+        let third = try #require(await repo.categoricalForecast(for: .day3))
+        #expect(second.risks.first?.riskLevel == .slight)
+        #expect(third.issued == now.asMinute)
+        #expect(second.valid != third.valid)
+        let context = ModelContext(container)
+        #expect(try context.fetchCount(FetchDescriptor<SPCCategoricalForecast>()) == 2)
+        #expect(try context.fetchCount(FetchDescriptor<StormRisk>()) == 0)
+    }
+
+    @Test("Rejected source and malformed or partial publication preserve the accepted forecast",
+          arguments: ["fallback", "local", "empty", "decode", "stale", "wrongDay", "mixed", "partial", "futureIssue", "older"])
+    func rejectionPreservesCache(reason: String) async throws {
+        let container = try TestStore.container(for: [SPCCategoricalForecast.self])
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        let original = payload(day: .day2, at: now)
+        try await repo.acceptCategoricalForecast(original, day: .day2, source: .live, now: now)
+        var data = original
+        var source: HTTPResponse.Source = .live
+        switch reason {
+        case "fallback": source = .cacheFallback
+        case "local": source = .localCache
+        case "empty": data = emptyGeoJSONData()
+        case "decode": data = Data("broken".utf8)
+        case "older": data = payload(day: .day2, at: now.addingTimeInterval(-3600))
+        case "stale": data = payload(day: .day2, at: now.addingTimeInterval(-86400))
+        case "wrongDay": data = payload(day: .day3, at: now)
+        case "futureIssue": data = payload(day: .day2, at: now.addingTimeInterval(3600))
+        case "partial":
+            var document = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: original)
+            let feature = try #require(document.features.first)
+            document = makeFeatureCollection(features: [makeFeature(properties: feature.properties,
+                geometry: GeoJSONGeometry(type: "MultiPolygon", coordinates: feature.geometry.coordinates + [[]]))])
+            data = try JSONEncoder().encode(document)
+        default:
+            let first = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: original)
+            let next = try JSONDecoder().decode(GeoJSONFeatureCollection.self,
+                from: payload(day: .day2, at: now.addingTimeInterval(3600)))
+            data = try JSONEncoder().encode(makeFeatureCollection(features: first.features + next.features))
+        }
+        await #expect(throws: (any Error).self) {
+            try await repo.acceptCategoricalForecast(data, day: .day2, source: source, now: now)
+        }
+        let cached = try #require(await repo.categoricalForecast(for: .day2))
+        #expect(cached.issued == now.asMinute)
+        #expect(cached.risks.first?.riskLevel == .marginal)
+    }
+
+    @Test("Explicit dated no-area replaces geometry; ambiguous empty and same-issuance changes do not")
+    func acceptedEmptyAndPublicationTransition() async throws {
+        let container = try TestStore.container(for: [SPCCategoricalForecast.self])
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        try await repo.acceptCategoricalForecast(payload(day: .day3, at: now),
+                                                 day: .day3, source: .live, now: now)
+        await #expect(throws: (any Error).self) {
+            try await repo.acceptCategoricalForecast(payload(day: .day3, at: now, noArea: true),
+                                                     day: .day3, source: .live, now: now)
+        }
+        let next = now.addingTimeInterval(3600)
+        let empty = payload(day: .day3, at: next, noArea: true)
+        try await repo.acceptCategoricalForecast(empty, day: .day3, source: .live, now: next)
+        // Revalidation of the same source identity is valid and does not create history.
+        try await repo.acceptCategoricalForecast(empty, day: .day3, source: .cacheRevalidated304, now: next)
+        #expect(try await repo.categoricalForecast(for: .day3)?.isAcceptedEmpty == true)
+        #expect(try await repo.categoricalForecast(for: .day2) == nil)
+    }
+
+    @Test("V4 store migrates without losing Day 1 and future geometry/empty survive disk reopen")
+    @MainActor
+    func migrationAndRestart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("cache.store")
+        do {
+            let schema = Schema(versionedSchema: SkyAwarePersistenceSchemaV4.self)
+            let container = try ModelContainer(for: schema,
+                configurations: ModelConfiguration(schema: schema, url: url))
+            let context = ModelContext(container)
+            context.insert(StormRisk(riskLevel: .enhanced, issued: now, expires: now.addingTimeInterval(86400),
+                                     valid: now, stroke: nil, fill: nil, polygons: []))
+            try context.save()
+        }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        do {
+            let container = try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                configurations: ModelConfiguration(schema: schema, url: url))
+            let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+            try await repo.acceptCategoricalForecast(payload(day: .day2, at: now),
+                                                     day: .day2, source: .live, now: now)
+            try await repo.acceptCategoricalForecast(payload(day: .day3, at: now, noArea: true),
+                                                     day: .day3, source: .cacheRevalidated304, now: now)
+        }
+        let container = try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            configurations: ModelConfiguration(schema: schema, url: url))
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        let second = try #require(await repo.categoricalForecast(for: .day2))
+        #expect(second.risks.count == 1)
+        #expect(second.risks.first?.polygons.first?.coordinates.isEmpty == false)
+        #expect(try await repo.categoricalForecast(for: .day3)?.isAcceptedEmpty == true)
+        let context = ModelContext(container)
+        #expect(try context.fetch(FetchDescriptor<StormRisk>()).first?.riskLevel == .enhanced)
+        let rows = try context.fetch(FetchDescriptor<SPCCategoricalForecast>())
+        #expect(Set(rows.map(\.transportSource)) == ["live", "revalidated"])
+        #expect(rows.allSatisfy { $0.acceptedAt == now })
+    }
+
+    @Test("Provider refresh accepts each future day independently and retries after failure")
+    func providerRefresh() async throws {
+        let container = try TestStore.container(for: SkyAwarePersistenceSchema.models)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
+        let issued = Date().addingTimeInterval(-120)
+        let client = FutureCategoricalClient(day2: payload(day: .day2, at: issued),
+                                             day3: payload(day: .day3, at: issued))
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client, feedStateStore: store)
+        let initial = await provider.syncMapProductsOutcome()
+        #expect(initial.isFullyAccepted)
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        #expect(try await repo.categoricalForecast(for: .day2) != nil)
+        #expect(try await repo.categoricalForecast(for: .day3) == nil)
+        #expect(try await store.record(for: "spc.map.categorical.day3")?.generation == 0)
+        let currentGeneration = try await store.record(for: "spc.map.convective")?.generation
+        let fireGeneration = try await store.record(for: "spc.map.fire")?.generation
+        let retry = await provider.syncMapProductsOutcome()
+        #expect(retry == .skipped)
+        #expect(try await repo.categoricalForecast(for: .day3) != nil)
+        #expect(await client.day3Calls == 2)
+        #expect(await client.day2Calls == 1)
+        #expect(await client.currentCalls == 5)
+        #expect(try await store.record(for: "spc.map.convective")?.generation == currentGeneration)
+        #expect(try await store.record(for: "spc.map.fire")?.generation == fireGeneration)
+        #expect(try await store.record(for: "spc.map.categorical.day2")?.generation == 1)
+        #expect(try await store.record(for: "spc.map.categorical.day3")?.generation == 1)
+        #expect(await provider.syncMapProductsOutcome() == .skipped)
+        #expect(await client.day3Calls == 2)
+        #expect(await client.currentCalls == 5)
+    }
+
+    @Test("Rollover replaces expired cached geometry only with a coherent newer source period")
+    func rollover() async throws {
+        let container = try TestStore.container(for: [SPCCategoricalForecast.self])
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        try await repo.acceptCategoricalForecast(payload(day: .day2, at: now),
+                                                 day: .day2, source: .live, now: now)
+        let later = now.addingTimeInterval(3 * 86400)
+        let retained = try #require(await repo.categoricalForecast(for: .day2))
+        #expect(retained.expires < later)
+        await #expect(throws: (any Error).self) {
+            try await repo.acceptCategoricalForecast(emptyGeoJSONData(), day: .day2, source: .live, now: later)
+        }
+        #expect(try await repo.categoricalForecast(for: .day2)?.issued == retained.issued)
+        try await repo.acceptCategoricalForecast(payload(day: .day2, at: later, noArea: true),
+                                                 day: .day2, source: .live, now: later)
+        let replaced = try #require(await repo.categoricalForecast(for: .day2))
+        #expect(replaced.valid > retained.expires)
+        #expect(replaced.isAcceptedEmpty)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<SPCCategoricalForecast>()) == 1)
+    }
+}
+
+private extension Date {
+    var asMinute: Date { Date(timeIntervalSince1970: floor(timeIntervalSince1970 / 60) * 60) }
+}
+
+private actor FutureCategoricalClient: SpcClient {
+    let day2: Data
+    let day3: Data
+    private(set) var day3Calls = 0
+    private(set) var day2Calls = 0
+    private(set) var currentCalls = 0
+
+    init(day2: Data, day3: Data) { self.day2 = day2; self.day3 = day3 }
+    func fetchRssData(for product: RssProduct) async throws -> Data { throw SpcError.missingData }
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        currentCalls += 1
+        return product == .categorical ? makeCategoricalData() : emptyGeoJSONData()
+    }
+    func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse {
+        if day == .day2 { day2Calls += 1 }
+        if day == .day3 {
+            day3Calls += 1
+            if day3Calls == 1 { throw SpcError.missingData }
+        }
+        return HTTPResponse(status: 200, headers: [:], data: day == .day2 ? day2 : day3, source: .live)
+    }
+}
