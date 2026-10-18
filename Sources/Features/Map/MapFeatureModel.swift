@@ -17,7 +17,6 @@ final class MapFeatureModel {
     private static let invalidatingFeedIDs: Set<String> = [
         "spc.map.convective",
         "spc.map.fire",
-        "spc.meso",
         "arcus.alert",
         "arcus.alerts"
     ]
@@ -33,7 +32,7 @@ final class MapFeatureModel {
     private var pendingReload = false
 
     static func shouldReload(forAcceptedFeedID feedID: String) -> Bool {
-        invalidatingFeedIDs.contains(feedID)
+        invalidatingFeedIDs.contains(feedID) || feedID.hasPrefix("home.hot.")
     }
 
     static func observeAcceptedFeedUpdates(
@@ -86,6 +85,31 @@ final class MapFeatureModel {
             }
             showRefreshStateForCurrentSelection()
         }
+    }
+
+    func reloadMesoscale(using source: any ArcusMesoQuerying) async {
+        let mesos = await fetchMesoShapes(using: source)
+        guard Task.isCancelled == false, mesos.isCancellation == false else { return }
+
+        let payload = MapDataPayload(
+            stormRisk: .failure,
+            severeRisks: .failure,
+            mesos: mesos,
+            fireRisk: .failure,
+            activeWarnings: .failure
+        )
+        let plan = await planner.buildRenderPlan(
+            for: .meso,
+            payload: payload,
+            existingPlan: renderPlans[.meso],
+            polygonMapper: polygonMapper,
+            warningPolygons: KeyedMapPolygons(entries: [])
+        )
+        guard Task.isCancelled == false else { return }
+
+        renderPlans[.meso] = plan
+        sceneCache.remove(.meso)
+        applySelectedLayer(currentSelectedLayer)
     }
 
     private func performReload(
@@ -430,37 +454,56 @@ final class MapReloadCoordinator {
     var hasScheduledReload: Bool { reloadTask != nil }
 
     func schedule(_ operation: @escaping Operation) {
-        guard reloadTask == nil else {
-            pendingOperation = operation
+        enqueue(operation, preservingPendingOperation: false)
+    }
+
+    func scheduleMesoscale(_ operation: @escaping Operation) {
+        enqueue(operation, preservingPendingOperation: true)
+    }
+
+    func updateLifecycle(isActive: Bool, isVisible: Bool) {
+        guard isActive, isVisible else {
+            cancel()
             return
-        }
-
-        let taskID = UUID()
-        activeTaskID = taskID
-        reloadTask = Task {
-            var nextOperation = operation
-            repeat {
-                pendingOperation = nil
-                await nextOperation()
-                guard Task.isCancelled == false,
-                      activeTaskID == taskID,
-                      let pendingOperation else {
-                    break
-                }
-                nextOperation = pendingOperation
-            } while true
-
-            guard activeTaskID == taskID else { return }
-            reloadTask = nil
-            activeTaskID = nil
         }
     }
 
-    func cancel() {
+    private func enqueue(_ operation: @escaping Operation, preservingPendingOperation: Bool) {
+        guard reloadTask == nil else {
+            if preservingPendingOperation == false || pendingOperation == nil {
+                pendingOperation = operation
+            }
+            return
+        }
+
+        start(operation)
+    }
+
+    private func start(_ operation: @escaping Operation) {
+        let taskID = UUID()
+        activeTaskID = taskID
+        reloadTask = Task { @MainActor in
+            if Task.isCancelled == false {
+                await operation()
+            }
+            finish(taskID: taskID)
+        }
+    }
+
+    private func finish(taskID: UUID) {
+        guard activeTaskID == taskID else { return }
+
+        reloadTask = nil
         activeTaskID = nil
+
+        guard let pendingOperation else { return }
+        self.pendingOperation = nil
+        start(pendingOperation)
+    }
+
+    func cancel() {
         pendingOperation = nil
         reloadTask?.cancel()
-        reloadTask = nil
     }
 }
 
@@ -499,6 +542,11 @@ struct MapSceneCache {
     mutating func removeAll(except layer: MapLayer) {
         scenes = scenes.filter { $0.key == layer }
         layers = layers.filter { $0 == layer }
+    }
+
+    mutating func remove(_ layer: MapLayer) {
+        scenes.removeValue(forKey: layer)
+        layers.removeAll { $0 == layer }
     }
 
     mutating func updateScenes(_ transform: (MapLayerScene) -> MapLayerScene) {

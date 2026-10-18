@@ -22,15 +22,10 @@ struct HotFeedSnapshot: Sendable {
 
 enum IngestionSupport {
     static func syncHotFeeds(
-        spcSync: any SpcSyncing,
         arcusSync: any ArcusAlertSyncing,
         context: LocationContext
     ) async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { _ = await spcSync.syncMesoscaleDiscussions() }
-            group.addTask { _ = await arcusSync.sync(context: context) }
-            await group.waitForAll()
-        }
+        _ = await arcusSync.sync(context: context)
     }
 
     static func readLocationScopedSnapshot(

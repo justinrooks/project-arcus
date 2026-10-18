@@ -27,12 +27,18 @@ struct MapScreenView: View {
     @State private var reloadCoordinator = MapReloadCoordinator()
 
     private let primaryAwareness: SummaryAwarenessPrimaryState
+    private let isVisible: Bool
+    private let foregroundRefreshGeneration: Int
 
     init(
         selectedLayer: Binding<MapLayer> = .constant(.categorical),
+        isVisible: Bool = true,
+        foregroundRefreshGeneration: Int = 0,
         primaryAwareness: SummaryAwarenessPrimaryState = .quiet
     ) {
         _selected = selectedLayer
+        self.isVisible = isVisible
+        self.foregroundRefreshGeneration = foregroundRefreshGeneration
         self.primaryAwareness = primaryAwareness
     }
 
@@ -56,18 +62,26 @@ struct MapScreenView: View {
             model.setWarningGeometryVisible(newValue)
         }
         .onChange(of: scenePhase, initial: true) { _, newValue in
+            reloadCoordinator.updateLifecycle(isActive: newValue == .active, isVisible: isVisible)
             if newValue == .active {
                 model.setWarningGeometryVisible(showsWarningGeometry)
             }
         }
+        .onChange(of: isVisible) { _, newValue in
+            reloadCoordinator.updateLifecycle(isActive: scenePhase == .active, isVisible: newValue)
+        }
         .onChange(of: viewportCoordinate, initial: true) { _, newValue in
             model.captureInitialCenterCoordinateIfNeeded(newValue?.coordinate)
+        }
+        .onChange(of: foregroundRefreshGeneration) { _, _ in
+            guard isVisible, scenePhase == .active else { return }
+            scheduleMesoscaleReload()
         }
         .onDisappear {
             reloadCoordinator.cancel()
         }
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
+        .task(id: scenePhase == .active && isVisible) {
+            guard scenePhase == .active, isVisible else { return }
 
             let updates = await dependencies.feedStateStore.acceptedGenerationUpdates()
             scheduleReload()
@@ -87,6 +101,13 @@ struct MapScreenView: View {
                 warningSource: dependencies.arcusProvider,
                 selectedLayer: selected
             )
+        }
+    }
+
+    @MainActor
+    private func scheduleMesoscaleReload() {
+        reloadCoordinator.scheduleMesoscale {
+            await model.reloadMesoscale(using: dependencies.arcusMesoProvider)
         }
     }
 }

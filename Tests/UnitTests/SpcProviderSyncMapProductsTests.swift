@@ -75,24 +75,6 @@ struct SpcProviderSyncMapProductsTests {
         #expect(calls == 10)
     }
 
-    @Test("Meso provider sync preserves transport provenance in typed outcomes")
-    func mesoSync_reportsTypedOutcomes() async throws {
-        let container = try await makeMapSyncContainer()
-        let liveProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .live))
-        let revalidatedProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .revalidated))
-        let localCacheProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .localCache))
-        let rejectedProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .rejected))
-        let failedProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .failed))
-        let fallbackProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .fallback))
-
-        #expect(await liveProvider.syncMesoscaleDiscussions() == .live)
-        #expect(await revalidatedProvider.syncMesoscaleDiscussions() == .revalidated)
-        #expect(await localCacheProvider.syncMesoscaleDiscussions() == .localCache)
-        #expect(await rejectedProvider.syncMesoscaleDiscussions() == .rejected)
-        #expect(await failedProvider.syncMesoscaleDiscussions() == .failed)
-        #expect(await fallbackProvider.syncMesoscaleDiscussions() == .errorFallback)
-    }
-
     @Test("Convective outlook provider sync maps each response source and failure outcome")
     func outlookSync_reportsTypedOutcomes() async throws {
         let container = try await makeMapSyncContainer()
@@ -111,68 +93,6 @@ struct SpcProviderSyncMapProductsTests {
         #expect(await localCacheProvider.syncConvectiveOutlooks() == .localCache)
     }
 
-    @Test("Text sync records source only after canonical acknowledgement")
-    func textSync_recordsProvenanceAfterCanonicalAcknowledgement() async throws {
-        let container = try await makeMapSyncContainer()
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = FeedStateStore(directoryURL: directory)
-
-        let mesoProvider = makeSpcProviderForMapSyncTests(
-            container: container,
-            client: MesoSyncClient(mode: .revalidated),
-            feedStateStore: store
-        )
-        let outlookProvider = makeSpcProviderForMapSyncTests(
-            container: container,
-            client: OutlookSyncClient(mode: .accepted),
-            feedStateStore: store
-        )
-
-        #expect(await mesoProvider.syncMesoscaleDiscussions() == .revalidated)
-        #expect(await outlookProvider.syncConvectiveOutlooks() == .live)
-
-        let mesoRecord = try #require(await store.record(for: "spc.meso"))
-        #expect(mesoRecord.lastTransportSource == .revalidated)
-        #expect(mesoRecord.lastNetworkSuccessAt != nil)
-        #expect(mesoRecord.lastCanonicalAcceptanceAt != nil)
-        #expect(mesoRecord.generation == 1)
-
-        let outlookRecord = try #require(await store.record(for: "spc.outlook"))
-        #expect(outlookRecord.lastTransportSource == .live)
-        #expect(outlookRecord.lastNetworkSuccessAt != nil)
-        #expect(outlookRecord.lastCanonicalAcceptanceAt != nil)
-        #expect(outlookRecord.generation == 1)
-    }
-
-    @Test("Non-authoritative text responses retain prior canonical feed state")
-    func nonAuthoritativeTextResponses_retainCanonicalFeedState() async throws {
-        let container = try await makeMapSyncContainer()
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = FeedStateStore(directoryURL: directory)
-
-        let acceptedMeso = makeSpcProviderForMapSyncTests(
-            container: container,
-            client: MesoSyncClient(mode: .live),
-            feedStateStore: store
-        )
-        #expect(await acceptedMeso.syncMesoscaleDiscussions() == .live)
-        let cachedMeso = makeSpcProviderForMapSyncTests(
-            container: container,
-            client: MesoSyncClient(mode: .localCache),
-            feedStateStore: store
-        )
-        #expect(await cachedMeso.syncMesoscaleDiscussions() == .localCache)
-
-        let record = try #require(await store.record(for: "spc.meso"))
-        #expect(record.lastTransportSource == .localCache)
-        #expect(record.lastNetworkSuccessAt != nil)
-        #expect(record.lastCanonicalAcceptanceAt != nil)
-        #expect(record.generation == 1)
-        #expect(record.lastFailure == nil)
-    }
-
     @Test("Rejected network-backed text payloads retain transport success without canonical acceptance")
     func rejectedNetworkBackedTextPayloads_recordTransportWithoutAcceptance() async throws {
         let container = try await makeMapSyncContainer()
@@ -180,28 +100,20 @@ struct SpcProviderSyncMapProductsTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = FeedStateStore(directoryURL: directory)
 
-        let mesoProvider = makeSpcProviderForMapSyncTests(
-            container: container,
-            client: MesoSyncClient(mode: .revalidatedRejected),
-            feedStateStore: store
-        )
         let outlookProvider = makeSpcProviderForMapSyncTests(
             container: container,
             client: OutlookSyncClient(mode: .revalidatedRejected),
             feedStateStore: store
         )
 
-        #expect(await mesoProvider.syncMesoscaleDiscussions() == .rejected)
         #expect(await outlookProvider.syncConvectiveOutlooks() == .rejected)
 
-        for feedID in ["spc.meso", "spc.outlook"] {
-            let record = try #require(await store.record(for: feedID))
-            #expect(record.lastTransportSource == .revalidated)
-            #expect(record.lastNetworkSuccessAt != nil)
-            #expect(record.lastCanonicalAcceptanceAt == nil)
-            #expect(record.generation == 0)
-            #expect(record.lastFailure == .rejected)
-        }
+        let record = try #require(await store.record(for: "spc.outlook"))
+        #expect(record.lastTransportSource == .revalidated)
+        #expect(record.lastNetworkSuccessAt != nil)
+        #expect(record.lastCanonicalAcceptanceAt == nil)
+        #expect(record.generation == 0)
+        #expect(record.lastFailure == .rejected)
     }
 
     @Test("Concurrent convective outlook calls share one in-flight run")
@@ -1564,54 +1476,6 @@ private struct ScriptedMapSyncClient: SpcClient {
 
     func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
         .init(status: 200, headers: [:], data: try await fetchGeoJsonData(for: product), source: transportSource)
-    }
-}
-
-private struct MesoSyncClient: SpcClient {
-    enum Mode {
-        case live
-        case revalidated
-        case localCache
-        case revalidatedRejected
-        case rejected
-        case failed
-        case fallback
-    }
-
-    let mode: Mode
-
-    func fetchRssData(for product: RssProduct) async throws -> Data {
-        switch mode {
-        case .live, .revalidated, .localCache, .fallback:
-            return Data("<rss><channel><title>SPC</title></channel></rss>".utf8)
-        case .revalidatedRejected, .rejected:
-            return Data("not-xml".utf8)
-        case .failed:
-            throw SpcError.networkError(status: 503)
-        }
-    }
-
-    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
-        throw SpcError.missingGeoJsonData
-    }
-
-    func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
-        let data = try await fetchRssData(for: product)
-        let source: HTTPResponse.Source = switch mode {
-        case .live:
-            .live
-        case .revalidated:
-            .cacheRevalidated304
-        case .localCache:
-            .localCache
-        case .fallback:
-            .cacheFallback
-        case .revalidatedRejected:
-            .cacheRevalidated304
-        case .rejected, .failed:
-            .live
-        }
-        return .init(status: 200, headers: [:], data: data, source: source)
     }
 }
 

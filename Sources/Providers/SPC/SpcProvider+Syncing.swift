@@ -72,8 +72,7 @@ extension SpcProvider: SpcSyncing {
     func syncTextProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Text")
         async let convectiveSync = syncConvectiveOutlooks()
-        async let mesoSync = syncMesoscaleDiscussions()
-        _ = await (convectiveSync, mesoSync)
+        _ = await convectiveSync
         signposter.endInterval("Background Run", runInterval)
     }
 
@@ -312,75 +311,6 @@ extension SpcProvider: SpcSyncing {
         guard outlookSyncRunID == runID, outlookSyncWaiters.isEmpty == false else { return false }
         outlookSyncCommitRunID = runID
         return true
-    }
-
-    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
-        if let inFlight = mesoSyncTask {
-            logger.debug("SPC meso sync already in-flight; joining existing task")
-            let outcome = await inFlight.value
-            return Task.isCancelled ? .cancelled : outcome
-        }
-
-        logger.info("SPC meso sync started")
-        let task = Task { [self] () -> SpcMesoSyncOutcome in
-            await runMesoscaleDiscussionSync()
-        }
-        mesoSyncTask = task
-        let outcome = await task.value
-        return Task.isCancelled ? .cancelled : outcome
-    }
-
-    private func runMesoscaleDiscussionSync() async -> SpcMesoSyncOutcome {
-        let runInterval = signposter.beginInterval("Spc Sync Mesos")
-        defer {
-            signposter.endInterval("Background Run", runInterval)
-            mesoSyncTask = nil
-        }
-
-        let transport = SpcTextTransportTracker()
-        let trackingClient = SourceTrackingSpcClient(client: client, transport: transport)
-
-        do {
-            let source = try await mesoRepo.refreshMesoscaleDiscussions(using: trackingClient)
-            await record(
-                source: source,
-                canonicalAccepted: source == .live || source == .cacheRevalidated304,
-                feedID: "spc.meso"
-            )
-            let outcome = Self.mesoOutcome(for: source)
-            logger.info("SPC meso sync finished result=\(String(describing: outcome), privacy: .public)")
-            return outcome
-        } catch is CancellationError {
-            logger.notice("Mesoscale discussion sync cancelled")
-            await record(source: await transport.source, failure: .cancelled, feedID: "spc.meso")
-            return .cancelled
-        } catch SpcError.parsingError {
-            logger.error("Mesoscale discussion sync rejected")
-            await record(source: await transport.source, failure: .rejected, feedID: "spc.meso")
-            return .rejected
-        } catch {
-            logger.error("Error syncing mesoscale discussion text products: \(error.localizedDescription, privacy: .public)")
-            let source = await transport.source
-            await record(
-                source: source,
-                failure: source == nil ? .transport : .persistence,
-                feedID: "spc.meso"
-            )
-            return .failed
-        }
-    }
-
-    private static func mesoOutcome(for source: HTTPResponse.Source) -> SpcMesoSyncOutcome {
-        switch source {
-        case .live:
-            .live
-        case .cacheRevalidated304:
-            .revalidated
-        case .localCache:
-            .localCache
-        case .cacheFallback:
-            .errorFallback
-        }
     }
 
     private static func outlookOutcome(for source: HTTPResponse.Source) -> SpcOutlookSyncOutcome {

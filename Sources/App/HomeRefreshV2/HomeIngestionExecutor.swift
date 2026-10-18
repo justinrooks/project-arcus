@@ -952,9 +952,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         executionMode: HTTPExecutionMode
     ) async -> HotFeedSyncOutcome {
         if let remoteAlertContext = plan.remoteAlertContext {
-            async let mesoOutcome = HTTPExecutionMode.$current.withValue(executionMode) {
-                await environment.spcSync.syncMesoscaleDiscussions()
-            }
             async let remoteAlertOutcome = HTTPExecutionMode.$current.withValue(executionMode) {
                 await environment.arcusAlertSync.syncRemoteAlert(
                     id: remoteAlertContext.alertID,
@@ -967,8 +964,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                     await environment.arcusAlertSync.sync(context: context)
                 }
             }()
-            let (_, _, locationAlertResult) = await (
-                mesoOutcome,
+            let (_, locationAlertResult) = await (
                 remoteAlertOutcome,
                 locationAlertOutcome
             )
@@ -982,10 +978,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
         guard let context else { return .incomplete }
         return await HTTPExecutionMode.$current.withValue(executionMode) {
-            async let mesoSync = environment.spcSync.syncMesoscaleDiscussions()
-            async let alertSync = environment.arcusAlertSync.sync(context: context)
-            // Local ingestion remains for map and notification consumers; Home accepts the Signal read below.
-            let (_, alertOutcome) = await (mesoSync, alertSync)
+            let alertOutcome = await environment.arcusAlertSync.sync(context: context)
             return alertOutcome.authorizesLocationScopedAcceptance
                 ? .completeLocationScopedAcceptance
                 : .incomplete

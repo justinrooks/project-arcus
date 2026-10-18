@@ -367,6 +367,8 @@ struct HomeView: View {
     ) -> some View {
         MapScreenView(
             selectedLayer: $selectedMapLayer,
+            isVisible: selectedTab == .map,
+            foregroundRefreshGeneration: refreshPipeline.foregroundRefreshGeneration,
             primaryAwareness: primaryAwarenessState(
                 presentation: presentation,
                 todayContentState: todayContentState
