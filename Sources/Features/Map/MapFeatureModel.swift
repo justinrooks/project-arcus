@@ -17,7 +17,6 @@ final class MapFeatureModel {
     private static let invalidatingFeedIDs: Set<String> = [
         "spc.map.convective",
         "spc.map.fire",
-        "spc.meso",
         "arcus.alert",
         "arcus.alerts"
     ]
@@ -33,7 +32,7 @@ final class MapFeatureModel {
     private var pendingReload = false
 
     static func shouldReload(forAcceptedFeedID feedID: String) -> Bool {
-        invalidatingFeedIDs.contains(feedID)
+        invalidatingFeedIDs.contains(feedID) || feedID.hasPrefix("home.hot.")
     }
 
     static func observeAcceptedFeedUpdates(

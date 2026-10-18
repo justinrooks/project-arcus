@@ -10,18 +10,19 @@ import Testing
 struct MapFeatureModelSceneTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
-    @Test("only map, meso, and alert accepted feeds invalidate the map")
+    @Test("only visible map inputs and accepted Home hot feeds invalidate the map")
     func acceptedFeedInvalidation_isScopedToVisibleMapInputs() {
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.convective"))
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.fire"))
-        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.meso"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.meso") == false)
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "arcus.alert"))
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "arcus.alerts"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "home.hot.h3:8928308280fffff"))
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.outlook") == false)
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "home.projection") == false)
     }
 
-    @Test("accepted feed events reach the map observer and reload map data")
+    @Test("accepted Home hot feed events reload the nationwide map source")
     func acceptedFeedEvent_triggersMapReload() async throws {
         let store = FeedStateStore(directoryURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("MapFeedObserverTests")
@@ -31,29 +32,46 @@ struct MapFeatureModelSceneTests {
         let service = CountingSpcMapData(counter: counter, severeRisks: [], stormRisk: [], mesos: [], fireRisk: [])
         let model = MapFeatureModel()
         let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let mesoSource = StubArcusMesoQuerying(mesos: .success([
+            makeMesoPayload(number: 601, coordinates: [
+                Coordinate2D(latitude: 35.0, longitude: -97.0),
+                Coordinate2D(latitude: 35.2, longitude: -96.8),
+                Coordinate2D(latitude: 35.3, longitude: -97.1)
+            ])
+        ]), expectsNationwideRequest: true)
         var observed: [FeedStateGenerationUpdate] = []
         let (reloads, reloadContinuation) = AsyncStream<Void>.makeStream()
         var reloadIterator = reloads.makeAsyncIterator()
         let observer = Task { @MainActor in
             await MapFeatureModel.observeAcceptedFeedUpdates(from: updates) { update in
                 observed.append(update)
-                await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+                await model.reload(
+                    using: service,
+                    mesoSource: mesoSource,
+                    warningSource: warnings,
+                    selectedLayer: .meso
+                )
                 reloadContinuation.yield(())
             }
         }
 
         let now = Date(timeIntervalSince1970: 1_735_689_600)
         _ = try await store.update(.init(feedID: "spc.outlook", attemptedAt: now, canonicalAcceptedAt: now))
-        _ = try await store.update(.init(feedID: "spc.map.convective", attemptedAt: now, canonicalAcceptedAt: now))
+        _ = try await store.update(.init(
+            feedID: "home.hot.h3:8928308280fffff",
+            attemptedAt: now,
+            canonicalAcceptedAt: now
+        ))
         _ = await reloadIterator.next()
         observer.cancel()
 
-        #expect(observed == [FeedStateGenerationUpdate(feedID: "spc.map.convective", generation: 1)])
+        #expect(observed == [FeedStateGenerationUpdate(feedID: "home.hot.h3:8928308280fffff", generation: 1)])
         let counts = await counter.snapshot()
         #expect(counts.storm == 1)
         #expect(counts.severe == 1)
-        #expect(counts.meso == 1)
+        #expect(counts.meso == 0)
         #expect(counts.fire == 1)
+        #expect(overlayKeys(in: model.activeScene).contains { $0.hasPrefix("meso|601|") })
     }
 
     @Test("scene cache retains only the two most recently used layers")

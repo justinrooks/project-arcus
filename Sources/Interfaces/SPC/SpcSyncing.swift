@@ -122,5 +122,4 @@ protocol SpcSyncing: Sendable {//where Self: Actor {
     func syncMapProductsOutcome() async -> SpcMapSyncOutcome
     func syncTextProducts() async -> Void
     func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome
-    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome
 }

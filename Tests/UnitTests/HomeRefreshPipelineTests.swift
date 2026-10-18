@@ -318,11 +318,13 @@ struct HomeRefreshPipelineTests {
             preparedContext: context,
             prepareGate: prepareGate
         )
-        let syncGate = AsyncGate()
-        let spc = FakeSpcProvider(syncMesoscaleGate: syncGate)
+        let spc = FakeSpcProvider()
+        let alertGate = AsyncGate()
+        let alerts = FakeAlertProvider(syncGate: alertGate)
         let pipeline = HomeRefreshPipeline()
         let environment = makeEnvironment(
             spc: spc,
+            alerts: alerts,
             locationSession: locationSession
         )
 
@@ -342,7 +344,7 @@ struct HomeRefreshPipelineTests {
         await prepareGate.open()
 
         let hotAlertSyncStarted = await waitUntil(timeout: .seconds(5)) {
-            await spc.syncMesoscaleDiscussionsCount() == 1
+            await alerts.syncCount() == 1
         }
         #expect(hotAlertSyncStarted)
         #expect(pipeline.resolutionState.isResolving(.alerts))
@@ -352,7 +354,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.resolutionState.isResolving(.fireRisk) == false)
         #expect(pipeline.resolutionState.isResolving(.atmosphere) == false)
 
-        await syncGate.open()
+        await alertGate.open()
         await pipeline.waitForIdle()
 
         #expect(pipeline.resolutionState.isRefreshing == false)
@@ -2217,7 +2219,7 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
 
         #expect(locationSession.prepareCalls.isEmpty)
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
+        #expect(await spc.syncMesoscaleDiscussionsCount() == 0)
         #expect(await alerts.syncCount() == 1)
         #expect(await spc.syncMapProductsCount() == 0)
         #expect(await spc.syncConvectiveOutlooksCount() == 0)
@@ -3170,12 +3172,11 @@ struct HomeRefreshPipelineTests {
         #expect(background.riskProfileChange?.changedDimensions == [.storm, .severe])
     }
 
-    @Test("hot-alert providers overlap and join before completion")
-    func hotAlertSync_overlapsProvidersAndJoinsBeforeCompletion() async throws {
+    @Test("hot-alert sync joins the alert provider before completion")
+    func hotAlertSync_joinsAlertProviderBeforeCompletion() async throws {
         let context = makeContext()
-        let mesoGate = AsyncGate()
         let alertGate = AsyncGate()
-        let spc = FakeSpcProvider(syncMesoscaleGate: mesoGate)
+        let spc = FakeSpcProvider()
         let alerts = FakeAlertProvider(syncGate: alertGate)
         let recorder = IngestionProgressRecorder()
         let executor = HomeIngestionExecutor(
@@ -3205,18 +3206,12 @@ struct HomeRefreshPipelineTests {
         }
 
         let hotProvidersStarted = await waitUntil {
-            let mesoStarted = await spc.syncMesoscaleDiscussionsCount() == 1
             let alertStarted = await alerts.syncCount() == 1
-            return mesoStarted && alertStarted
+            return alertStarted
         }
         #expect(hotProvidersStarted)
         let hotAlertsMarkedBeforeRelease = await recorder.isHotAlertsMarked()
         #expect(hotAlertsMarkedBeforeRelease == false)
-        await mesoGate.open()
-        let mesoFinishedWithoutAlert = await waitUntil { await spc.syncMesoscaleDiscussionsCount() == 1 }
-        #expect(mesoFinishedWithoutAlert)
-        let hotAlertsMarkedAfterOneRelease = await recorder.isHotAlertsMarked()
-        #expect(hotAlertsMarkedAfterOneRelease == false)
         await alertGate.open()
         _ = try await task.value
 
@@ -3226,7 +3221,7 @@ struct HomeRefreshPipelineTests {
         #expect(hotAlertsMarked)
         let hotSpcModes = await spc.observedHTTPModes()
         let hotAlertModes = await alerts.observedHTTPModes()
-        #expect(hotSpcModes == [.foreground])
+        #expect(hotSpcModes.isEmpty)
         #expect(hotAlertModes == [.foreground])
     }
 
@@ -3267,16 +3262,13 @@ struct HomeRefreshPipelineTests {
 
     @Test("hot projection advances only after complete location-scoped acceptance")
     func hotProjection_requiresCompleteLocationScopedAcceptance() async throws {
-        let cases: [(String, SpcMesoSyncOutcome, ArcusLocationSyncOutcome, Bool)] = [
-            ("accepted", .accepted, .accepted, true),
-            ("meso revalidated", .revalidated, .accepted, true),
-            ("meso failure", .failed, .accepted, false),
-            ("Arcus failure", .accepted, .failed, false),
-            ("meso cancellation", .cancelled, .accepted, false),
-            ("Arcus cancellation", .accepted, .cancelled, false)
+        let cases: [(String, ArcusLocationSyncOutcome, Bool)] = [
+            ("accepted", .accepted, true),
+            ("Arcus failure", .failed, false),
+            ("Arcus cancellation", .cancelled, false)
         ]
 
-        for (name, mesoOutcome, alertOutcome, acceptsHotSnapshot) in cases {
+        for (name, alertOutcome, acceptsHotSnapshot) in cases {
             let container = try TestStore.container(for: [HomeProjection.self])
             let projectionStore = HomeProjectionStore(modelContainer: container)
             let context = makeContext()
@@ -3294,8 +3286,7 @@ struct HomeRefreshPipelineTests {
             )
 
             let spc = FakeSpcProvider(
-                activeMesos: [refreshedMeso],
-                mesoSyncOutcome: mesoOutcome
+                activeMesos: [refreshedMeso]
             )
             let alerts = FakeAlertProvider(
                 activeAlerts: [refreshedAlert],
@@ -3348,7 +3339,7 @@ struct HomeRefreshPipelineTests {
             let cached = try #require(await store.projection(for: context))
             #expect(cached.activeMesos == [original])
             // The remaining local consumer may fail independently of the Home server read.
-            let spc = FakeSpcProvider(mesoSyncOutcome: .failed)
+            let spc = FakeSpcProvider()
             let alerts = FakeAlertProvider()
             var checkedQuery = query
             checkedQuery.expectedH3Cell = context.h3Cell
@@ -3372,7 +3363,7 @@ struct HomeRefreshPipelineTests {
             #expect((snapshot.freshness.lastHotFeedSyncAt != nil) == accepts, "\(name)")
             #expect(widgets.refreshCallCount() == (accepts ? 1 : 0), "\(name)")
             #expect(await spc.activeMesosQueryCount() == 0)
-            #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
+            #expect(await spc.syncMesoscaleDiscussionsCount() == 0)
         }
     }
 
@@ -3442,7 +3433,7 @@ struct HomeRefreshPipelineTests {
             projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
         )
         _ = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
-        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 1)
+        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 0)
         #expect(await retryAlerts.syncCount() == 1)
     }
 
@@ -3452,9 +3443,8 @@ struct HomeRefreshPipelineTests {
         let directory = try makeFeedStateDirectory()
         let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
         let store = FeedStateStore(directoryURL: directory)
-        let mesoGate = AsyncGate()
         let alertGate = AsyncGate()
-        let spc = FakeSpcProvider(syncMesoscaleGate: mesoGate)
+        let spc = FakeSpcProvider()
         let alerts = FakeAlertProvider(syncGate: alertGate)
         let executor = makeHotExecutor(
             spc: spc, alerts: alerts, context: context,
@@ -3464,12 +3454,10 @@ struct HomeRefreshPipelineTests {
             try await executor.run(plan: .init(request: .init(trigger: .foregroundPrime)))
         }
         #expect(await waitUntil {
-            let mesoStarted = await spc.syncMesoscaleDiscussionsCount() == 1
             let alertStarted = await alerts.syncCount() == 1
-            return mesoStarted && alertStarted
+            return alertStarted
         })
         task.cancel()
-        await mesoGate.open()
         await alertGate.open()
         _ = try? await task.value
 
@@ -3482,7 +3470,7 @@ struct HomeRefreshPipelineTests {
             projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
         )
         _ = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
-        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 1)
+        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 0)
     }
 
     @Test("projection failure does not durably accept a complete hot sync")
@@ -3512,7 +3500,7 @@ struct HomeRefreshPipelineTests {
             projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
         )
         _ = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
-        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 1)
+        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 0)
     }
 
     @Test("coherent hot admission is location scoped and targeted alerts do not accept it")
@@ -3541,7 +3529,7 @@ struct HomeRefreshPipelineTests {
         _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: secondContext)))
         _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: firstContext)))
 
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 3)
+        #expect(await spc.syncMesoscaleDiscussionsCount() == 0)
         #expect(await alerts.syncCount() == 3)
         #expect(try await store.record(for: firstFeedID)?.generation == 1)
         #expect(try await store.record(for: "home.hot.\(HomeProjection.projectionKey(for: secondContext))")?.generation == 1)
@@ -4005,12 +3993,11 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncConvectiveOutlooksCount() == 1)
     }
 
-    @Test("cancelling a hot sync joins both cancelled provider children")
-    func hotAlertSync_cancellationJoinsBothChildren() async throws {
+    @Test("cancelling a hot sync joins the cancelled alert provider")
+    func hotAlertSync_cancellationJoinsAlertProvider() async throws {
         let context = makeContext()
-        let mesoGate = AsyncGate()
         let alertGate = AsyncGate()
-        let spc = FakeSpcProvider(syncMesoscaleGate: mesoGate)
+        let spc = FakeSpcProvider()
         let alerts = FakeAlertProvider(syncGate: alertGate)
         let executor = HomeIngestionExecutor(
             environment: .init(
@@ -4032,19 +4019,17 @@ struct HomeRefreshPipelineTests {
         }
 
         let providersStarted = await waitUntil {
-            let mesoStarted = await spc.syncMesoscaleDiscussionsCount() == 1
             let alertStarted = await alerts.syncCount() == 1
-            return mesoStarted && alertStarted
+            return alertStarted
         }
         #expect(providersStarted)
         task.cancel()
-        await mesoGate.open()
         await alertGate.open()
         _ = try await task.value
 
         let spcCancellationCount = await spc.cancelledSyncCount()
         let alertCancellationCount = await alerts.cancelledSyncCount()
-        #expect(spcCancellationCount == 1)
+        #expect(spcCancellationCount == 0)
         #expect(alertCancellationCount == 1)
     }
 
@@ -4884,8 +4869,8 @@ struct HomeRefreshPipelineTests {
     @Test("background deadline exhaustion from a nonthrowing sync fails the executor")
     func backgroundDeadlineExhaustionFromNonthrowingSyncFailsExecutor() async {
         let context = makeContext()
-        let spc = FakeSpcProvider(marksBackgroundDeadlineDuringMesoSync: true)
-        let alerts = FakeAlertProvider(activeAlerts: [])
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider(activeAlerts: [], marksBackgroundDeadlineDuringSync: true)
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -5604,6 +5589,7 @@ private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, Widge
 private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     private let activeAlerts: [AlertDTO]
     private let syncGate: AsyncGate?
+    private let marksBackgroundDeadlineDuringSync: Bool
     private var locationSyncOutcome: ArcusLocationSyncOutcome
     private var syncCalls = 0
     private var queryCalls = 0
@@ -5613,11 +5599,13 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     init(
         activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
         syncGate: AsyncGate? = nil,
-        locationSyncOutcome: ArcusLocationSyncOutcome = .accepted
+        locationSyncOutcome: ArcusLocationSyncOutcome = .accepted,
+        marksBackgroundDeadlineDuringSync: Bool = false
     ) {
         self.activeAlerts = activeAlerts
         self.syncGate = syncGate
         self.locationSyncOutcome = locationSyncOutcome
+        self.marksBackgroundDeadlineDuringSync = marksBackgroundDeadlineDuringSync
     }
 
     func sync(context: LocationContext) async -> ArcusLocationSyncOutcome {
@@ -5625,6 +5613,9 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let syncGate {
             await syncGate.wait()
+        }
+        if marksBackgroundDeadlineDuringSync {
+            await BackgroundRefreshExecutionContext.current?.deadlineState.markExceeded()
         }
         if Task.isCancelled {
             cancelledSyncCalls += 1
