@@ -106,6 +106,7 @@ final class HomeRefreshPipeline {
     private(set) var alertSnapshotRefreshKey: LocationContext.RefreshKey?
     private(set) var airQualityRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
+    private(set) var foregroundRefreshGeneration = 0
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
     private var activeRefreshCount = 0
@@ -358,6 +359,7 @@ final class HomeRefreshPipeline {
         while Task.isCancelled == false {
             try? await Task.sleep(for: foregroundTimerInterval)
             if Task.isCancelled { return }
+            foregroundRefreshGeneration &+= 1
             await submit(.timer, waitsForCompletion: false)
         }
     }

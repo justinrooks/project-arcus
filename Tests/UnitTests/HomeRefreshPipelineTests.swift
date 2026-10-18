@@ -8,6 +8,135 @@ import ArcusCore
 @Suite("Home Refresh Pipeline", .serialized)
 @MainActor
 struct HomeRefreshPipelineTests {
+    @Test("foreground cadence emits an independent refresh generation")
+    func foregroundCadence_emitsRefreshGeneration() async throws {
+        let context = makeContext()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline(foregroundTimerInterval: .milliseconds(10))
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: locationSession
+        )
+
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+        let didEmitGeneration = await waitUntil(timeout: .seconds(10)) {
+            pipeline.foregroundRefreshGeneration > 0
+        }
+        let didSubmitTimer = await waitUntil(timeout: .seconds(10)) {
+            await coordinator.requests().contains { $0.trigger == .sessionTick }
+        }
+        await pipeline.handleScenePhaseChange(.inactive, environment: environment)
+
+        #expect(didEmitGeneration)
+        #expect(didSubmitTimer)
+    }
+
+    @Test("mesoscale cadence refresh replaces only nationwide meso state")
+    func mesoscaleCadence_refreshesNationwideMesoOnly() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "Slight Risk")]),
+            mesos: .failure(StubError()),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let first = makeMesoPayload(number: 601, coordinates: [
+            Coordinate2D(latitude: 35.0, longitude: -97.0),
+            Coordinate2D(latitude: 35.2, longitude: -96.8),
+            Coordinate2D(latitude: 35.3, longitude: -97.1)
+        ])
+        let changed = makeMesoPayload(number: 602, coordinates: [
+            Coordinate2D(latitude: 36.0, longitude: -98.0),
+            Coordinate2D(latitude: 36.2, longitude: -97.8),
+            Coordinate2D(latitude: 36.3, longitude: -98.1)
+        ])
+
+        await model.reload(
+            using: service,
+            mesoSource: StubArcusMesoQuerying(mesos: .success([first]), expectsNationwideRequest: true),
+            warningSource: warnings,
+            selectedLayer: .meso
+        )
+        model.selectLayer(.categorical)
+        let categoricalKeys = overlayKeys(in: model.activeScene)
+        #expect(categoricalKeys.isEmpty == false)
+
+        await model.reloadMesoscale(
+            using: StubArcusMesoQuerying(mesos: .success([changed]), expectsNationwideRequest: true)
+        )
+        #expect(overlayKeys(in: model.activeScene) == categoricalKeys)
+
+        model.selectLayer(.meso)
+        #expect(overlayKeys(in: model.activeScene).contains { $0.hasPrefix("meso|602|") })
+        let acceptedKeys = overlayKeys(in: model.activeScene)
+
+        for source in [HTTPResponse.Source.cacheFallback, .localCache] {
+            await model.reloadMesoscale(
+                using: StubArcusMesoQuerying(mesos: .success([]), responseSource: source)
+            )
+            #expect(overlayKeys(in: model.activeScene) == acceptedKeys)
+        }
+
+        await model.reloadMesoscale(
+            using: StubArcusMesoQuerying(mesos: .failure(StubError()), expectsNationwideRequest: true)
+        )
+        #expect(overlayKeys(in: model.activeScene) == acceptedKeys)
+
+        await model.reloadMesoscale(
+            using: StubArcusMesoQuerying(
+                mesos: .success([]),
+                expectsNationwideRequest: true,
+                responseSource: .cacheRevalidated304
+            )
+        )
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
+        #expect(overlayKeys(in: model.activeScene).isEmpty)
+    }
+
+    @Test("mesoscale cadence does not replace a queued full map reload")
+    func mesoscaleCadence_preservesQueuedFullMapReload() async {
+        let coordinator = MapReloadCoordinator()
+        let firstOperationGate = AsyncGate()
+        var operations: [String] = []
+
+        coordinator.schedule {
+            operations.append("active")
+            await firstOperationGate.wait()
+        }
+        let activeStarted = await waitUntil { operations == ["active"] }
+        #expect(activeStarted)
+
+        coordinator.schedule { operations.append("full") }
+        coordinator.scheduleMesoscale { operations.append("meso") }
+        await firstOperationGate.open()
+        let finished = await waitUntil { coordinator.hasScheduledReload == false }
+
+        #expect(finished)
+        #expect(operations == ["active", "full"])
+    }
+
+    @Test("map lifecycle cancels reloads when hidden or inactive")
+    func mapLifecycle_cancelsOutOfScopeReloads() async {
+        for (isActive, isVisible) in [(true, false), (false, true)] {
+            let coordinator = MapReloadCoordinator()
+            let operationGate = AsyncGate()
+            var didStart = false
+            coordinator.schedule {
+                didStart = true
+                await operationGate.wait()
+            }
+            let operationStarted = await waitUntil { didStart }
+            #expect(operationStarted)
+
+            coordinator.updateLifecycle(isActive: isActive, isVisible: isVisible)
+
+            #expect(coordinator.hasScheduledReload == false)
+            await operationGate.open()
+        }
+    }
+
     @Test("scene active submits foreground activate to the unified queue")
     func sceneActive_submitsForegroundActivate() async throws {
         let context = makeContext()
