@@ -476,32 +476,34 @@ final class MapReloadCoordinator {
             return
         }
 
+        start(operation)
+    }
+
+    private func start(_ operation: @escaping Operation) {
         let taskID = UUID()
         activeTaskID = taskID
-        reloadTask = Task {
-            var nextOperation = operation
-            repeat {
-                pendingOperation = nil
-                await nextOperation()
-                guard Task.isCancelled == false,
-                      activeTaskID == taskID,
-                      let pendingOperation else {
-                    break
-                }
-                nextOperation = pendingOperation
-            } while true
-
-            guard activeTaskID == taskID else { return }
-            reloadTask = nil
-            activeTaskID = nil
+        reloadTask = Task { @MainActor in
+            if Task.isCancelled == false {
+                await operation()
+            }
+            finish(taskID: taskID)
         }
     }
 
-    func cancel() {
+    private func finish(taskID: UUID) {
+        guard activeTaskID == taskID else { return }
+
+        reloadTask = nil
         activeTaskID = nil
+
+        guard let pendingOperation else { return }
+        self.pendingOperation = nil
+        start(pendingOperation)
+    }
+
+    func cancel() {
         pendingOperation = nil
         reloadTask?.cancel()
-        reloadTask = nil
     }
 }
 

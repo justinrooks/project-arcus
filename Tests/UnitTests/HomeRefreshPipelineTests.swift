@@ -132,8 +132,12 @@ struct HomeRefreshPipelineTests {
 
             coordinator.updateLifecycle(isActive: isActive, isVisible: isVisible)
 
-            #expect(coordinator.hasScheduledReload == false)
+            #expect(coordinator.hasScheduledReload)
             await operationGate.open()
+            let didUnwind = await waitUntil(timeout: .seconds(5)) {
+                coordinator.hasScheduledReload == false
+            }
+            #expect(didUnwind)
         }
     }
 

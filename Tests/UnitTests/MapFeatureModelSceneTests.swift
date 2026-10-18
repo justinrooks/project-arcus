@@ -552,9 +552,8 @@ struct MapFeatureModelSceneTests {
         coordinator.cancel()
 
         coordinator.schedule { await gate.run(2) }
-        await gate.waitUntilStarted(2)
         await gate.release(1)
-        await Task.yield()
+        await gate.waitUntilStarted(2)
 
         #expect(coordinator.hasScheduledReload)
         coordinator.schedule { await gate.run(3) }
@@ -644,6 +643,44 @@ struct MapFeatureModelSceneTests {
 
         let counts = await counter.snapshot()
         #expect(counts.storm == 2)
+    }
+
+    @Test("visible reload waits for a canceled in-flight reload to unwind")
+    func reload_afterHideAndShowWaitsForCanceledReloadToUnwind() async {
+        let gate = ReloadGate()
+        let counter = MapDataCallCounter()
+        let service = QueuedReloadSpcMapData(
+            gate: gate,
+            counter: counter,
+            firstStormRisk: [makeStormRisk(level: .slight, title: "SLGT")],
+            secondStormRisk: [makeStormRisk(level: .enhanced, title: "ENH")]
+        )
+        let model = MapFeatureModel()
+        let coordinator = MapReloadCoordinator()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let reload: MapReloadCoordinator.Operation = {
+            await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        }
+
+        coordinator.schedule(reload)
+        await gate.waitUntilFirstStormFetchStarts()
+        coordinator.updateLifecycle(isActive: true, isVisible: false)
+        coordinator.updateLifecycle(isActive: true, isVisible: true)
+        coordinator.schedule(reload)
+
+        #expect(await counter.snapshot().storm == 1)
+        #expect(coordinator.hasScheduledReload)
+
+        await gate.releaseFirstStormFetch()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while coordinator.hasScheduledReload, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(coordinator.hasScheduledReload == false)
+        #expect(overlayTitles(in: model.activeScene) == ["ENH"])
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(await counter.snapshot().storm == 2)
     }
 
     @Test("initial center coordinate is captured once and preserved across scene changes")
