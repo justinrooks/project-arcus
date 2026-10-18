@@ -48,6 +48,13 @@ private struct SourcedRssSpcClient: SpcClient {
     }
 }
 
+private struct LegacyGeoJSONSpcClient: SpcClient {
+    let data: Data
+
+    func fetchRssData(for product: RssProduct) async throws -> Data { data }
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data { data }
+}
+
 private enum TestError: Error { case boom }
 
 // MARK: - Sample RSS payloads
@@ -703,15 +710,44 @@ struct SpcHttpClientTests {
         #expect(SPCForecastProduct.meso.supportedDays == [.current])
     }
 
-    @Test("legacy client compatibility defaults reject unsupported fire days")
-    func legacyClientDefaults_rejectUnsupportedFireDay() async throws {
-        let client = FakeSpcClient(mode: .success(Data()))
+    @Test("legacy client defaults preserve only requests whose day they can honor")
+    func legacyClientDefaults_preserveDayIdentity() async throws {
+        let payload = Data("legacy".utf8)
+        let client = LegacyGeoJSONSpcClient(data: payload)
 
-        do {
-            _ = try await client.fetchGeoJsonData(for: .fireRH, day: .day1)
-            Issue.record("Expected the compatibility default to reject Day 1 fire")
-        } catch let error as SpcError {
-            #expect(error == .unsupportedForecastRequest(day: .day1, product: .fire))
+        let legacySupportedPairs: [(GeoJSONProduct, SPCForecastDay)] = [
+            (.categorical, .day1),
+            (.tornado, .day1),
+            (.hail, .day1),
+            (.wind, .day1),
+            (.fireRH, .current)
+        ]
+        for (product, day) in legacySupportedPairs {
+            #expect(try await client.fetchGeoJsonData(for: product, day: day) == payload)
+            #expect(try await client.fetchGeoJsonResponse(for: product, day: day).data == payload)
+        }
+
+        let legacyUnsupportedPairs: [(GeoJSONProduct, SPCForecastDay, SPCForecastProduct)] = [
+            (.categorical, .day2, .categorical),
+            (.categorical, .day3, .categorical),
+            (.tornado, .day2, .tornado),
+            (.hail, .day2, .hail),
+            (.wind, .day2, .wind)
+        ]
+        for (product, day, forecastProduct) in legacyUnsupportedPairs {
+            let expectedError = SpcError.dayAwareFetchRequired(day: day, product: forecastProduct)
+            do {
+                _ = try await client.fetchGeoJsonData(for: product, day: day)
+                Issue.record("Expected legacy data request to require day-aware support")
+            } catch let error as SpcError {
+                #expect(error == expectedError)
+            }
+            do {
+                _ = try await client.fetchGeoJsonResponse(for: product, day: day)
+                Issue.record("Expected legacy response request to require day-aware support")
+            } catch let error as SpcError {
+                #expect(error == expectedError)
+            }
         }
     }
 

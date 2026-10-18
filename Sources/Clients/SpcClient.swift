@@ -113,12 +113,18 @@ extension SpcClient {
         guard product.forecastProduct.supports(day) else {
             throw SpcError.unsupportedForecastRequest(day: day, product: product.forecastProduct)
         }
+        guard product.supportsLegacyRequest(on: day) else {
+            throw SpcError.dayAwareFetchRequired(day: day, product: product.forecastProduct)
+        }
         return try await fetchGeoJsonData(for: product)
     }
 
     func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse {
         guard product.forecastProduct.supports(day) else {
             throw SpcError.unsupportedForecastRequest(day: day, product: product.forecastProduct)
+        }
+        guard product.supportsLegacyRequest(on: day) else {
+            throw SpcError.dayAwareFetchRequired(day: day, product: product.forecastProduct)
         }
         return try await fetchGeoJsonResponse(for: product)
     }
@@ -133,6 +139,13 @@ extension SpcClient {
 }
 
 private extension GeoJSONProduct {
+    func supportsLegacyRequest(on day: SPCForecastDay) -> Bool {
+        switch self {
+        case .fireRH: day == .current
+        case .categorical, .tornado, .hail, .wind: day == .day1
+        }
+    }
+
     var forecastProduct: SPCForecastProduct {
         switch self {
         case .categorical: .categorical

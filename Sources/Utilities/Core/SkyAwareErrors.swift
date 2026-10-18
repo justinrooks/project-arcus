@@ -45,6 +45,7 @@ enum SpcError: Error, Equatable {
     case parsingError
     case invalidUrl
     case unsupportedForecastRequest(day: SPCForecastDay, product: SPCForecastProduct)
+    case dayAwareFetchRequired(day: SPCForecastDay, product: SPCForecastProduct)
     case rateLimited(retryAfterSeconds: Int?)
     case serviceUnavailable(retryAfterSeconds: Int?)
 }
@@ -87,6 +88,8 @@ extension SpcError: LocalizedError {
             return "Url is nil or invalid"
         case .unsupportedForecastRequest(let day, let product):
             return "SPC does not provide a supported GeoJSON request for \(product) on \(day)."
+        case .dayAwareFetchRequired(let day, let product):
+            return "The legacy SPC client cannot fetch \(product) on \(day); a day-aware implementation is required."
         case .rateLimited(let retryAfter):
             if let retryAfter {
                 return "SPC rate limited (429). Retry after \(retryAfter) seconds."
