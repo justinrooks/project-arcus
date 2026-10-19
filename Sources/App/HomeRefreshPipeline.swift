@@ -72,6 +72,11 @@ struct HomeOutlookSnapshot {
 @MainActor
 @Observable
 final class HomeRefreshPipeline {
+    enum ManualRefreshSource: Equatable {
+        case today
+        case alerts
+    }
+
     private enum RefreshOutcome: Equatable {
         case completed
         case failed
@@ -122,6 +127,7 @@ final class HomeRefreshPipeline {
     private(set) var didManualRefreshFail = false
     private(set) var didManualAlertRefreshFail = false
     private(set) var manualRefreshAccessibilityEvent: HomeManualRefreshAccessibilityEvent?
+    private(set) var manualRefreshSuccessEvent: UUID?
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
@@ -231,14 +237,18 @@ final class HomeRefreshPipeline {
         foregroundTimerTask = nil
     }
 
-    func forceRefreshCurrentContext(showsLoading: Bool, environment: Environment) async {
+    func forceRefreshCurrentContext(
+        showsLoading: Bool,
+        environment: Environment,
+        source: ManualRefreshSource = .today
+    ) async {
         updateEnvironment(environment)
         isManualRefreshInFlight = true
         didManualRefreshFail = false
         didManualAlertRefreshFail = false
         manualRefreshProjectionKey = environment.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
         postManualRefreshAccessibilityEvent("Refreshing conditions.")
-        await submit(.manual, waitsForCompletion: showsLoading)
+        await submit(.manual, waitsForCompletion: showsLoading, manualRefreshSource: source)
     }
 
     func refreshOutlooksManually(environment: Environment) async {
@@ -364,7 +374,11 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func submit(_ trigger: HomeView.RefreshTrigger, waitsForCompletion: Bool) async {
+    private func submit(
+        _ trigger: HomeView.RefreshTrigger,
+        waitsForCompletion: Bool,
+        manualRefreshSource: ManualRefreshSource = .today
+    ) async {
         guard let environment else { return }
 
         if trigger == .contextChanged {
@@ -392,7 +406,7 @@ final class HomeRefreshPipeline {
                 coreResolutionAttemptID: coreResolutionAttemptID
             )
             if trigger == .manual {
-                completeManualRefresh(outcome: outcome)
+                completeManualRefresh(outcome: outcome, source: manualRefreshSource)
             }
             return
         }
@@ -410,7 +424,7 @@ final class HomeRefreshPipeline {
                 coreResolutionAttemptID: coreResolutionAttemptID
             )
             if trigger == .manual {
-                self.completeManualRefresh(outcome: outcome)
+                self.completeManualRefresh(outcome: outcome, source: manualRefreshSource)
             } else if outcome == .completed {
                 self.didManualRefreshFail = false
                 self.didManualAlertRefreshFail = false
@@ -499,7 +513,7 @@ final class HomeRefreshPipeline {
         return .completed
     }
 
-    private func completeManualRefresh(outcome: RefreshOutcome) {
+    private func completeManualRefresh(outcome: RefreshOutcome, source: ManualRefreshSource) {
         isManualRefreshInFlight = false
         let currentProjectionKey = environment?.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
         guard currentProjectionKey == manualRefreshProjectionKey else {
@@ -511,6 +525,9 @@ final class HomeRefreshPipeline {
         switch outcome {
         case .completed:
             didManualRefreshFail = false
+            if source == .today {
+                manualRefreshSuccessEvent = UUID()
+            }
             postManualRefreshAccessibilityEvent("Conditions refreshed.")
         case .failed:
             didManualRefreshFail = true

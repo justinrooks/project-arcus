@@ -1748,7 +1748,38 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.isManualRefreshInFlight == false)
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Conditions refreshed.")
+        #expect(pipeline.manualRefreshSuccessEvent != nil)
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == "Conditions up to date")
+    }
+
+    @Test("successful Alerts refresh does not emit a Today review eligibility event")
+    func manualRefresh_fromAlertsDoesNotEmitReviewEligibleEvent() async {
+        let context = makeContext()
+        let acceptedAt = Date()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationContext: context,
+                refreshKey: context.refreshKey,
+                weatherRefreshResult: .success(nil),
+                freshness: HomeFreshnessState(
+                    lastHotFeedSyncAt: acceptedAt,
+                    lastMapProductSyncAt: acceptedAt,
+                    lastOutlookSyncAt: acceptedAt,
+                    lastWeatherSyncAt: acceptedAt
+                )
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession),
+            source: .alerts
+        )
+
+        #expect(pipeline.didManualRefreshFail == false)
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
     }
 
     @Test("manual refresh keeps initial resolution active when fresh location changes")
@@ -1818,6 +1849,7 @@ struct HomeRefreshPipelineTests {
 
         #expect(pipeline.didManualRefreshFail)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refresh couldn't complete.")
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
     }
 
@@ -1853,6 +1885,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.isManualRefreshInFlight == false)
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refreshing conditions.")
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
         #expect(
             pipeline.isInitialCoreResolutionInFlight(

@@ -9,6 +9,7 @@ import SwiftUI
 import OSLog
 import SwiftData
 import Foundation
+import StoreKit
 import ArcusCore
 
 struct HomeView: View {
@@ -17,12 +18,16 @@ struct HomeView: View {
     @Environment(LocationSession.self) private var locationSession
     @Environment(RemoteAlertPresentationState.self) private var remoteAlertPresentationState
     @Environment(RuntimeConnectivityState.self) private var runtimeConnectivityState
+    @Environment(\.requestReview) private var requestReview
 
     @AppStorage("stormSetupEnabled", store: UserDefaults.shared)
     private var stormSetupEnabled: Bool = false
 
     @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared)
     private var detailedIngredientsEnabled: Bool = false
+
+    @AppStorage("onboardingComplete", store: UserDefaults.shared)
+    private var onboardingComplete: Bool = false
 
     @Query(sort: [SortDescriptor(\ConvectiveOutlook.published, order: .reverse)])
     private var cachedOutlooks: [ConvectiveOutlook]
@@ -36,6 +41,7 @@ struct HomeView: View {
     @State private var crossSurfaceNavigationRequest: HomeTabNavigationRequest?
     @State private var outlookNavigationState = HomeOutlookNavigationState()
     @State private var projectionRetentionTask: Task<Void, Never>?
+    @State private var reviewRequestTask: Task<Void, Never>?
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
     @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
@@ -89,6 +95,14 @@ struct HomeView: View {
                 localAlertsDisplayState: localAlertsDisplayState,
                 stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse
             )
+            .onChange(of: refreshPipeline.manualRefreshSuccessEvent) { _, event in
+                guard event != nil else { return }
+                scheduleReviewRequestIfEligible(presentation: presentation)
+            }
+            .onChange(of: presentation.alerts.map(\.id)) { _, _ in
+                reviewRequestTask?.cancel()
+                reviewRequestTask = nil
+            }
         }
         .onChange(of: refreshPipeline.manualRefreshAccessibilityEvent) { _, event in
             guard let event else { return }
@@ -132,6 +146,43 @@ struct HomeView: View {
             stormSetupRefreshKey: refreshPipeline.stormSetupRefreshKey,
             isUITestStaticMode: isUITestStaticMode,
             now: now
+        )
+    }
+
+    private func scheduleReviewRequestIfEligible(presentation: HomePresentationSnapshot) {
+        reviewRequestTask?.cancel()
+        reviewRequestTask = nil
+
+        let ledger = AppReviewRequestLedger.live()
+        ledger.recordSuccessfulManualRefresh()
+        guard let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              ledger.isEligible(
+                appVersion: appVersion,
+                onboardingComplete: onboardingComplete,
+                hasActiveAlerts: !presentation.alerts.isEmpty
+              ) else {
+            return
+        }
+
+        reviewRequestTask = AppReviewRequestSchedule.makeTask(
+            appVersion: appVersion,
+            ledger: ledger,
+            isStillEligible: {
+                guard scenePhase == .active,
+                      selectedTab == .today,
+                      onboardingComplete,
+                      refreshPipeline.alerts.isEmpty,
+                      let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                      currentVersion == appVersion else {
+                    return false
+                }
+                return ledger.isEligible(
+                    appVersion: currentVersion,
+                    onboardingComplete: onboardingComplete,
+                    hasActiveAlerts: !refreshPipeline.alerts.isEmpty
+                )
+            },
+            requestReview: { requestReview() }
         )
     }
 
@@ -313,7 +364,8 @@ struct HomeView: View {
             refreshAction: {
                 await refreshPipeline.forceRefreshCurrentContext(
                     showsLoading: true,
-                    environment: refreshEnvironment
+                    environment: refreshEnvironment,
+                    source: .today
                 )
             },
             refreshStormSetupAction: {
@@ -347,7 +399,8 @@ struct HomeView: View {
                     refreshPipeline.resetLocationRefreshContext()
                     await refreshPipeline.forceRefreshCurrentContext(
                         showsLoading: true,
-                        environment: refreshEnvironment
+                        environment: refreshEnvironment,
+                        source: .alerts
                     )
                 },
                 onFocusedAlertRequestHandled: { requestID in
@@ -482,6 +535,8 @@ struct HomeView: View {
             .toolbarBackground(.skyAwareBackground, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
             .onChange(of: selectedTab) { oldTab, newTab in
+                reviewRequestTask?.cancel()
+                reviewRequestTask = nil
                 outlookNavigationState.tabSelectionChanged(
                     from: oldTab,
                     to: newTab
@@ -496,6 +551,10 @@ struct HomeView: View {
             await refreshPipeline.handleScenePhaseChange(scenePhase, environment: refreshEnvironment)
         }
         .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active {
+                reviewRequestTask?.cancel()
+                reviewRequestTask = nil
+            }
             guard isUITestStaticMode == false else { return }
             Task {
                 await refreshPipeline.handleScenePhaseChange(newPhase, environment: refreshEnvironment)
@@ -534,6 +593,7 @@ struct HomeView: View {
         }
         .onDisappear {
             projectionRetentionTask?.cancel()
+            reviewRequestTask?.cancel()
         }
         .onChange(of: stormSetupEnabled) { oldValue, newValue in
             scheduleStormSetupSettingsRefreshIfNeeded(
