@@ -4,6 +4,41 @@ import Testing
 
 @Suite("Map Legend Accessibility")
 struct MapLegendAccessibilityTests {
+    @Test("resolving keeps the visible headline stable and exposes updating status")
+    func resolving_keepsHeadlineStableAndExposesUpdatingStatus() {
+        let current = MapLegendState.current(
+            for: .categorical,
+            severeItems: [],
+            fireItems: [],
+            showsHatchingExplanation: false
+        ).withForecast(day: .day2)
+        let resolving = current.withPresentationState(.resolving)
+
+        #expect(current.headlineText == "Day 2 · Severe Risk")
+        #expect(resolving.headlineText == current.headlineText)
+        #expect(!current.showsUpdatingStatus)
+        #expect(resolving.showsUpdatingStatus)
+        #expect(resolving.voiceOverText.contains("Updating severe risk"))
+    }
+
+    @Test("only resolving state shows the updating status")
+    func updatingStatus_isLimitedToResolving() {
+        let states: [MapLegendPresentationState] = [
+            .loading, .current, .confirmedEmpty, .stale, .unavailable
+        ]
+
+        for presentationState in states {
+            let state = MapLegendState.current(
+                for: .categorical,
+                severeItems: [],
+                fireItems: [],
+                showsHatchingExplanation: false
+            ).withPresentationState(presentationState)
+
+            #expect(!state.showsUpdatingStatus)
+        }
+    }
+
     @Test("categorical legend exposes layer and level separately")
     func categoricalLegend_exposesLayerAndLevelSeparately() {
         let contract = MapLegendAccessibility.categorical(risk: .moderate)
