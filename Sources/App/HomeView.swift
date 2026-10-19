@@ -372,7 +372,11 @@ struct HomeView: View {
             isVisible: selectedTab == .map,
             foregroundRefreshGeneration: refreshPipeline.foregroundRefreshGeneration,
             navigationRequest: crossSurfaceNavigationRequest,
-            onNavigationRequestHandled: { crossSurfaceNavigationRequest = nil },
+            onNavigationRequestHandled: { requestID in
+                if crossSurfaceNavigationRequest?.id == requestID {
+                    crossSurfaceNavigationRequest = nil
+                }
+            },
             onOpenOutlookDiscussion: openOutlookDiscussion,
             primaryAwareness: primaryAwarenessState(
                 presentation: presentation,
@@ -409,7 +413,11 @@ struct HomeView: View {
                 isVisible: selectedTab == .outlooks,
                 navigationRequest: crossSurfaceNavigationRequest,
                 navigationPath: $outlookNavigationPath,
-                onNavigationRequestHandled: { crossSurfaceNavigationRequest = nil },
+                onNavigationRequestHandled: { requestID in
+                    if crossSurfaceNavigationRequest?.id == requestID {
+                        crossSurfaceNavigationRequest = nil
+                    }
+                },
                 onOpenMap: { day in openMap(day: day, layer: .categorical) },
                 onRefresh: {
                     logger.notice("Manual convective outlook refresh requested")
@@ -829,9 +837,25 @@ struct HomeTabNavigationRequest: Identifiable, Equatable {
 
 struct HomeTabNavigationRequestGate {
     private(set) var handledRequestID: UUID? = nil
+    private(set) var pendingRequestID: UUID? = nil
+
+    mutating func markPending(_ requestID: UUID) {
+        guard handledRequestID != requestID else { return }
+        pendingRequestID = requestID
+    }
 
     mutating func claim(_ requestID: UUID) -> Bool {
         guard handledRequestID != requestID else { return false }
+        handledRequestID = requestID
+        if pendingRequestID == requestID {
+            pendingRequestID = nil
+        }
+        return true
+    }
+
+    mutating func cancelPending(_ requestID: UUID) -> Bool {
+        guard pendingRequestID == requestID else { return false }
+        pendingRequestID = nil
         handledRequestID = requestID
         return true
     }

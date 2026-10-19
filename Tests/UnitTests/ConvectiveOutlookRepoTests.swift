@@ -1238,7 +1238,7 @@ struct ConvectiveOutlookDayPresentationTests {
             refreshStatus: .loading,
             hasAcceptedEmptySnapshot: false,
             isOffline: false
-        ) == .pending)
+        ) == .pending(.day2))
         #expect(ConvectiveOutlookView.navigationResolution(
             for: .day2,
             opensLatestDiscussion: true,
@@ -1246,7 +1246,7 @@ struct ConvectiveOutlookDayPresentationTests {
             refreshStatus: .success(hasContent: true),
             hasAcceptedEmptySnapshot: false,
             isOffline: false
-        ) == .resolved([collection[1]]))
+        ) == .resolved(day: .day2, path: [collection[1]]))
         #expect(ConvectiveOutlookView.navigationResolution(
             for: .day2,
             opensLatestDiscussion: true,
@@ -1254,7 +1254,7 @@ struct ConvectiveOutlookDayPresentationTests {
             refreshStatus: .failed,
             hasAcceptedEmptySnapshot: false,
             isOffline: false
-        ) == .resolved([]))
+        ) == .resolved(day: .day2, path: []))
 
         #expect(ConvectiveOutlookView.latestAcceptedOutlook(
             for: .day2,
@@ -1335,6 +1335,18 @@ struct ConvectiveOutlookDayPresentationTests {
         let repeatedExplicitRequest = HomeTabNavigationRequest(destination: .map(day: .day2, layer: .categorical))
         let repeatedRequestWasClaimed = gate.claim(repeatedExplicitRequest.id)
         #expect(repeatedRequestWasClaimed)
+
+        var pendingGate = HomeTabNavigationRequestGate()
+        let pendingRequest = HomeTabNavigationRequest(destination: .outlooks(day: .day2, opensLatestDiscussion: true))
+        pendingGate.markPending(pendingRequest.id)
+        let unrelatedRequest = HomeTabNavigationRequest(destination: .map(day: .day1, layer: .categorical))
+        let unrelatedCancellationSucceeded = pendingGate.cancelPending(unrelatedRequest.id)
+        let matchingCancellationSucceeded = pendingGate.cancelPending(pendingRequest.id)
+        let abandonedRequestWasReplayed = pendingGate.claim(pendingRequest.id)
+        #expect(unrelatedCancellationSucceeded == false)
+        #expect(matchingCancellationSucceeded)
+        #expect(pendingGate.pendingRequestID == nil)
+        #expect(abandonedRequestWasReplayed == false)
     }
 
     @Test("latest and earlier are scoped to the selected day", arguments: [SPCForecastDay.day1, .day2, .day3])

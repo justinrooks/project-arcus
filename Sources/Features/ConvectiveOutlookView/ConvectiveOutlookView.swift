@@ -9,8 +9,8 @@ import SwiftUI
 
 struct ConvectiveOutlookView: View {
     enum DiscussionNavigationResolution: Equatable {
-        case pending
-        case resolved([ConvectiveOutlookDTO])
+        case pending(SPCForecastDay)
+        case resolved(day: SPCForecastDay?, path: [ConvectiveOutlookDTO])
     }
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -25,7 +25,7 @@ struct ConvectiveOutlookView: View {
     let isVisible: Bool
     let navigationRequest: HomeTabNavigationRequest?
     @Binding var navigationPath: [ConvectiveOutlookDTO]
-    let onNavigationRequestHandled: () -> Void
+    let onNavigationRequestHandled: (UUID) -> Void
     let onOpenMap: (SPCForecastDay) -> Void
 
     private var dayPresentation: ConvectiveOutlookDayPresentation {
@@ -68,31 +68,40 @@ struct ConvectiveOutlookView: View {
         Array(dayPresentation.outlooks.dropFirst())
     }
 
-    private func applyNavigationRequestIfNeeded() -> Bool {
+    private enum NavigationRequestResult {
+        case notApplicable
+        case pending
+        case handled
+    }
+
+    private func applyNavigationRequestIfNeeded() -> NavigationRequestResult {
         guard isVisible,
               let navigationRequest,
               case let .outlooks(day, opensLatestDiscussion) = navigationRequest.destination else {
-            return false
+            return .notApplicable
         }
 
-        guard case let .resolved(path) = Self.navigationResolution(
+        switch Self.navigationResolution(
             for: day,
             opensLatestDiscussion: opensLatestDiscussion,
             dtos: dtos,
             refreshStatus: refreshStatus,
             hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
             isOffline: isOffline
-        ) else {
-            return false
+        ) {
+        case let .pending(requestedDay):
+            selectedDay = requestedDay
+            navigationRequestGate.markPending(navigationRequest.id)
+            return .pending
+        case let .resolved(requestedDay, path):
+            if let requestedDay {
+                selectedDay = requestedDay
+            }
+            guard navigationRequestGate.claim(navigationRequest.id) else { return .handled }
+            navigationPath = path
+            onNavigationRequestHandled(navigationRequest.id)
+            return .handled
         }
-
-        guard navigationRequestGate.claim(navigationRequest.id) else { return false }
-        if day != .current {
-            selectedDay = day
-        }
-        navigationPath = path
-        onNavigationRequestHandled()
-        return true
     }
 
     static func navigationResolution(
@@ -103,7 +112,7 @@ struct ConvectiveOutlookView: View {
         hasAcceptedEmptySnapshot: Bool,
         isOffline: Bool
     ) -> DiscussionNavigationResolution {
-        guard day != .current, opensLatestDiscussion else { return .resolved([]) }
+        guard day != .current, opensLatestDiscussion else { return .resolved(day: nil, path: []) }
         let presentation = ConvectiveOutlookDayPresentation(
             day: day,
             collection: dtos,
@@ -113,11 +122,11 @@ struct ConvectiveOutlookView: View {
         )
         switch presentation.state {
         case .loading:
-            return .pending
+            return .pending(day)
         case .unavailable, .empty:
-            return .resolved([])
+            return .resolved(day: day, path: [])
         case .populated:
-            return .resolved(presentation.outlooks.first.map { [$0] } ?? [])
+            return .resolved(day: day, path: presentation.outlooks.first.map { [$0] } ?? [])
         }
     }
 
@@ -157,7 +166,7 @@ struct ConvectiveOutlookView: View {
         ) {
         case .pending:
             return []
-        case let .resolved(path):
+        case let .resolved(_, path):
             return path
         }
     }
@@ -170,7 +179,7 @@ struct ConvectiveOutlookView: View {
         isVisible: Bool = true,
         navigationRequest: HomeTabNavigationRequest? = nil,
         navigationPath: Binding<[ConvectiveOutlookDTO]> = .constant([]),
-        onNavigationRequestHandled: @escaping () -> Void = {},
+        onNavigationRequestHandled: @escaping (UUID) -> Void = { _ in },
         onOpenMap: @escaping (SPCForecastDay) -> Void = { _ in },
         onRefresh: (() async -> Void)? = nil
     ) {
@@ -314,9 +323,14 @@ struct ConvectiveOutlookView: View {
         .onChange(of: isVisible, initial: true) { _, newValue in
             guard newValue else {
                 navigationPath = []
+                if let pendingRequestID = navigationRequestGate.pendingRequestID,
+                   pendingRequestID == navigationRequest?.id,
+                   navigationRequestGate.cancelPending(pendingRequestID) {
+                    onNavigationRequestHandled(pendingRequestID)
+                }
                 return
             }
-            guard applyNavigationRequestIfNeeded() == false else { return }
+            guard case .notApplicable = applyNavigationRequestIfNeeded() else { return }
             selectedDay = .day1
             navigationPath = []
         }

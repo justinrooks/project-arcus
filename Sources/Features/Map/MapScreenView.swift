@@ -48,7 +48,7 @@ struct MapScreenView: View {
     private let isVisible: Bool
     private let foregroundRefreshGeneration: Int
     private let navigationRequest: HomeTabNavigationRequest?
-    private let onNavigationRequestHandled: () -> Void
+    private let onNavigationRequestHandled: (UUID) -> Void
     private let onOpenOutlookDiscussion: (HomeTabNavigationRequest) -> Void
 
     init(
@@ -56,7 +56,7 @@ struct MapScreenView: View {
         isVisible: Bool = true,
         foregroundRefreshGeneration: Int = 0,
         navigationRequest: HomeTabNavigationRequest? = nil,
-        onNavigationRequestHandled: @escaping () -> Void = {},
+        onNavigationRequestHandled: @escaping (UUID) -> Void = { _ in },
         onOpenOutlookDiscussion: @escaping (HomeTabNavigationRequest) -> Void = { _ in },
         primaryAwareness: SummaryAwarenessPrimaryState = .quiet
     ) {
@@ -159,13 +159,13 @@ struct MapScreenView: View {
         }
 
         guard MapForecastSelection.supports(day: day, layer: layer) else {
-            onNavigationRequestHandled()
+            onNavigationRequestHandled(navigationRequest.id)
             return true
         }
 
         selected = layer
         _ = model.selectForecast(day: day, layer: layer)
-        onNavigationRequestHandled()
+        onNavigationRequestHandled(navigationRequest.id)
         return true
     }
 }
