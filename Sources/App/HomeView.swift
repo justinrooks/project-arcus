@@ -484,8 +484,7 @@ struct HomeView: View {
             .onChange(of: selectedTab) { oldTab, newTab in
                 outlookNavigationState.tabSelectionChanged(
                     from: oldTab,
-                    to: newTab,
-                    navigationRequest: crossSurfaceNavigationRequest
+                    to: newTab
                 )
             }
         }
@@ -687,6 +686,7 @@ extension HomeView {
     }
 
     private func openOutlookDiscussion(_ request: HomeTabNavigationRequest) {
+        outlookNavigationState.prepareExplicitOutlooksEntry(request)
         crossSurfaceNavigationRequest = request
         selectedTab = .outlooks
     }
@@ -846,16 +846,22 @@ struct HomeTabNavigationRequest: Identifiable, Equatable {
 struct HomeOutlookNavigationState {
     var selectedDay: SPCForecastDay = .day1
     var navigationPath: [ConvectiveOutlookDTO] = []
+    private(set) var pendingExplicitEntryRequestID: UUID?
+
+    mutating func prepareExplicitOutlooksEntry(_ request: HomeTabNavigationRequest) {
+        guard case let .outlooks(day, _) = request.destination else { return }
+        pendingExplicitEntryRequestID = request.id
+        selectedDay = day
+        navigationPath = []
+    }
 
     mutating func tabSelectionChanged(
         from oldTab: HomeView.HomeTab,
-        to newTab: HomeView.HomeTab,
-        navigationRequest: HomeTabNavigationRequest?
+        to newTab: HomeView.HomeTab
     ) {
         guard oldTab != .outlooks, newTab == .outlooks else { return }
-        if let navigationRequest, case let .outlooks(day, _) = navigationRequest.destination {
-            selectedDay = day
-            navigationPath = []
+        if pendingExplicitEntryRequestID != nil {
+            pendingExplicitEntryRequestID = nil
             return
         }
         selectedDay = .day1
