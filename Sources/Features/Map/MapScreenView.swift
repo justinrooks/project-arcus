@@ -13,6 +13,23 @@ enum MapSurfaceStyle {
     static let lightWeatherContent = Color(red: 0xFC / 255, green: 0xFC / 255, blue: 0xFD / 255)
 }
 
+enum MapOutlookDiscussionPolicy {
+    static func request(for day: SPCForecastDay, layer: MapLayer) -> HomeTabNavigationRequest? {
+        let product: SPCForecastProduct
+        switch layer {
+        case .categorical: product = .categorical
+        case .wind: product = .wind
+        case .hail: product = .hail
+        case .tornado: product = .tornado
+        case .meso: product = .meso
+        case .fire: product = .fire
+        }
+
+        guard product != .fire, product != .meso, product.supports(day) else { return nil }
+        return HomeTabNavigationRequest(destination: .outlooks(day: day, opensLatestDiscussion: true))
+    }
+}
+
 struct MapScreenView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
@@ -25,13 +42,14 @@ struct MapScreenView: View {
     @Binding private var selected: MapLayer
     @State private var model = MapFeatureModel()
     @State private var reloadCoordinator = MapReloadCoordinator()
+    @State private var navigationRequestGate = HomeTabNavigationRequestGate()
 
     private let primaryAwareness: SummaryAwarenessPrimaryState
     private let isVisible: Bool
     private let foregroundRefreshGeneration: Int
     private let navigationRequest: HomeTabNavigationRequest?
     private let onNavigationRequestHandled: () -> Void
-    private let onOpenOutlookDiscussion: (SPCForecastDay) -> Void
+    private let onOpenOutlookDiscussion: (HomeTabNavigationRequest) -> Void
 
     init(
         selectedLayer: Binding<MapLayer> = .constant(.categorical),
@@ -39,7 +57,7 @@ struct MapScreenView: View {
         foregroundRefreshGeneration: Int = 0,
         navigationRequest: HomeTabNavigationRequest? = nil,
         onNavigationRequestHandled: @escaping () -> Void = {},
-        onOpenOutlookDiscussion: @escaping (SPCForecastDay) -> Void = { _ in },
+        onOpenOutlookDiscussion: @escaping (HomeTabNavigationRequest) -> Void = { _ in },
         primaryAwareness: SummaryAwarenessPrimaryState = .quiet
     ) {
         _selected = selectedLayer
@@ -81,13 +99,13 @@ struct MapScreenView: View {
                 model.setWarningGeometryVisible(showsWarningGeometry)
             }
         }
-        .onChange(of: isVisible) { _, newValue in
+        .onChange(of: isVisible, initial: true) { _, newValue in
             reloadCoordinator.updateLifecycle(isActive: scenePhase == .active, isVisible: newValue)
             guard newValue else { return }
             guard applyNavigationRequestIfNeeded() == false else { return }
             _ = model.selectForecast(day: .day1, layer: selected)
         }
-        .onChange(of: navigationRequest?.id) { _, _ in
+        .onChange(of: navigationRequest?.id, initial: true) { _, _ in
             _ = applyNavigationRequestIfNeeded()
         }
         .onChange(of: viewportCoordinate, initial: true) { _, newValue in
@@ -135,8 +153,14 @@ struct MapScreenView: View {
     private func applyNavigationRequestIfNeeded() -> Bool {
         guard isVisible,
               let navigationRequest,
-              case let .map(day, layer) = navigationRequest.destination else {
+              case let .map(day, layer) = navigationRequest.destination,
+              navigationRequestGate.claim(navigationRequest.id) else {
             return false
+        }
+
+        guard MapForecastSelection.supports(day: day, layer: layer) else {
+            onNavigationRequestHandled()
+            return true
         }
 
         selected = layer
@@ -155,7 +179,7 @@ private struct MapScreenContent: View {
 
     let forecastDay: SPCForecastDay
     let onSelectForecastDay: (SPCForecastDay) -> Void
-    let onOpenOutlookDiscussion: (SPCForecastDay) -> Void
+    let onOpenOutlookDiscussion: (HomeTabNavigationRequest) -> Void
     let scene: MapLayerScene
     let locationCoordinate: CLLocationCoordinate2D?
     let primaryAwareness: SummaryAwarenessPrimaryState
@@ -251,9 +275,9 @@ private struct MapScreenContent: View {
 
     @ViewBuilder
     private var discussionButton: some View {
-        if MapForecastSelection.supports(day: forecastDay, layer: selected) {
+        if let request = MapOutlookDiscussionPolicy.request(for: forecastDay, layer: selected) {
             Button {
-                onOpenOutlookDiscussion(forecastDay)
+                onOpenOutlookDiscussion(request)
             } label: {
                 Image(systemName: "text.bubble")
                     .frame(minWidth: 44, minHeight: 44)

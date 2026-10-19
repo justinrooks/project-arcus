@@ -670,10 +670,8 @@ extension HomeView {
         selectedTab = .map
     }
 
-    private func openOutlookDiscussion(day: SPCForecastDay) {
-        crossSurfaceNavigationRequest = HomeTabNavigationRequest(
-            destination: .outlooks(day: day, opensLatestDiscussion: true)
-        )
+    private func openOutlookDiscussion(_ request: HomeTabNavigationRequest) {
+        crossSurfaceNavigationRequest = request
         selectedTab = .outlooks
     }
 
@@ -819,12 +817,22 @@ extension HomeView {
 
 }
 
-struct HomeTabNavigationRequest: Identifiable {
-    enum Destination {
+struct HomeTabNavigationRequest: Identifiable, Equatable {
+    enum Destination: Equatable {
         case map(day: SPCForecastDay, layer: MapLayer)
         case outlooks(day: SPCForecastDay, opensLatestDiscussion: Bool)
     }
 
     let id = UUID()
     let destination: Destination
+}
+
+struct HomeTabNavigationRequestGate {
+    private(set) var handledRequestID: UUID? = nil
+
+    mutating func claim(_ requestID: UUID) -> Bool {
+        guard handledRequestID != requestID else { return false }
+        handledRequestID = requestID
+        return true
+    }
 }

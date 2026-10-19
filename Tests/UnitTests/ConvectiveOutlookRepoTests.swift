@@ -1231,6 +1231,31 @@ struct ConvectiveOutlookDayPresentationTests {
             outlook(day: 2, time: 100)
         ]
 
+        #expect(ConvectiveOutlookView.navigationResolution(
+            for: .day2,
+            opensLatestDiscussion: true,
+            dtos: [],
+            refreshStatus: .loading,
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        ) == .pending)
+        #expect(ConvectiveOutlookView.navigationResolution(
+            for: .day2,
+            opensLatestDiscussion: true,
+            dtos: collection,
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        ) == .resolved([collection[1]]))
+        #expect(ConvectiveOutlookView.navigationResolution(
+            for: .day2,
+            opensLatestDiscussion: true,
+            dtos: [],
+            refreshStatus: .failed,
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        ) == .resolved([]))
+
         #expect(ConvectiveOutlookView.latestAcceptedOutlook(
             for: .day2,
             dtos: collection,
@@ -1238,6 +1263,43 @@ struct ConvectiveOutlookDayPresentationTests {
             hasAcceptedEmptySnapshot: false,
             isOffline: false
         ) == collection[1])
+        var navigationPath = [collection[0]]
+        navigationPath = ConvectiveOutlookView.navigationPath(
+            for: .day2,
+            opensLatestDiscussion: true,
+            dtos: collection,
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        )
+        #expect(navigationPath == [collection[1]])
+        navigationPath = ConvectiveOutlookView.navigationPath(
+            for: .day3,
+            opensLatestDiscussion: true,
+            dtos: [collection[0]],
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        )
+        #expect(navigationPath.isEmpty)
+        navigationPath = ConvectiveOutlookView.navigationPath(
+            for: .current,
+            opensLatestDiscussion: true,
+            dtos: collection,
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        )
+        #expect(navigationPath.isEmpty)
+        navigationPath = ConvectiveOutlookView.navigationPath(
+            for: .day2,
+            opensLatestDiscussion: false,
+            dtos: collection,
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        )
+        #expect(navigationPath.isEmpty)
         #expect(ConvectiveOutlookView.latestAcceptedOutlook(
             for: .day3,
             dtos: collection,
@@ -1259,6 +1321,20 @@ struct ConvectiveOutlookDayPresentationTests {
             hasAcceptedEmptySnapshot: false,
             isOffline: true
         ) == collection[1])
+    }
+
+    @Test("an initial pending navigation request is claimed once and later explicit requests remain distinct")
+    func requestGateHandlesInitialAndRepeatedDelivery() {
+        var gate = HomeTabNavigationRequestGate()
+        let initialRequest = HomeTabNavigationRequest(destination: .map(day: .day2, layer: .categorical))
+        let initialRequestWasClaimed = gate.claim(initialRequest.id)
+        let duplicateInitialRequestWasClaimed = gate.claim(initialRequest.id)
+        #expect(initialRequestWasClaimed)
+        #expect(duplicateInitialRequestWasClaimed == false)
+
+        let repeatedExplicitRequest = HomeTabNavigationRequest(destination: .map(day: .day2, layer: .categorical))
+        let repeatedRequestWasClaimed = gate.claim(repeatedExplicitRequest.id)
+        #expect(repeatedRequestWasClaimed)
     }
 
     @Test("latest and earlier are scoped to the selected day", arguments: [SPCForecastDay.day1, .day2, .day3])

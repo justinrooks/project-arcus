@@ -10,6 +10,34 @@ import Testing
 struct MapFeatureModelTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
+    @Test("discussion actions follow convective outlook product availability")
+    func discussionRoutesMatchSupportedProductsAndKeepTheRequestedDay() {
+        for day in [SPCForecastDay.day1, .day2, .day3] {
+            guard case let .outlooks(requestedDay, opensLatestDiscussion)? =
+                    MapOutlookDiscussionPolicy.request(for: day, layer: .categorical)?.destination else {
+                Issue.record("Categorical \(day) should open its matching Outlook discussion")
+                continue
+            }
+            #expect(requestedDay == day)
+            #expect(opensLatestDiscussion)
+        }
+
+        for layer in [MapLayer.wind, .hail, .tornado] {
+            for day in [SPCForecastDay.day1, .day2] {
+                #expect(MapOutlookDiscussionPolicy.request(for: day, layer: layer) != nil)
+            }
+            #expect(MapOutlookDiscussionPolicy.request(for: .day3, layer: layer) == nil)
+            #expect(MapOutlookDiscussionPolicy.request(for: .current, layer: layer) == nil)
+        }
+
+        for layer in [MapLayer.meso, .fire] {
+            for day in SPCForecastDay.allCases {
+                #expect(MapOutlookDiscussionPolicy.request(for: day, layer: layer) == nil)
+            }
+        }
+        #expect(MapOutlookDiscussionPolicy.request(for: .current, layer: .categorical) == nil)
+    }
+
     @Test("reload builds the selected layer scene and shared legend state")
     func reload_buildsSelectedLayerScene() async {
         let model = MapFeatureModel()
