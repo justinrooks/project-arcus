@@ -1321,6 +1321,18 @@ struct HomeViewOutlookDisplayTests {
         #expect(state.navigationPath.isEmpty)
     }
 
+    @Test("actual Outlooks tab exit clears retained detail and preserves the selected day", arguments: [
+        SPCForecastDay.day2, .day3
+    ])
+    func outlooksTabExitClearsPathAndPreservesDay(day: SPCForecastDay) {
+        var state = HomeOutlookNavigationState(selectedDay: day, navigationPath: [makeOutlook(day: day)])
+
+        state.tabSelectionChanged(from: .outlooks, to: .map)
+
+        #expect(state.navigationPath.isEmpty)
+        #expect(state.selectedDay == day)
+    }
+
     @Test("ordinary entry into Outlooks resets day and retained detail path")
     func ordinaryTabEntryResetsOutlooksState() {
         var state = HomeOutlookNavigationState(selectedDay: .day3, navigationPath: [makeOutlook(day: .day3)])
