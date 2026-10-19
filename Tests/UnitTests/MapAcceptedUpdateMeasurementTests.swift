@@ -43,7 +43,7 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
             var observedCounts: [String: Int] = [:]
             var selectedOverlayCount = 0
             var selectedOverlayRevision = 0
-            var scenePublicationCount = 0
+            var completedReloads = 0
 
             for _ in 0..<Self.repetitions {
                 await counts.reset()
@@ -68,13 +68,13 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
                 XCTAssertEqual(model.activeScene.legendState.forecastDay, day)
                 XCTAssertEqual(model.activeScene.legendState.presentationState, .current)
                 XCTAssertGreaterThan(selectedOverlayCount, 0)
-                scenePublicationCount += 1
+                completedReloads += 1
             }
 
             lines.append(
                 "MAP_ACCEPTED_UPDATE scenario=\(name) iterations=\(Self.repetitions) " +
                     "reads=\(observedCounts.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")) " +
-                    "selectedScenePublications=\(scenePublicationCount) selectedDay=\(day.rawValue) " +
+                    "completedReloads=\(completedReloads) selectedDay=\(day.rawValue) " +
                     "selectedOverlayCount=\(selectedOverlayCount) " +
                     "selectedOverlayRevision=\(selectedOverlayRevision) " +
                     "wallMedianMs=\(Self.median(wallMilliseconds)) wallMeanMs=\(Self.mean(wallMilliseconds)) " +
