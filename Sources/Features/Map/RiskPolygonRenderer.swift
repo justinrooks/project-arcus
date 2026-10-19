@@ -40,7 +40,7 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
             drawProbability(path: path, zoomScale: zoomScale, in: context)
 
         case .intensity(let level):
-            drawIntensity(path: path, level: level, zoomScale: zoomScale, in: context)
+            drawIntensity(path: path, level: level, drawRect: rect(for: mapRect), zoomScale: zoomScale, in: context)
         }
     }
 
@@ -73,7 +73,9 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         context.restoreGState()
     }
 
-    private func drawIntensity(path: CGPath, level: Int, zoomScale: MKZoomScale, in context: CGContext) {
+    private func drawIntensity(
+        path: CGPath, level: Int, drawRect: CGRect, zoomScale: MKZoomScale, in context: CGContext
+    ) {
         context.saveGState()
 
         let softFill = riskOverlay.fillColor.withAlphaComponent(min(riskOverlay.fillColor.cgColor.alpha, 0.08))
@@ -90,13 +92,15 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         context.strokePath()
 
         if zoomScale >= Self.hatchZoomThreshold {
-            drawHatch(path: path, level: level, zoomScale: zoomScale, in: context)
+            drawHatch(path: path, level: level, drawRect: drawRect, zoomScale: zoomScale, in: context)
         }
 
         context.restoreGState()
     }
 
-    private func drawHatch(path: CGPath, level: Int, zoomScale: MKZoomScale, in context: CGContext) {
+    private func drawHatch(
+        path: CGPath, level: Int, drawRect: CGRect, zoomScale: MKZoomScale, in context: CGContext
+    ) {
         let style = riskOverlay.hatchStyle ?? HatchStyle.default.adjusted(forIntensityLevel: level)
         let zoomRelaxation = hatchZoomRelaxation(for: zoomScale)
         let screenSpacing = (max(8.0, style.spacing) * zoomRelaxation).clamped(to: 8.0...32.0)
@@ -114,6 +118,9 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         let bounds = path.boundingBoxOfPath.insetBy(dx: -spacing, dy: -spacing)
         let diagonal = hypot(bounds.width, bounds.height)
         let halfLength = diagonal + spacing
+        let lines = Self.hatchLineRange(bounds: bounds, drawRect: drawRect, angle: angle,
+            spacing: spacing, padding: lineWidth + 1 / zoomScale, lineOffset: lineOffset)
+        guard !lines.isEmpty else { return }
 
         context.saveGState()
         context.addPath(path)
@@ -131,15 +138,33 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         }
         context.beginPath()
 
-        var y = -diagonal + lineOffset
-        while y <= diagonal {
+        for index in lines {
+            let y = -diagonal + lineOffset + CGFloat(index) * spacing
             context.move(to: CGPoint(x: -halfLength, y: y))
             context.addLine(to: CGPoint(x: halfLength, y: y))
-            y += spacing
         }
 
         context.strokePath()
         context.restoreGState()
+    }
+
+    /// Select whole stripes in the original polygon-anchored lattice. Keeping their original
+    /// endpoints also preserves dash phase; recentering or shortening a stripe would shift it.
+    static func hatchLineRange(
+        bounds: CGRect, drawRect: CGRect, angle: CGFloat, spacing: CGFloat, padding: CGFloat, lineOffset: CGFloat
+    ) -> Range<Int> {
+        let region = bounds.intersection(drawRect)
+        guard !region.isNull, !region.isEmpty else { return 0..<0 }
+        let local = region.insetBy(dx: -padding, dy: -padding)
+            .offsetBy(dx: -bounds.midX, dy: -bounds.midY)
+            .applying(CGAffineTransform(rotationAngle: -angle))
+        let diagonal = hypot(bounds.width, bounds.height)
+        let start = -diagonal + lineOffset
+        let total = max(0, Int(floor((diagonal - start) / spacing)) + 1)
+        // Round outward and include a spare stripe at either edge for conservative coverage.
+        let first = min(total, max(0, Int(floor((local.minY - start) / spacing)) - 1))
+        let end = min(total, max(first, Int(ceil((local.maxY - start) / spacing)) + 2))
+        return first..<end
     }
 
     private func hatchZoomRelaxation(for zoomScale: MKZoomScale) -> CGFloat {
