@@ -174,7 +174,7 @@ private func makeDiskContainer(for models: [any PersistentModel.Type]) throws ->
 @Suite("ConvectiveOutlookRepo", .serialized)
 struct ConvectiveOutlookRepoTests {
 
-    @Test("refresh inserts parsed outlooks and filters titles containing ' Convective Outlook'")
+    @Test("refresh inserts supported convective outlooks and filters unrelated products")
     func refresh_parsesAndUpserts() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
         try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
@@ -614,14 +614,22 @@ struct ConvectiveOutlookRepoTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("outlooks.sqlite")
-        let rss = "<rss version=\"2.0\"><channel>" + [(1, 12), (2, 11), (3, 10), (2, 9)].map { day, hour in
-            """
-            <item><title>SPC Nov 12, 2025 \(hour)00 UTC Day \(day) Convective Outlook</title>
+        // SPC uses Severe Thunderstorm Outlook for Day 3; the synthetic Convective title hid its rejection.
+        let products = [(1, 12), (2, 11), (3, 10), (2, 9), (3, 8), (1, 7), (4, 6), (10, 5)]
+        let rss = "<rss version=\"2.0\"><channel>" + products.map { day, hour in
+            let product = day == 3 ? "Severe Thunderstorm" : "Convective"
+            return """
+            <item><title>SPC Nov 12, 2025 \(hour)00 UTC Day \(day) \(product) Outlook</title>
             <link>https://www.spc.noaa.gov/products/outlook/day\(day)otlk.html</link>
             <pubDate>Wed, 12 Nov 2025 \(String(format: "%02d", hour)):00:00 GMT</pubDate>
             <description>Discussion for Day \(day)</description></item>
             """
-        }.joined() + "</channel></rss>"
+        }.joined() + """
+        <item><title>SPC Day 2 Fire Weather Outlook</title></item>
+        <item><title>SPC Convective Outlook</title></item>
+        <item><title>SPC Mesoscale Discussion 1234</title></item>
+        </channel></rss>
+        """
         let accepted = try await { () async throws -> ConvectiveOutlookCollectionSnapshot in
             let container = try await MainActor.run {
                 try ModelContainer(for: ConvectiveOutlook.self, configurations: ModelConfiguration(url: storeURL))
@@ -629,6 +637,31 @@ struct ConvectiveOutlookRepoTests {
             let repo = ConvectiveOutlookRepo(modelContainer: container)
             try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(Data(rss.utf8))))
             let snapshot = try await repo.collectionSnapshot()
+            #expect(snapshot.outlooks.count == 6)
+            for day in 1...3 {
+                #expect(snapshot.outlooks.filter { $0.day == day }.count == 2)
+            }
+            // Recognized malformed Day 3, invalid XML, and unrecognized feeds must not replace any day.
+            for rejected in [rss,
+                             "<rss><channel><item>", sampleOnlyNonMatchingTitlesRSS] {
+                // Use an invalid publication date to make the recognized Day 3 item definitively invalid.
+                let malformed = rejected.replacingOccurrences(
+                    of: "Wed, 12 Nov 2025 10:00:00 GMT", with: "invalid date"
+                )
+                do {
+                    try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(Data(malformed.utf8))))
+                    Issue.record("Expected rejected refresh")
+                } catch let error as SpcError {
+                    #expect(error == .parsingError)
+                }
+                #expect(try await repo.collectionSnapshot() == snapshot)
+            }
+            for source in [HTTPResponse.Source.cacheFallback, .localCache] {
+                _ = try await repo.refreshConvectiveOutlooks(using: SourcedRssSpcClient(
+                    response: HTTPResponse(status: 200, headers: [:], data: Data(sampleValidRSS.utf8), source: source)
+                ))
+                #expect(try await repo.collectionSnapshot() == snapshot)
+            }
             do {
                 try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .failure(TestError.boom)))
                 Issue.record("Expected refresh failure")
@@ -639,14 +672,36 @@ struct ConvectiveOutlookRepoTests {
         let reopened = try await MainActor.run {
             try ModelContainer(for: ConvectiveOutlook.self, configurations: ModelConfiguration(url: storeURL))
         }
-        let restored = try await ConvectiveOutlookRepo(modelContainer: reopened).collectionSnapshot()
+        let restoredRepo = ConvectiveOutlookRepo(modelContainer: reopened)
+        let restored = try await restoredRepo.collectionSnapshot()
         #expect(restored == accepted)
+        let provider = SpcProvider(
+            outlookRepo: restoredRepo, mesoRepo: MesoRepo(modelContainer: reopened),
+            alertRepo: AlertRepo(modelContainer: reopened), stormRiskRepo: StormRiskRepo(modelContainer: reopened),
+            severeRiskRepo: SevereRiskRepo(modelContainer: reopened), fireRiskRepo: FireRiskRepo(modelContainer: reopened),
+            spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo(modelContainer: reopened),
+            client: FakeSpcClient(mode: .failure(TestError.boom))
+        )
+        let home = try await HomeSnapshotStore(
+            spcRisk: provider, spcOutlook: provider,
+            arcusAlerts: StubArcusAlertQuerying(activeWarnings: .success([])),
+            arcusMesos: StubArcusMesoQuerying(mesos: .success([]))
+        ).loadSnapshot(for: nil, weather: nil, freshness: .init(), refreshMesos: false)
+        let displayed = await MainActor.run {
+            let pipeline = HomeRefreshPipeline(initialOutlooks: home.outlooks)
+            return HomeView.preferredOutlooks(
+                cachedOutlooks: [], liveOutlooks: pipeline.outlooks, refreshStatus: .success(hasContent: true)
+            )
+        }
+        #expect(displayed == restored.outlooks)
         for day in [SPCForecastDay.day1, .day2, .day3] {
             let presentation = ConvectiveOutlookDayPresentation(
-                day: day, collection: restored.outlooks, refreshStatus: .failed
+                day: day, collection: displayed, refreshStatus: .failed
             )
             #expect(presentation.state == .populated(.failed))
-            #expect(presentation.outlooks.count == (day == .day2 ? 2 : 1))
+            #expect(presentation.outlooks.count == 2)
+            #expect(presentation.outlooks[0].published > presentation.outlooks[1].published)
+            print("issue-732 accepted/restored/Home/presentation Day \(day.rawValue): \(presentation.outlooks.count)")
             #expect(presentation.outlooks.allSatisfy { $0.day == day.rawValue && $0.validUntil == nil })
         }
     }

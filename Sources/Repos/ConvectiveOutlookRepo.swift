@@ -33,12 +33,13 @@ actor ConvectiveOutlookRepo {
         }
         
         let recognizedOutlooks = channel.items
-            .filter { ($0.title ?? "").contains(" Convective Outlook") }
+            .filter { Self.supportedDay(for: $0.title ?? "") != nil }
         guard recognizedOutlooks.isEmpty == false else {
             logger.error("Convective RSS contained no recognized outlooks")
             throw SpcError.parsingError
         }
         let outlooks = recognizedOutlooks.compactMap { makeConvectiveOutlook(from: $0) }
+        logDayCounts(outlooks, stage: "recognized", source: response.source)
 
         guard outlooks.count == recognizedOutlooks.count else {
             logger.error("Convective RSS contained malformed recognized outlooks")
@@ -52,6 +53,7 @@ actor ConvectiveOutlookRepo {
 
         guard await shouldCommit() else { throw CancellationError() }
         try replaceAcceptedCollection(with: outlooks)
+        logDayCounts(outlooks, stage: "accepted", source: response.source)
         logger.debug("Persisted convective outlook refresh count=\(outlooks.count, privacy: .public)")
         return response.source
     }
@@ -125,6 +127,20 @@ actor ConvectiveOutlookRepo {
     }
     
     // MARK: Helpers
+    private static func supportedDay(for title: String) -> Int? {
+        (1...3).first { day in
+            title.range(
+                of: #"\bDay \#(day) (?:Convective|Severe Thunderstorm) Outlook$"#,
+                options: .regularExpression
+            ) != nil
+        }
+    }
+
+    private func logDayCounts(_ outlooks: [ConvectiveOutlook], stage: String, source: HTTPResponse.Source) {
+        let counts = (1...3).map { day in outlooks.filter { $0.day == day }.count }
+        logger.info("Convective RSS stage=\(stage, privacy: .public) source=\(String(describing: source), privacy: .public) day1=\(counts[0], privacy: .public) day2=\(counts[1], privacy: .public) day3=\(counts[2], privacy: .public)")
+    }
+
     private func replaceAcceptedCollection(with items: [ConvectiveOutlook]) throws {
         let previous = try modelContext.fetch(FetchDescriptor<ConvectiveOutlook>())
         for row in previous { modelContext.delete(row) }
@@ -156,9 +172,7 @@ actor ConvectiveOutlookRepo {
         else { return nil }
         
         // Derived Properties
-        let day = title.contains("Day 1") ? 1 :
-            title.contains("Day 2") ? 2 :
-            title.contains("Day 3") ? 3 : nil
+        let day = Self.supportedDay(for: title)
         
         let summary = outlookParser.extractSummary(fullText) ?? "Summary not found"
         let issued = outlookParser.extractIssuedDate(fullText)
