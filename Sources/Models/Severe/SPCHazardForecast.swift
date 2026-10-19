@@ -71,7 +71,8 @@ struct SPCHazardForecastSnapshot: Sendable {
                           let value = Int(props.LABEL2.split(separator: "%").first?
                             .trimmingCharacters(in: .whitespaces) ?? ""), (1...100).contains(value) {
                     probability = .significant(value)
-                } else if SevereRiskShapeDTO.intensityLevel(from: props.LABEL) != nil {
+                } else if let level = SevereRiskShapeDTO.intensityLevel(from: props.LABEL) {
+                    guard !(threat == .hail && level == 3) else { throw SpcError.parsingError }
                     // CIG is conditional intensity, never an unconditional probability.
                     probability = .percent(0)
                 } else { throw SpcError.parsingError }

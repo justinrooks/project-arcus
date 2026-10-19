@@ -2119,18 +2119,21 @@ struct SPCFutureHazardForecastTests {
         let container = try TestStore.container(for: [SPCHazardForecast.self, SevereRisk.self])
         let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
         #expect(try await repo.hazardForecast(for: .day2) == nil)
-        try await repo.acceptHazardForecast(bundle(at: now, label: label), day: .day2, now: now)
+        var supported = bundle(at: now, label: label)
+        if label == "CIG3" { supported[.hail] = bundle(at: now, label: "CIG2")[.hail] }
+        try await repo.acceptHazardForecast(supported, day: .day2, now: now)
         let snapshot = try #require(await repo.hazardForecast(for: .day2))
         #expect(snapshot.day == .day2)
         #expect(snapshot.shapes.count == 3)
         for (shape, threat) in zip(snapshot.shapes, [ThreatType.tornado, .hail, .wind]) {
+            let expectedLabel = threat == .hail && label == "CIG3" ? "CIG2" : label
             #expect(shape.type == threat)
-            #expect(shape.label == label)
+            #expect(shape.label == expectedLabel)
             #expect(shape.polygons.count == 1)
             #expect(shape.stroke == "#000000")
             #expect(shape.fill == "#000000")
             if label.hasPrefix("CIG") {
-                #expect(shape.intensityLevel == Int(label.dropFirst(3)))
+                #expect(shape.intensityLevel == Int(expectedLabel.dropFirst(3)))
                 #expect(shape.probabilities == .percent(0))
             } else {
                 #expect(shape.probabilities == (label == "SIGN" ? .significant(10) : .percent(0.05)))
@@ -2143,11 +2146,12 @@ struct SPCFutureHazardForecastTests {
 
     @Test("Invalid or stale bundle retains all last-known-good hazards",
           arguments: ["fallback", "local", "missing", "decode", "empty", "mixed", "wrongDay",
-                      "older", "stale", "future", "partial", "unknown", "sameIssue", "day3"])
+                      "older", "stale", "future", "partial", "unknown", "sameIssue", "day3", "hailCIG3"])
     func rejection(reason: String) async throws {
         let container = try TestStore.container(for: [SPCHazardForecast.self])
         let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
-        try await repo.acceptHazardForecast(bundle(at: now), day: .day2, now: now)
+        let originalBundle = bundle(at: now)
+        try await repo.acceptHazardForecast(originalBundle, day: .day2, now: now)
         var next = bundle(at: now.addingTimeInterval(3600))
         var day = SPCForecastDay.day2
         switch reason {
@@ -2163,6 +2167,7 @@ struct SPCFutureHazardForecastTests {
         case "sameIssue": next = bundle(at: now, empty: true)
         case "unknown": next = bundle(at: now, label: "UNKNOWN")
         case "day3": day = .day3
+        case "hailCIG3": next[.hail] = bundle(at: now.addingTimeInterval(3600), label: "CIG3")[.hail]
         default:
             let original = try #require(next[.wind]?.data)
             let document = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: original)
@@ -2186,6 +2191,10 @@ struct SPCFutureHazardForecastTests {
         #expect(cached.issued == now.asMinute)
         #expect(cached.shapes.count == 3)
         #expect(cached.shapes.allSatisfy { $0.probabilities == .percent(0.05) })
+        let row = try #require(ModelContext(container).fetch(FetchDescriptor<SPCHazardForecast>()).first)
+        #expect(row.tornado == originalBundle[.tornado]?.data)
+        #expect(row.hail == originalBundle[.hail]?.data)
+        #expect(row.wind == originalBundle[.wind]?.data)
     }
 
     @Test("Distinct hazard payloads retain their mapping while populated Day 1 risk stays authoritative")
