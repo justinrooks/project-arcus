@@ -6,6 +6,13 @@
 //
 
 import ArcusCore
+import Foundation
+
+struct MapForecastPeriod: Sendable, Equatable {
+    let issued: Date
+    let valid: Date
+    let expires: Date
+}
 
 struct MapLegendState: Sendable {
     let presentationState: MapLegendPresentationState
@@ -13,6 +20,8 @@ struct MapLegendState: Sendable {
     let severeItems: [SevereLegendItem]
     let fireItems: [FireLegendItem]
     let showsHatchingExplanation: Bool
+    var forecastDay: SPCForecastDay = .day1
+    var forecastPeriod: MapForecastPeriod?
 
     var allowsInteraction: Bool {
         showsHatchingExplanation &&
@@ -98,16 +107,31 @@ struct MapLegendState: Sendable {
     }
 
     func withPresentationState(_ presentationState: MapLegendPresentationState) -> MapLegendState {
-        MapLegendState(
+        var state = MapLegendState(
             presentationState: presentationState,
             layer: layer,
             severeItems: severeItems,
             fireItems: fireItems,
             showsHatchingExplanation: showsHatchingExplanation
         )
+        state.forecastDay = forecastDay
+        state.forecastPeriod = forecastPeriod
+        return state
+    }
+
+    func withForecast(day: SPCForecastDay, period: MapForecastPeriod? = nil) -> MapLegendState {
+        var state = self
+        state.forecastDay = day
+        state.forecastPeriod = period
+        return state
     }
 
     var headlineText: String {
+        forecastDay == .day2 || forecastDay == .day3
+            ? "\(forecastDay.description) · \(statusHeadlineText)" : statusHeadlineText
+    }
+
+    private var statusHeadlineText: String {
         switch presentationState {
         case .loading:
             "Getting \(layer.legendSubject)…"
@@ -125,6 +149,15 @@ struct MapLegendState: Sendable {
     }
 
     var voiceOverText: String {
+        guard forecastDay == .day2 || forecastDay == .day3 else { return statusVoiceOverText }
+        let periodText = forecastPeriod.map {
+            " Issued \($0.issued.formatted()). Valid \($0.valid.formatted()) through \($0.expires.formatted())."
+        } ?? ""
+        let status = presentationState == .stale ? "Showing saved forecast data." : statusVoiceOverText
+        return "\(forecastDay.description). \(status)\(periodText)"
+    }
+
+    private var statusVoiceOverText: String {
         switch presentationState {
         case .loading:
             "Getting \(layer.legendSubject). Loading."

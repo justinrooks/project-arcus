@@ -94,6 +94,7 @@ struct MapScreenView: View {
     
     @MainActor
     private func scheduleReload() {
+        model.invalidateAcceptedInputs()
         reloadCoordinator.schedule {
             await model.reload(
                 using: dependencies.spcMapData,

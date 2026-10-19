@@ -11,12 +11,39 @@ import Observation
 import OSLog
 import ArcusCore
 
+struct MapForecastSelection: Hashable {
+    let day: SPCForecastDay
+    let layer: MapLayer
+
+    static func supports(day: SPCForecastDay, layer: MapLayer) -> Bool {
+        switch layer {
+        case .categorical: SPCForecastProduct.categorical.supports(day)
+        case .wind: SPCForecastProduct.wind.supports(day)
+        case .hail: SPCForecastProduct.hail.supports(day)
+        case .tornado: SPCForecastProduct.tornado.supports(day)
+        case .meso: SPCForecastProduct.meso.supports(day)
+        case .fire: SPCForecastProduct.fire.supports(day)
+        }
+    }
+}
+
+private extension MapLayerScene {
+    func withForecastDay(_ day: SPCForecastDay) -> Self {
+        Self(canvasState: canvasState,
+             legendState: legendState.withForecast(day: day, period: legendState.forecastPeriod),
+             warningLegendItems: warningLegendItems)
+    }
+}
+
 @MainActor
 @Observable
 final class MapFeatureModel {
     private static let invalidatingFeedIDs: Set<String> = [
         "spc.map.convective",
         "spc.map.fire",
+        "spc.map.categorical.day2",
+        "spc.map.categorical.day3",
+        "spc.map.hazards.day2",
         "arcus.alert",
         "arcus.alerts"
     ]
@@ -24,12 +51,25 @@ final class MapFeatureModel {
     private let logger = Logger.uiMap
     private let polygonMapper = MapPolygonMapper()
     private let planner = MapScenePlanner()
+    private let nowProvider: () -> Date
     private var renderPlans: [MapLayer: MapLayerRenderPlan] = [:]
     private var sceneCache = MapSceneCache()
+    private var forecastPlans: [MapForecastSelection: MapLayerRenderPlan] = [:]
+    private(set) var selectedForecastDay: SPCForecastDay = .day1
     private var currentSelectedLayer: MapLayer = .categorical
     private var showsWarningGeometry = true
     private var isLoading = false
     private var pendingReload = false
+    private var acceptedInputRevision = 0
+
+    init(nowProvider: @escaping () -> Date = Date.init) {
+        self.nowProvider = nowProvider
+    }
+
+    /// Called at scheduling time, before the coordinator can defer the next reload.
+    func invalidateAcceptedInputs() {
+        acceptedInputRevision += 1
+    }
 
     static func shouldReload(forAcceptedFeedID feedID: String) -> Bool {
         invalidatingFeedIDs.contains(feedID) || feedID.hasPrefix("home.hot.")
@@ -71,6 +111,7 @@ final class MapFeatureModel {
 
         while Task.isCancelled == false {
             pendingReload = false
+            let inputRevision = acceptedInputRevision
             let didReplaceRenderPlans = await performReload(
                 using: service,
                 mesoSource: mesoSource,
@@ -78,7 +119,7 @@ final class MapFeatureModel {
             )
 
             if pendingReload == false {
-                if didReplaceRenderPlans == false {
+                if didReplaceRenderPlans == false, inputRevision == acceptedInputRevision {
                     applySelectedLayer(currentSelectedLayer)
                 }
                 return
@@ -117,6 +158,7 @@ final class MapFeatureModel {
         mesoSource: any ArcusMesoQuerying,
         warningSource: any ArcusAlertQuerying
     ) async -> Bool {
+        let inputRevision = acceptedInputRevision
         let selectedLayer = currentSelectedLayer
         let selectedPayload = await fetchSelectedLayerPayload(
             selectedLayer,
@@ -167,10 +209,83 @@ final class MapFeatureModel {
         guard Task.isCancelled == false else { return false }
 
         candidatePlans.merge(remainingPlans) { _, newPlan in newPlan }
+        guard let candidateForecastPlans = await buildForecastPlans(using: service),
+              Task.isCancelled == false, pendingReload == false,
+              inputRevision == acceptedInputRevision else { return false }
+
         renderPlans = candidatePlans
+        forecastPlans = candidateForecastPlans
         sceneCache.removeAll()
         applySelectedLayer(currentSelectedLayer)
         return true
+    }
+
+    /// Fixed supported set: five future plans, replaced together with current plans.
+    /// Serial reload ownership and cache invalidation make accepted replacement the scene generation.
+    private func buildForecastPlans(using service: any SpcMapData) async -> [MapForecastSelection: MapLayerRenderPlan]? {
+        var plans = forecastPlans
+        for day in [SPCForecastDay.day2, .day3] {
+            let categorical = await acceptedForecast { try await service.getCategoricalForecast(for: day) }
+            let hazards = day == .day2
+                ? await acceptedForecast { try await service.getHazardForecast(for: day) }
+                : MapFetchOutcome<SPCHazardForecastSnapshot?>.success(nil)
+            guard !categorical.isCancellation, !hazards.isCancellation else { return nil }
+            for layer in MapLayer.allCases where MapForecastSelection.supports(day: day, layer: layer) {
+                let key = MapForecastSelection(day: day, layer: layer)
+                let category = categorical.value.flatMap { $0 }
+                let hazard = hazards.value.flatMap { $0 }
+                let period: MapForecastPeriod?
+                if layer == .categorical {
+                    period = category.map { MapForecastPeriod(issued: $0.issued, valid: $0.valid, expires: $0.expires) }
+                } else {
+                    period = hazard.map { MapForecastPeriod(issued: $0.issued, valid: $0.valid, expires: $0.expires) }
+                }
+                // Failed or absent reads retain this exact day/product, including accepted-empty identity.
+                guard let period else {
+                    if let previous = plans[key], previous.legendState.forecastPeriod != nil {
+                        plans[key] = previous.withLegendState(previous.legendState.withPresentationState(.stale))
+                    } else {
+                        let empty = MapDataPayload(stormRisk: .failure, severeRisks: .failure,
+                            mesos: .failure, fireRisk: .failure, activeWarnings: .success([]))
+                        let plan = await planner.buildRenderPlan(for: layer, payload: empty, existingPlan: nil,
+                            polygonMapper: polygonMapper, warningPolygons: KeyedMapPolygons(entries: []))
+                        plans[key] = plan.withLegendState(plan.legendState.withForecast(day: day))
+                    }
+                    continue
+                }
+                let payload = MapDataPayload(
+                    stormRisk: category.map { .success($0.risks) } ?? .failure,
+                    severeRisks: hazard.map { snapshot in
+                        .success(snapshot.shapes.filter { shape in
+                            switch layer {
+                            case .wind: shape.type == .wind
+                            case .hail: shape.type == .hail
+                            case .tornado: shape.type == .tornado
+                            default: false
+                            }
+                        })
+                    } ?? .failure,
+                    mesos: .failure, fireRisk: .failure, activeWarnings: .success([])
+                )
+                let plan = await planner.buildRenderPlan(for: layer, payload: payload, existingPlan: nil,
+                    polygonMapper: polygonMapper, warningPolygons: KeyedMapPolygons(entries: []))
+                let legend = period.expires <= nowProvider()
+                    ? plan.legendState.withPresentationState(.stale) : plan.legendState
+                plans[key] = plan.withLegendState(legend.withForecast(day: day, period: period))
+            }
+        }
+        return plans
+    }
+
+    private func acceptedForecast<Value: Sendable>(
+        _ read: @Sendable () async throws -> Value
+    ) async -> MapFetchOutcome<Value> {
+        do { return .success(try await read()) }
+        catch is CancellationError { return .cancelled }
+        catch {
+            logger.error("Failed to read accepted forecast: \(error.localizedDescription, privacy: .public)")
+            return .failure
+        }
     }
 
     private func fetchSelectedLayerPayload(
@@ -266,7 +381,21 @@ final class MapFeatureModel {
             payload.activeWarnings.isCancellation
     }
 
+    @discardableResult
+    func selectForecast(day: SPCForecastDay, layer: MapLayer) -> Bool {
+        guard MapForecastSelection.supports(day: day, layer: layer) else { return false }
+        selectedForecastDay = day
+        currentSelectedLayer = layer
+        applySelectedLayer(layer)
+        return true
+    }
+
     func selectLayer(_ layer: MapLayer) {
+        if layer == .meso || layer == .fire {
+            selectedForecastDay = .current
+        } else if !MapForecastSelection.supports(day: selectedForecastDay, layer: layer) {
+            selectedForecastDay = .day1
+        }
         currentSelectedLayer = layer
         applySelectedLayer(layer)
     }
@@ -291,7 +420,7 @@ final class MapFeatureModel {
     }
 
     private func showRefreshStateForCurrentSelection() {
-        if let scene = sceneCache.scene(for: currentSelectedLayer) ?? renderPlans[currentSelectedLayer].map({ MapSceneMaterializer.materialize(
+        if let scene = sceneCache.scene(for: currentSelectedLayer, day: selectedForecastDay) ?? selectedPlan.map({ MapSceneMaterializer.materialize(
             plan: $0,
             initialCenterCoordinate: initialCenterCoordinate,
             showsWarningGeometry: showsWarningGeometry
@@ -306,21 +435,28 @@ final class MapFeatureModel {
             activeScene = MapLayerScene.placeholder(
                 for: currentSelectedLayer,
                 initialCenterCoordinate: initialCenterCoordinate
-            )
+            ).withForecastDay(selectedForecastDay)
         }
     }
 
+    private var selectedPlan: MapLayerRenderPlan? {
+        if selectedForecastDay == .day2 || selectedForecastDay == .day3 {
+            return forecastPlans[MapForecastSelection(day: selectedForecastDay, layer: currentSelectedLayer)]
+        }
+        return renderPlans[currentSelectedLayer]
+    }
+
     private func applySelectedLayer(_ layer: MapLayer) {
-        guard let plan = renderPlans[layer] else {
+        guard let plan = selectedPlan else {
             activeScene = MapLayerScene.placeholder(
                 for: layer,
                 initialCenterCoordinate: initialCenterCoordinate
-            )
+            ).withForecastDay(selectedForecastDay)
             return
         }
 
-        if let cachedScene = sceneCache.scene(for: layer) {
-            activeScene = cachedScene
+        if let cachedScene = sceneCache.scene(for: layer, day: selectedForecastDay) {
+            activeScene = markingExpiredForecast(cachedScene)
             return
         }
 
@@ -329,8 +465,14 @@ final class MapFeatureModel {
             initialCenterCoordinate: initialCenterCoordinate,
             showsWarningGeometry: showsWarningGeometry
         )
-        sceneCache.insert(scene, for: layer)
-        activeScene = scene
+        let scopedScene = scene.withForecastDay(selectedForecastDay)
+        sceneCache.insert(scopedScene, for: layer, day: selectedForecastDay)
+        activeScene = markingExpiredForecast(scopedScene)
+    }
+
+    private func markingExpiredForecast(_ scene: MapLayerScene) -> MapLayerScene {
+        guard let period = scene.legendState.forecastPeriod, period.expires <= nowProvider() else { return scene }
+        return scene.withPresentationState(.stale)
     }
 
     private func fetchSevereRiskShapes(using service: any SpcMapData) async -> MapFetchOutcome<[SevereRiskShapeDTO]> {
@@ -510,51 +652,54 @@ final class MapReloadCoordinator {
 struct MapSceneCache {
     static let capacity = 2
 
-    private var scenes: [MapLayer: MapLayerScene] = [:]
-    private(set) var layers: [MapLayer] = []
+    private var scenes: [MapForecastSelection: MapLayerScene] = [:]
+    private(set) var selections: [MapForecastSelection] = []
+    var layers: [MapLayer] { selections.map(\.layer) }
 
     var retainedSceneCount: Int { scenes.count }
     var retainedOverlayCount: Int {
         scenes.values.reduce(0) { $0 + $1.canvasState.overlays.count }
     }
 
-    mutating func scene(for layer: MapLayer) -> MapLayerScene? {
-        guard let scene = scenes[layer] else { return nil }
+    mutating func scene(for layer: MapLayer, day: SPCForecastDay = .day1) -> MapLayerScene? {
+        let selection = MapForecastSelection(day: day, layer: layer)
+        guard let scene = scenes[selection] else { return nil }
 
-        touch(layer)
+        touch(selection)
         return scene
     }
 
-    mutating func insert(_ scene: MapLayerScene, for layer: MapLayer) {
-        scenes[layer] = scene
-        touch(layer)
+    mutating func insert(_ scene: MapLayerScene, for layer: MapLayer, day: SPCForecastDay = .day1) {
+        let selection = MapForecastSelection(day: day, layer: layer)
+        scenes[selection] = scene
+        touch(selection)
 
-        while layers.count > Self.capacity {
-            scenes.removeValue(forKey: layers.removeFirst())
+        while selections.count > Self.capacity {
+            scenes.removeValue(forKey: selections.removeFirst())
         }
     }
 
     mutating func removeAll() {
         scenes.removeAll(keepingCapacity: true)
-        layers.removeAll(keepingCapacity: true)
+        selections.removeAll(keepingCapacity: true)
     }
 
     mutating func removeAll(except layer: MapLayer) {
-        scenes = scenes.filter { $0.key == layer }
-        layers = layers.filter { $0 == layer }
+        scenes = scenes.filter { $0.key.layer == layer }
+        selections = selections.filter { $0.layer == layer }
     }
 
     mutating func remove(_ layer: MapLayer) {
-        scenes.removeValue(forKey: layer)
-        layers.removeAll { $0 == layer }
+        scenes = scenes.filter { $0.key.layer != layer }
+        selections.removeAll { $0.layer == layer }
     }
 
     mutating func updateScenes(_ transform: (MapLayerScene) -> MapLayerScene) {
         scenes = scenes.mapValues(transform)
     }
 
-    private mutating func touch(_ layer: MapLayer) {
-        layers.removeAll { $0 == layer }
-        layers.append(layer)
+    private mutating func touch(_ selection: MapForecastSelection) {
+        selections.removeAll { $0 == selection }
+        selections.append(selection)
     }
 }
