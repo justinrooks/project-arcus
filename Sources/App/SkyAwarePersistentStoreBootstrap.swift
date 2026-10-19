@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 import SwiftData
 
-enum SkyAwarePersistenceSchema: VersionedSchema {
+enum SkyAwarePersistenceSchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
 
     static let models: [any PersistentModel.Type] = [
@@ -18,13 +18,20 @@ enum SkyAwarePersistenceSchema: VersionedSchema {
     ]
 }
 
+enum SkyAwarePersistenceSchema: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+    static let models: [any PersistentModel.Type] = SkyAwarePersistenceSchemaV4.models + [SPCCategoricalForecast.self]
+}
+
 enum SkyAwarePersistenceMigrationPlan: SchemaMigrationPlan {
     static let schemas: [any VersionedSchema.Type] = [
         SkyAwarePersistenceSchemaV3.self,
+        SkyAwarePersistenceSchemaV4.self,
         SkyAwarePersistenceSchema.self
     ]
     static let stages: [MigrationStage] = [
-        .lightweight(fromVersion: SkyAwarePersistenceSchemaV3.self, toVersion: SkyAwarePersistenceSchema.self)
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV3.self, toVersion: SkyAwarePersistenceSchemaV4.self),
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV4.self, toVersion: SkyAwarePersistenceSchema.self)
     ]
 }
 

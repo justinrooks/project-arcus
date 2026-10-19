@@ -16,6 +16,51 @@ enum SpcMapBatchPersistenceFailureInjection: Sendable {
 
 @ModelActor
 actor SpcMapBatchPersistenceRepo {
+    /// Replaces only this forecast day, atomically with its source identity and explicit empty state.
+    func acceptCategoricalForecast(
+        _ data: Data, day: SPCForecastDay, source: HTTPResponse.Source, now: Date
+    ) throws {
+        guard source == .live || source == .cacheRevalidated304 else { throw SpcError.parsingError }
+        let snapshot = try SPCCategoricalForecastSnapshot.parse(data, day: day)
+        guard snapshot.issued <= now, snapshot.valid > now,
+              now.timeIntervalSince(snapshot.issued) < 86400 else { throw SpcError.parsingError }
+        let dayValue = day.rawValue
+        let rows = try modelContext.fetch(FetchDescriptor<SPCCategoricalForecast>(
+            predicate: #Predicate { $0.day == dayValue }
+        ))
+        guard rows.allSatisfy({ $0.issued <= snapshot.issued && $0.valid <= snapshot.valid }) else {
+            throw SpcError.parsingError
+        }
+        // Identical issuance metadata with different geometry is an incomplete/corrected publication.
+        // Wait for a new source issuance rather than accepting a partial replacement.
+        if let previous = rows.first, previous.issued == snapshot.issued {
+            guard previous.payload == data else { throw SpcError.parsingError }
+            return
+        }
+        do {
+            try Task.checkCancellation()
+            for row in rows { modelContext.delete(row) }
+            modelContext.insert(SPCCategoricalForecast(
+                day: day, snapshot: snapshot, payload: data,
+                source: source == .live ? "live" : "revalidated", now: now
+            ))
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
+    /// nil is never-loaded; an accepted snapshot may be empty or expired and remains cache-forward.
+    func categoricalForecast(for day: SPCForecastDay) throws -> SPCCategoricalForecastSnapshot? {
+        let dayValue = day.rawValue
+        let rows = try modelContext.fetch(FetchDescriptor<SPCCategoricalForecast>(
+            predicate: #Predicate { $0.day == dayValue }
+        ))
+        guard let row = rows.first else { return nil }
+        return try SPCCategoricalForecastSnapshot.parse(row.payload, day: day)
+    }
+
     private struct ConvectiveDomainBackup {
         let stormRows: [StormRisk]
         let hailRows: [SevereRisk]
