@@ -8,14 +8,25 @@
 import SwiftUI
 
 struct ConvectiveOutlookView: View {
+    enum DiscussionNavigationResolution: Equatable {
+        case pending(SPCForecastDay)
+        case resolved(day: SPCForecastDay?, path: [ConvectiveOutlookDTO])
+    }
+
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedDay: SPCForecastDay = .day1
+    @State private var navigationRequestGate = HomeTabNavigationRequestGate()
 
     let dtos: [ConvectiveOutlookDTO]
     let onRefresh: (() async -> Void)?
     let refreshStatus: ConvectiveOutlookRefreshStatus
     let hasAcceptedEmptySnapshot: Bool
     let isOffline: Bool
+    let isVisible: Bool
+    let navigationRequest: HomeTabNavigationRequest?
+    @Binding var navigationPath: [ConvectiveOutlookDTO]
+    let onNavigationRequestHandled: (UUID) -> Void
+    let onOpenMap: (SPCForecastDay) -> Void
 
     private var dayPresentation: ConvectiveOutlookDayPresentation {
         ConvectiveOutlookDayPresentation(
@@ -31,6 +42,20 @@ struct ConvectiveOutlookView: View {
         dayPresentation.state
     }
 
+    private var navigationRequestState: ConvectiveOutlookPresentationState? {
+        guard let navigationRequest,
+              case let .outlooks(day, _) = navigationRequest.destination else {
+            return nil
+        }
+        return ConvectiveOutlookDayPresentation(
+            day: day,
+            collection: dtos,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
+        ).state
+    }
+
     private var latestOutlook: ConvectiveOutlookDTO? {
         dayPresentation.outlooks.first
     }
@@ -43,11 +68,119 @@ struct ConvectiveOutlookView: View {
         Array(dayPresentation.outlooks.dropFirst())
     }
 
+    private enum NavigationRequestResult {
+        case notApplicable
+        case pending
+        case handled
+    }
+
+    private func applyNavigationRequestIfNeeded() -> NavigationRequestResult {
+        guard isVisible,
+              let navigationRequest,
+              case let .outlooks(day, opensLatestDiscussion) = navigationRequest.destination else {
+            return .notApplicable
+        }
+
+        switch Self.navigationResolution(
+            for: day,
+            opensLatestDiscussion: opensLatestDiscussion,
+            dtos: dtos,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
+        ) {
+        case let .pending(requestedDay):
+            selectedDay = requestedDay
+            navigationRequestGate.markPending(navigationRequest.id)
+            return .pending
+        case let .resolved(requestedDay, path):
+            if let requestedDay {
+                selectedDay = requestedDay
+            }
+            guard navigationRequestGate.claim(navigationRequest.id) else { return .handled }
+            navigationPath = path
+            onNavigationRequestHandled(navigationRequest.id)
+            return .handled
+        }
+    }
+
+    static func navigationResolution(
+        for day: SPCForecastDay,
+        opensLatestDiscussion: Bool,
+        dtos: [ConvectiveOutlookDTO],
+        refreshStatus: ConvectiveOutlookRefreshStatus,
+        hasAcceptedEmptySnapshot: Bool,
+        isOffline: Bool
+    ) -> DiscussionNavigationResolution {
+        guard day != .current, opensLatestDiscussion else { return .resolved(day: nil, path: []) }
+        let presentation = ConvectiveOutlookDayPresentation(
+            day: day,
+            collection: dtos,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
+        )
+        switch presentation.state {
+        case .loading:
+            return .pending(day)
+        case .unavailable, .empty:
+            return .resolved(day: day, path: [])
+        case .populated:
+            return .resolved(day: day, path: presentation.outlooks.first.map { [$0] } ?? [])
+        }
+    }
+
+    static func latestAcceptedOutlook(
+        for day: SPCForecastDay,
+        dtos: [ConvectiveOutlookDTO],
+        refreshStatus: ConvectiveOutlookRefreshStatus,
+        hasAcceptedEmptySnapshot: Bool,
+        isOffline: Bool
+    ) -> ConvectiveOutlookDTO? {
+        let presentation = ConvectiveOutlookDayPresentation(
+            day: day,
+            collection: dtos,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
+        )
+        guard case .populated = presentation.state else { return nil }
+        return presentation.outlooks.first
+    }
+
+    static func navigationPath(
+        for day: SPCForecastDay,
+        opensLatestDiscussion: Bool,
+        dtos: [ConvectiveOutlookDTO],
+        refreshStatus: ConvectiveOutlookRefreshStatus,
+        hasAcceptedEmptySnapshot: Bool,
+        isOffline: Bool
+    ) -> [ConvectiveOutlookDTO] {
+        switch navigationResolution(
+            for: day,
+            opensLatestDiscussion: opensLatestDiscussion,
+            dtos: dtos,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
+        ) {
+        case .pending:
+            return []
+        case let .resolved(_, path):
+            return path
+        }
+    }
+
     init(
         dtos: [ConvectiveOutlookDTO],
         refreshStatus: ConvectiveOutlookRefreshStatus? = nil,
         hasAcceptedEmptySnapshot: Bool = false,
         isOffline: Bool = false,
+        isVisible: Bool = true,
+        navigationRequest: HomeTabNavigationRequest? = nil,
+        navigationPath: Binding<[ConvectiveOutlookDTO]> = .constant([]),
+        onNavigationRequestHandled: @escaping (UUID) -> Void = { _ in },
+        onOpenMap: @escaping (SPCForecastDay) -> Void = { _ in },
         onRefresh: (() async -> Void)? = nil
     ) {
         self.dtos = dtos
@@ -55,6 +188,11 @@ struct ConvectiveOutlookView: View {
         self.refreshStatus = refreshStatus ?? (dtos.isEmpty ? .loading : .success(hasContent: true))
         self.hasAcceptedEmptySnapshot = hasAcceptedEmptySnapshot
         self.isOffline = isOffline
+        self.isVisible = isVisible
+        self.navigationRequest = navigationRequest
+        self._navigationPath = navigationPath
+        self.onNavigationRequestHandled = onNavigationRequestHandled
+        self.onOpenMap = onOpenMap
     }
 
     var body: some View {
@@ -144,10 +282,8 @@ struct ConvectiveOutlookView: View {
                 if let latestOutlook {
                     Section {
                         outlookNavigationRow(
+                            outlook: latestOutlook,
                             identifier: "outlook-latest-row",
-                            destination: {
-                                ConvectiveOutlookDetailView(outlook: latestOutlook)
-                            }
                         ) {
                             OutlookRowView(outlook: latestOutlook)
                         }
@@ -164,10 +300,8 @@ struct ConvectiveOutlookView: View {
                     Section {
                         ForEach(Array(earlierOutlooks.enumerated()), id: \.element.id) { index, dto in
                             outlookNavigationRow(
+                                outlook: dto,
                                 identifier: "outlook-earlier-row-\(index)",
-                                destination: {
-                                    ConvectiveOutlookDetailView(outlook: dto)
-                                }
                             ) {
                                 OutlookRowView(outlook: dto)
                             }
@@ -183,6 +317,29 @@ struct ConvectiveOutlookView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .navigationDestination(for: ConvectiveOutlookDTO.self) { outlook in
+            ConvectiveOutlookDetailView(outlook: outlook, onOpenMap: onOpenMap)
+        }
+        .onChange(of: isVisible, initial: true) { _, newValue in
+            guard newValue else {
+                navigationPath = []
+                if let pendingRequestID = navigationRequestGate.pendingRequestID,
+                   pendingRequestID == navigationRequest?.id,
+                   navigationRequestGate.cancelPending(pendingRequestID) {
+                    onNavigationRequestHandled(pendingRequestID)
+                }
+                return
+            }
+            guard case .notApplicable = applyNavigationRequestIfNeeded() else { return }
+            selectedDay = .day1
+            navigationPath = []
+        }
+        .onChange(of: navigationRequest?.id, initial: true) { _, _ in
+            _ = applyNavigationRequestIfNeeded()
+        }
+        .onChange(of: navigationRequestState) { _, _ in
+            _ = applyNavigationRequestIfNeeded()
+        }
         .listSectionSpacing(15)
         .scrollContentBackground(.hidden)
         .navigationLinkIndicatorVisibility(.hidden)
@@ -336,12 +493,12 @@ struct ConvectiveOutlookView: View {
         }
     }
 
-    private func outlookNavigationRow<Destination: View, RowContent: View>(
+    private func outlookNavigationRow<RowContent: View>(
+        outlook: ConvectiveOutlookDTO,
         identifier: String,
-        @ViewBuilder destination: @escaping () -> Destination,
         @ViewBuilder label: () -> RowContent
     ) -> some View {
-        NavigationLink(destination: destination) {
+        NavigationLink(value: outlook) {
             HStack(spacing: SkyAwareSpacing.standard) {
                 label()
 

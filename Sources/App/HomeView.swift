@@ -33,6 +33,8 @@ struct HomeView: View {
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
     @State private var selectedMapLayer: MapLayer = .categorical
+    @State private var crossSurfaceNavigationRequest: HomeTabNavigationRequest?
+    @State private var outlookNavigationPath: [ConvectiveOutlookDTO] = []
     @State private var projectionRetentionTask: Task<Void, Never>?
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
@@ -369,6 +371,13 @@ struct HomeView: View {
             selectedLayer: $selectedMapLayer,
             isVisible: selectedTab == .map,
             foregroundRefreshGeneration: refreshPipeline.foregroundRefreshGeneration,
+            navigationRequest: crossSurfaceNavigationRequest,
+            onNavigationRequestHandled: { requestID in
+                if crossSurfaceNavigationRequest?.id == requestID {
+                    crossSurfaceNavigationRequest = nil
+                }
+            },
+            onOpenOutlookDiscussion: openOutlookDiscussion,
             primaryAwareness: primaryAwarenessState(
                 presentation: presentation,
                 todayContentState: todayContentState
@@ -395,12 +404,21 @@ struct HomeView: View {
     }
 
     private var outlooksTab: some View {
-        NavigationStack {
+        NavigationStack(path: $outlookNavigationPath) {
             ConvectiveOutlookView(
                 dtos: displayedOutlooks,
                 refreshStatus: refreshPipeline.outlookRefreshStatus,
                 hasAcceptedEmptySnapshot: hasAcceptedEmptyOutlookSnapshot,
                 isOffline: runtimeConnectivityState.isOffline,
+                isVisible: selectedTab == .outlooks,
+                navigationRequest: crossSurfaceNavigationRequest,
+                navigationPath: $outlookNavigationPath,
+                onNavigationRequestHandled: { requestID in
+                    if crossSurfaceNavigationRequest?.id == requestID {
+                        crossSurfaceNavigationRequest = nil
+                    }
+                },
+                onOpenMap: { day in openMap(day: day, layer: .categorical) },
                 onRefresh: {
                     logger.notice("Manual convective outlook refresh requested")
                     await refreshPipeline.refreshOutlooksManually(environment: refreshEnvironment)
@@ -654,6 +672,17 @@ extension HomeView {
         selectedTab = .map
     }
 
+    private func openMap(day: SPCForecastDay, layer: MapLayer) {
+        selectedMapLayer = layer
+        crossSurfaceNavigationRequest = HomeTabNavigationRequest(destination: .map(day: day, layer: layer))
+        selectedTab = .map
+    }
+
+    private func openOutlookDiscussion(_ request: HomeTabNavigationRequest) {
+        crossSurfaceNavigationRequest = request
+        selectedTab = .outlooks
+    }
+
     private func openAlertsTab() {
         selectedTab = .alerts
     }
@@ -794,4 +823,40 @@ extension HomeView {
         LocationReliabilityAskLedger.live().recordSameDaySuppression(qualifyingDay: qualifyingDay)
     }
 
+}
+
+struct HomeTabNavigationRequest: Identifiable, Equatable {
+    enum Destination: Equatable {
+        case map(day: SPCForecastDay, layer: MapLayer)
+        case outlooks(day: SPCForecastDay, opensLatestDiscussion: Bool)
+    }
+
+    let id = UUID()
+    let destination: Destination
+}
+
+struct HomeTabNavigationRequestGate {
+    private(set) var handledRequestID: UUID? = nil
+    private(set) var pendingRequestID: UUID? = nil
+
+    mutating func markPending(_ requestID: UUID) {
+        guard handledRequestID != requestID else { return }
+        pendingRequestID = requestID
+    }
+
+    mutating func claim(_ requestID: UUID) -> Bool {
+        guard handledRequestID != requestID else { return false }
+        handledRequestID = requestID
+        if pendingRequestID == requestID {
+            pendingRequestID = nil
+        }
+        return true
+    }
+
+    mutating func cancelPending(_ requestID: UUID) -> Bool {
+        guard pendingRequestID == requestID else { return false }
+        pendingRequestID = nil
+        handledRequestID = requestID
+        return true
+    }
 }
