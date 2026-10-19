@@ -438,15 +438,100 @@ struct MapAcceptedUpdateScopeTests {
         let entry = try #require(original.canvasState.overlays.first)
         let duplicated = MapLayerScene(canvasState: MapCanvasState(overlays: [entry, entry], overlayRevision: 1,
             initialCenterCoordinate: nil), legendState: original.legendState, warningLegendItems: [])
+        var constructions = 0
         let equal = MapSceneMaterializer.materialize(plan: plan(signature: 1, title: "original"),
-            initialCenterCoordinate: nil, showsWarningGeometry: true, reusing: duplicated)
+            initialCenterCoordinate: nil, showsWarningGeometry: true, reusing: duplicated,
+            makePolygon: { constructions += 1; return $0.polygon })
+        #expect(constructions == 0)
+        #expect(equal.canvasState.overlayRevision == original.canvasState.overlayRevision)
         #expect(equal.canvasState.overlays.first?.overlay === entry.overlay)
         for changed in [plan(signature: 2, title: "original", offset: 0.2),
                         plan(signature: 1, title: "corrected title")] {
             let scene = MapSceneMaterializer.materialize(plan: changed, initialCenterCoordinate: nil,
-                showsWarningGeometry: true, reusing: original)
+                showsWarningGeometry: true, reusing: original,
+                makePolygon: { constructions += 1; return $0.polygon })
             #expect(scene.canvasState.overlays.first?.overlay !== entry.overlay)
         }
+        #expect(constructions == 2)
+    }
+
+    @Test("materialization constructs only changed visible warning geometry and shares thematic polygons")
+    func materializationCountsVisibleChanges() throws {
+        let mapper = MapPolygonMapper()
+        func plan(message: String = "msg-1", hole: Bool = false) -> MapLayerRenderPlan {
+            var rings = [[DeviceAlertCoordinate(longitude: -97, latitude: 35),
+                DeviceAlertCoordinate(longitude: -96, latitude: 35),
+                DeviceAlertCoordinate(longitude: -96, latitude: 36)]]
+            if hole {
+                rings.append([DeviceAlertCoordinate(longitude: -96.8, latitude: 35.1),
+                    DeviceAlertCoordinate(longitude: -96.6, latitude: 35.1),
+                    DeviceAlertCoordinate(longitude: -96.6, latitude: 35.2)])
+            }
+            let warnings = [makeWarning(event: "Tornado Warning", messageId: message,
+                geometry: .polygon(rings: rings))]
+            let payload = MapDataPayload(stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+                severeRisks: .success([]), mesos: .success([]), fireRisk: .success([]),
+                activeWarnings: .success(warnings))
+            let built = MapRenderPlanBuilder.build(layer: .categorical, payload: payload, existingPlan: nil,
+                polygonMapper: mapper, warningPolygons: mapper.warningPolygons(from: warnings))
+            guard hole, let warning = built.polygonEntries.last, let overlay = built.overlayPlans.last else {
+                return built
+            }
+            // Warning ingestion keeps exterior rings only; exercise interior-capable render inputs directly.
+            let entry = MapPolygonEntry(key: warning.key + "|hole", title: warning.title, subtitle: warning.subtitle,
+                coordinates: warning.coordinates, interiorCoordinates: [rings[1].map {
+                    Coordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                }])
+            return MapLayerRenderPlan(layer: built.layer,
+                polygonEntries: Array(built.polygonEntries.dropLast()) + [entry],
+                overlayPlans: Array(built.overlayPlans.dropLast()) + [MapOverlayBuildPlan(
+                    key: entry.key + "|warning", polygonKey: entry.key, kind: .warning, signature: overlay.signature + 1)],
+                overlayRevision: built.overlayRevision, legendState: built.legendState)
+        }
+        var constructions = 0
+        func render(_ plan: MapLayerRenderPlan, visible: Bool = true, previous: MapLayerScene? = nil) -> MapLayerScene {
+            constructions = 0
+            return MapSceneMaterializer.materialize(plan: plan, initialCenterCoordinate: nil,
+                showsWarningGeometry: visible, reusing: previous,
+                makePolygon: { constructions += 1; return $0.polygon })
+        }
+        let accepted = plan()
+        let original = render(accepted)
+        #expect(constructions == 2)
+        let thematic = try #require(original.canvasState.overlays.first?.overlay)
+        let hidden = render(accepted, visible: false)
+        #expect(constructions == 1)
+        #expect(hidden.warningLegendItems.isEmpty)
+        let toggled = render(accepted, visible: false, previous: original)
+        #expect(constructions == 0)
+        #expect(toggled.canvasState.overlays.first?.overlay === thematic)
+        let shown = render(accepted, previous: toggled)
+        #expect(constructions == 1)
+        #expect(shown.warningLegendItems.map(\.title) == ["Tornado"])
+        let stale = render(accepted.withLegendState(accepted.legendState.withPresentationState(.stale)), previous: original)
+        #expect(constructions == 0)
+        #expect(stale.legendState.presentationState == .stale)
+        #expect(stale.canvasState.overlayRevision == original.canvasState.overlayRevision)
+        for changed in [plan(message: "msg-2"), plan(hole: true)] {
+            let scene = render(changed, previous: original)
+            #expect(constructions == 1)
+            #expect(scene.canvasState.overlays.first?.overlay === thematic)
+            #expect(scene.canvasState.overlays.last?.overlay !== original.canvasState.overlays.last?.overlay)
+            #expect(scene.canvasState.overlayRevision != original.canvasState.overlayRevision)
+            let warning = try #require(scene.canvasState.overlays.last?.overlay as? MKPolygon)
+            #expect(warning.interiorPolygons?.count ?? 0 == (changed.polygonEntries.last?.interiorCoordinates.count ?? 0))
+        }
+        // Multiple styles for one polygon still construct it just once on a cold scene.
+        let first = try #require(accepted.overlayPlans.first)
+        let shared = MapLayerRenderPlan(layer: .categorical, polygonEntries: accepted.polygonEntries,
+            overlayPlans: [first, MapOverlayBuildPlan(key: first.key + "|intensity", polygonKey: first.polygonKey,
+                kind: .intensity(level: 2), signature: first.signature + 1)],
+            overlayRevision: 0, legendState: accepted.legendState)
+        let scene = render(shared)
+        #expect(constructions == 1)
+        let probability = try #require(scene.canvasState.overlays.first?.overlay as? RiskPolygonOverlay)
+        let intensity = try #require(scene.canvasState.overlays.last?.overlay as? RiskPolygonOverlay)
+        #expect(probability.polygon === intensity.polygon)
     }
 
     @Test("accepted feeds read and plan only their contracted slices", arguments: [

@@ -56,6 +56,52 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
         add(attachment)
     }
 
+    func testRetainedScenePolygonConstruction() {
+        var report: [String] = []
+        for fixture in MapSceneMeasurementFixture.all {
+            let plan = fixture.plan(for: .categorical)
+            let previous = materialize(plan: plan, showsWarningGeometry: true)
+            for visible in [false, true] {
+                for reuse in [false, true] {
+                    var samples: [MapSceneMeasurementTiming] = []
+                    var constructions = 0
+                    var polygonObjects = 0
+                    for _ in 0..<Self.measuredIterations {
+                        let result = timed {
+                            MapSceneMaterializer.materialize(plan: plan, initialCenterCoordinate: nil,
+                                showsWarningGeometry: visible, reusing: reuse ? previous : nil,
+                                makePolygon: { entry in
+                                    constructions += 1
+                                    polygonObjects += 1 + entry.interiorCoordinates.filter { $0.count > 2 }.count
+                                    return entry.polygon
+                                })
+                        }
+                        samples.append(result.timing)
+                        XCTAssertEqual(result.value.canvasState.overlays.count,
+                            fixture.profile.riskCount(for: .categorical) + (visible ? fixture.profile.warningCount : 0))
+                        if reuse {
+                            for overlay in result.value.canvasState.overlays {
+                                XCTAssertTrue(previous.canvasState.overlays.contains {
+                                    $0.key == overlay.key && $0.overlay === overlay.overlay
+                                })
+                            }
+                        }
+                    }
+                    let wall = samples.map(\.wallMilliseconds).sorted()
+                    let cpu = samples.map(\.cpuMilliseconds).sorted()
+                    report.append("fixture=\(fixture.profile.name) warnings=\(visible) reuse=\(reuse) " +
+                        "entriesPerRun=\(constructions / Self.measuredIterations) " +
+                        "polygonObjectsPerRun=\(polygonObjects / Self.measuredIterations) " +
+                        "wallMedianMs=\(wall[wall.count / 2]) cpuMedianMs=\(cpu[cpu.count / 2])")
+                }
+            }
+        }
+        let attachment = XCTAttachment(string: report.joined(separator: "\n"))
+        attachment.name = "MapRetainedSceneMeasurement.txt"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func verifyDeterminism(of fixture: MapSceneMeasurementFixture) {
         for layer in MapLayer.allCases {
             guard let plan = fixture.plans[layer] else {

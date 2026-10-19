@@ -63,14 +63,14 @@ enum MapSceneMaterializer {
         plan: MapLayerRenderPlan,
         initialCenterCoordinate: CLLocationCoordinate2D?,
         showsWarningGeometry: Bool,
-        reusing previousScene: MapLayerScene? = nil
+        reusing previousScene: MapLayerScene? = nil,
+        makePolygon: (MapPolygonEntry) -> MKPolygon = { $0.polygon }
     ) -> MapLayerScene {
         var polygonsByKey: [String: MKPolygon] = [:]
         polygonsByKey.reserveCapacity(plan.polygonEntries.count)
 
-        for polygonEntry in plan.polygonEntries {
-            polygonsByKey[polygonEntry.key] = polygonEntry.polygon
-        }
+        let entriesByKey = Dictionary(plan.polygonEntries.map { ($0.key, $0) },
+            uniquingKeysWith: { _, last in last })
 
         var overlays: [MapOverlayEntry] = []
         overlays.reserveCapacity(plan.overlayPlans.count)
@@ -83,12 +83,21 @@ enum MapSceneMaterializer {
                 continue
             }
 
-            guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
+            guard let entry = entriesByKey[overlayPlan.polygonKey] else { continue }
             if let previous = previousOverlays[overlayPlan.key], previous.signature == overlayPlan.signature,
                let previousPolygon = (previous.overlay as? RiskPolygonOverlay)?.polygon ?? previous.overlay as? MKPolygon,
-               previousPolygon.title == polygon.title, previousPolygon.subtitle == polygon.subtitle {
+               previousPolygon.title == entry.title, previousPolygon.subtitle == entry.subtitle {
                 overlays.append(previous)
                 continue
+            }
+
+            // Construct only visible, changed geometry; probability/intensity overlays may share it.
+            let polygon: MKPolygon
+            if let existing = polygonsByKey[entry.key] {
+                polygon = existing
+            } else {
+                polygon = makePolygon(entry)
+                polygonsByKey[entry.key] = polygon
             }
 
             let overlay: MKOverlay
