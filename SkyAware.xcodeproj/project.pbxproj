@@ -78,7 +78,6 @@
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/AirQualityHTTPClientTests.swift,
-				UnitTests/ArcusMesoClientTests.swift,
 				UnitTests/AlertDetailReconciliationTests.swift,
 				UnitTests/AlertNotificationTests.swift,
 				UnitTests/AlertPresentationOrderingTests.swift,
@@ -86,6 +85,7 @@
 				UnitTests/AlertRepoPurgeTests.swift,
 				UnitTests/AlertRepoRefreshTests.swift,
 				UnitTests/AlertStylingTests.swift,
+				UnitTests/ArcusMesoClientTests.swift,
 				UnitTests/AtmosphericConditionsDescriptorTests.swift,
 				UnitTests/BackgroundLocationContextReusePolicyTests.swift,
 				UnitTests/BackgroundOrchestratorCadenceTests.swift,
@@ -174,7 +174,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				UnitTests/AirQualityHTTPClientTests.swift,
-				UnitTests/ArcusMesoClientTests.swift,
 				UnitTests/AlertDetailReconciliationTests.swift,
 				UnitTests/AlertNotificationTests.swift,
 				UnitTests/AlertPresentationOrderingTests.swift,
@@ -182,6 +181,7 @@
 				UnitTests/AlertRepoPurgeTests.swift,
 				UnitTests/AlertRepoRefreshTests.swift,
 				UnitTests/AlertStylingTests.swift,
+				UnitTests/ArcusMesoClientTests.swift,
 				UnitTests/AtmosphericConditionsDescriptorTests.swift,
 				UnitTests/BackgroundLocationContextReusePolicyTests.swift,
 				UnitTests/BackgroundOrchestratorCadenceTests.swift,

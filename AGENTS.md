@@ -56,6 +56,7 @@
 
 ## Testing Expectations
 - Use Swift Testing (`import Testing`).
+- When hand-editing `project.pbxproj` test membership exception lists, preserve Xcode's filename ordering (for example, `ArcusMesoClientTests.swift` follows the `Alert*` entries). Commit verified ordering-only normalization rather than repeatedly reverting it and leaving the committed project out of order.
 - Do not hit live WeatherKit, NWS, or SPC feeds in tests.
 - Stub or fake providers and network boundaries.
 - When adding UI, include a smoke UI test for the main navigation or happy path when practical.
