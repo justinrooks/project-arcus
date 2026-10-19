@@ -10,6 +10,71 @@ import Testing
 final class MapAcceptedUpdateMeasurementTests: XCTestCase {
     private static let repetitions = 8
 
+    func testSelectedSceneCriticalPathAfterSourceScoping() async {
+        var lines = ["Post-#709 logical coherent publication; in-memory providers; milliseconds"]
+        for scenario in ["initial-day1", "initial-day2", "initial-day3", "switch-during-day2-update"] {
+            var samples: [Double] = []
+            for _ in 0..<Self.repetitions {
+                let h = ScopedMapHarness()
+                let day: SPCForecastDay = scenario == "initial-day3" ? .day3
+                    : scenario == "initial-day1" ? .day1 : .day2
+                h.model.selectForecast(day: day, layer: .categorical)
+                let start: ContinuousClock.Instant
+                if scenario == "switch-during-day2-update" {
+                    await h.load()
+                    await h.resetCounts()
+                    let acceptedPeriod = h.model.activeScene.legendState.forecastPeriod
+                    await h.spc.setDay2Revision(1)
+                    let gate = IndexedReloadGate()
+                    await h.spc.setGate(gate)
+                    h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day2", generation: 1))
+                    let task = Task { await h.drain() }
+                    await gate.waitUntilStarted(1)
+                    // Selection can use accepted plans while the replacement source is held.
+                    h.model.selectForecast(day: .day3, layer: .categorical)
+                    h.model.selectForecast(day: .day2, layer: .wind)
+                    h.model.selectForecast(day: .day2, layer: .categorical)
+                    XCTAssertEqual(h.model.activeScene.legendState.forecastPeriod, acceptedPeriod)
+                    XCTAssertEqual(overlayTitles(in: h.model.activeScene), ["day2-r0"])
+                    XCTAssertEqual(h.model.activeScene.legendState.presentationState, .current)
+                    let stagedBuilds = await h.planner.snapshot()
+                    XCTAssertEqual(stagedBuilds, [:])
+                    // Exclude artificial gate dwell; time remaining read/plan/commit work.
+                    start = .now
+                    await gate.release(1)
+                    await task.value
+                    samples.append(Self.milliseconds(since: start))
+                    XCTAssertEqual(overlayTitles(in: h.model.activeScene), ["day2-r1"])
+                    let reads = await h.counts.snapshot()
+                    let builds = await h.planner.snapshot()
+                    XCTAssertEqual(reads, ["categorical-day2": 1])
+                    XCTAssertEqual(builds, [.categorical: 1])
+                } else {
+                    start = .now
+                    await h.load()
+                    samples.append(Self.milliseconds(since: start))
+                    let reads = await h.counts.snapshot()
+                    let builds = await h.planner.snapshot()
+                    XCTAssertEqual(reads, ["categorical-current": 1, "severe": 1,
+                        "fire": 1, "meso": 1, "warnings": 1, "categorical-day2": 1,
+                        "hazards-day2": 1, "categorical-day3": 1])
+                    XCTAssertEqual(builds, [.categorical: 3, .wind: 2, .hail: 2,
+                        .tornado: 2, .meso: 1, .fire: 1])
+                }
+                XCTAssertEqual(h.model.activeScene.legendState.forecastDay, day)
+                XCTAssertEqual(h.model.activeScene.legendState.presentationState, .current)
+                XCTAssertTrue(h.model.activeScene.warningLegendItems.isEmpty)
+            }
+            lines.append("scenario=\(scenario) repetitions=\(Self.repetitions) " +
+                "wallMedianMs=\(Self.median(samples)) wallMeanMs=\(Self.mean(samples)) " +
+                "wallStddevMs=\(Self.stddev(samples))")
+        }
+        let attachment = XCTAttachment(string: lines.joined(separator: "\n"))
+        attachment.name = "MapSelectedSceneCriticalPath.txt"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn() async {
         let counts = MapAcceptedUpdateReadCounts()
         let spc = CountedMapSpcData(counts: counts)
@@ -99,6 +164,11 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
         attachment.name = "MapAcceptedUpdateMeasurement.txt"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
+        let elapsed = start.duration(to: .now).components
+        return Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
     }
 
     private static func mean(_ samples: [Double]) -> Double {
