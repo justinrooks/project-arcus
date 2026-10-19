@@ -10,6 +10,14 @@ import ArcusCore
 
 // MARK: SpcMapData
 extension SpcProvider: SpcMapData {
+    func getCategoricalForecast(for day: SPCForecastDay) async throws -> SPCCategoricalForecastSnapshot? {
+        try await spcMapBatchPersistenceRepo.categoricalForecast(for: day)
+    }
+
+    func getHazardForecast(for day: SPCForecastDay) async throws -> SPCHazardForecastSnapshot? {
+        try await spcMapBatchPersistenceRepo.hazardForecast(for: day)
+    }
+
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
         try await severeRiskRepo.getSevereRiskShapes()
     }

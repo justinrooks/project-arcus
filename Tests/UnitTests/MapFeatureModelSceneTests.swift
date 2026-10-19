@@ -10,10 +10,200 @@ import Testing
 struct MapFeatureModelSceneTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
+    @Test("forecast selection uses accepted day-specific cache, retains center, and excludes current warnings")
+    func forecastSelection_isCachedAndScoped() async throws {
+        let service = ForecastMapData()
+        let model = MapFeatureModel(nowProvider: { self.now })
+        let center = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        model.captureInitialCenterCoordinateIfNeeded(center)
+        await model.reload(using: service,
+            warningSource: StubArcusAlertQuerying(activeWarnings: .success([makeWarning(event: "Tornado Warning")])),
+            selectedLayer: .categorical)
+        #expect(model.activeScene.warningLegendItems.count == 1)
+        let reads = await service.readCount
+        for day in [SPCForecastDay.day2, .day3] {
+            #expect(model.selectForecast(day: day, layer: .categorical))
+            #expect(overlayTitles(in: model.activeScene) == ["day\(day.rawValue)"])
+            #expect(model.activeScene.legendState.forecastDay == day)
+            #expect(model.activeScene.legendState.forecastPeriod?.valid == now.addingTimeInterval(Double(day.rawValue) * 86400))
+            #expect(model.activeScene.legendState.headlineText.contains(day.description))
+            #expect(model.activeScene.legendState.voiceOverText.contains("Issued"))
+            #expect(model.activeScene.warningLegendItems.isEmpty)
+            #expect(coordinatesEqual(try #require(model.activeScene.canvasState.initialCenterCoordinate), center))
+        }
+        let day3Overlay = try #require(model.activeScene.canvasState.overlays.first?.overlay)
+        model.selectForecast(day: .day2, layer: .categorical)
+        model.selectForecast(day: .day3, layer: .categorical)
+        #expect(model.activeScene.canvasState.overlays.first?.overlay === day3Overlay)
+        for layer in [MapLayer.tornado, .hail, .wind] {
+            #expect(model.selectForecast(day: .day2, layer: layer))
+            #expect(overlayTitles(in: model.activeScene) == [layer.rawValue])
+            #expect(model.activeScene.legendState.severeItems.map(\.probability) == [.percent(0.15)])
+            #expect(model.activeScene.legendState.forecastPeriod?.issued == now.addingTimeInterval(-60))
+            #expect(model.activeScene.warningLegendItems.isEmpty)
+        }
+        #expect(await service.readCount == reads)
+        #expect(!model.selectForecast(day: .day3, layer: .tornado))
+        #expect(!model.selectForecast(day: .day2, layer: .fire))
+        model.selectLayer(.fire)
+        #expect(model.selectedForecastDay == .current)
+        model.selectLayer(.meso)
+        #expect(model.selectedForecastDay == .current)
+        model.selectLayer(.categorical)
+        #expect(model.selectedForecastDay == .day1)
+        #expect(model.activeScene.warningLegendItems.count == 1)
+    }
+
+    @Test("forecast scene LRU distinguishes days and retains only two scenes")
+    func forecastCache_isBoundedAcrossDays() {
+        var cache = MapSceneCache()
+        for day in [SPCForecastDay.day1, .day2, .day3] {
+            cache.insert(.placeholder(for: .categorical), for: .categorical, day: day)
+        }
+        #expect(cache.retainedSceneCount == 2)
+        #expect(cache.scene(for: .categorical, day: .day1) == nil)
+        #expect(cache.selections.map(\.day) == [.day2, .day3])
+        cache.removeAll()
+        #expect(cache.retainedSceneCount == 0)
+    }
+
+    @Test("missing forecasts are unavailable while accepted empty and expired forecasts retain their source period")
+    func forecastStates_areTruthful() async {
+        let service = ForecastMapData()
+        let model = MapFeatureModel(nowProvider: { self.now })
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        await service.setCategorical(day: .day3, snapshot: nil)
+        await service.setCategorical(day: .day2, snapshot: forecastSnapshot(day: .day2, empty: true))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        model.selectForecast(day: .day3, layer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .unavailable)
+        model.selectForecast(day: .day2, layer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
+        let period = model.activeScene.legendState.forecastPeriod
+        await service.setFailure(true)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(model.activeScene.legendState.forecastPeriod == period)
+        await service.setFailure(false)
+        await service.setCategorical(day: .day2, snapshot: forecastSnapshot(day: .day2, expired: true))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(overlayTitles(in: model.activeScene) == ["day2"])
+    }
+
+    @Test("queued accepted replacement skips superseded plans during rapid forecast and layer selection")
+    func forecastReload_isAtomicAndLatestAcceptedWins() async throws {
+        let service = ForecastMapData()
+        let model = MapFeatureModel(nowProvider: { self.now })
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        let original = model.activeScene.legendState.forecastPeriod
+        let gate = IndexedReloadGate()
+        await service.pauseReads(gate)
+        let reload = Task { await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical) }
+        await gate.waitUntilStarted(2)
+        model.selectForecast(day: .day3, layer: .categorical)
+        model.selectForecast(day: .day2, layer: .wind)
+        model.selectForecast(day: .day2, layer: .categorical)
+        #expect(model.activeScene.legendState.forecastPeriod == original)
+        await service.setCategorical(day: .day2, snapshot: forecastSnapshot(day: .day2, revision: 1))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        await gate.release(2)
+        await gate.waitUntilStarted(3)
+        #expect(model.activeScene.legendState.forecastPeriod == original)
+        #expect(model.activeScene.legendState.presentationState == .resolving)
+        await gate.release(3)
+        await reload.value
+        #expect(model.activeScene.legendState.forecastDay == .day2)
+        #expect(model.activeScene.legendState.forecastPeriod?.issued == now.addingTimeInterval(60))
+        #expect(overlayTitles(in: model.activeScene) == ["day2-r1"])
+        model.selectForecast(day: .day1, layer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        #expect(overlayTitles(in: model.activeScene) == ["day2-r1"])
+    }
+
+    @Test("production coordinator invalidation prevents publication of a superseded forecast")
+    func forecastReload_coordinatorInvalidationDiscardsSupersededCandidate() async {
+        let service = ForecastMapData()
+        let model = MapFeatureModel(nowProvider: { self.now })
+        let coordinator = MapReloadCoordinator()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        let original = model.activeScene.legendState.forecastPeriod
+        await service.setCategorical(day: .day2, snapshot: forecastSnapshot(day: .day2, revision: 1))
+        let gate = IndexedReloadGate()
+        await service.pauseReads(gate)
+        let (completed, continuation) = AsyncStream<Void>.makeStream()
+        let schedule = {
+            model.invalidateAcceptedInputs()
+            coordinator.schedule {
+                await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+                continuation.yield(())
+            }
+        }
+        schedule()
+        await gate.waitUntilStarted(2)
+        await service.setCategorical(day: .day2, snapshot: forecastSnapshot(day: .day2, revision: 2))
+        schedule()
+        await gate.release(2)
+        await gate.waitUntilStarted(3)
+        #expect(model.activeScene.legendState.forecastPeriod == original)
+        #expect(model.activeScene.legendState.presentationState == .resolving)
+        await gate.release(3)
+        var iterator = completed.makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await iterator.next()
+        #expect(model.activeScene.legendState.forecastPeriod?.issued == now.addingTimeInterval(120))
+        #expect(overlayTitles(in: model.activeScene) == ["day2-r2"])
+    }
+
+    @Test("cached forecast becomes stale on selection after expiry without reading the provider")
+    func forecastSelection_marksCachedExpiredForecastStale() async {
+        var clock = now
+        let model = MapFeatureModel(nowProvider: { clock })
+        let service = ForecastMapData()
+        await model.reload(using: service,
+            warningSource: StubArcusAlertQuerying(activeWarnings: .success([])), selectedLayer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .current)
+        let reads = await service.readCount
+        clock = now.addingTimeInterval(5 * 86400)
+        model.selectForecast(day: .day1, layer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(!model.activeScene.legendState.voiceOverText.contains("Refresh failed"))
+        #expect(await service.readCount == reads)
+    }
+
+    @Test("cancelled future reads retain accepted geometry and metadata")
+    func forecastReload_cancellationPreservesAcceptedScene() async {
+        let service = ForecastMapData()
+        let model = MapFeatureModel(nowProvider: { self.now })
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        let period = model.activeScene.legendState.forecastPeriod
+        let gate = IndexedReloadGate()
+        await service.pauseReads(gate)
+        let reload = Task { await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical) }
+        await gate.waitUntilStarted(2)
+        reload.cancel()
+        await gate.release(2)
+        await reload.value
+        #expect(model.activeScene.legendState.forecastPeriod == period)
+        #expect(overlayTitles(in: model.activeScene) == ["day2"])
+    }
+
     @Test("only visible map inputs and accepted Home hot feeds invalidate the map")
     func acceptedFeedInvalidation_isScopedToVisibleMapInputs() {
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.convective"))
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.fire"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.categorical.day2"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.categorical.day3"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.hazards.day2"))
+        #expect(!MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.hazards.day3"))
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.meso") == false)
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "arcus.alert"))
         #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "arcus.alerts"))
@@ -825,4 +1015,56 @@ private struct MutableSpcMapData: SpcMapData {
     func getFireRisk() async throws -> [FireRiskDTO] {
         await store.currentFireRisk()
     }
+}
+
+private func forecastSnapshot(
+    day: SPCForecastDay, empty: Bool = false, expired: Bool = false, revision: Int = 0
+) -> SPCCategoricalForecastSnapshot {
+    let issued = Date(timeIntervalSince1970: 1_735_689_600).addingTimeInterval(Double(revision) * 60)
+    return SPCCategoricalForecastSnapshot(day: day, issued: issued,
+        valid: issued.addingTimeInterval(Double(day.rawValue) * 86400),
+        expires: expired ? issued.addingTimeInterval(-1) : issued.addingTimeInterval(4 * 86400),
+        risks: empty ? [] : [makeStormRisk(level: .slight, title: "day\(day.rawValue)" + (revision == 0 ? "" : "-r\(revision)"))])
+}
+
+private actor ForecastMapData: SpcMapData {
+    private var forecasts: [SPCForecastDay: SPCCategoricalForecastSnapshot] = [
+        .day2: forecastSnapshot(day: .day2), .day3: forecastSnapshot(day: .day3)
+    ]
+    private var fails = false
+    private var gate: IndexedReloadGate?
+    private var day2Reads = 0
+    private(set) var readCount = 0
+
+    func setCategorical(day: SPCForecastDay, snapshot: SPCCategoricalForecastSnapshot?) { forecasts[day] = snapshot }
+    func setFailure(_ value: Bool) { fails = value }
+    func pauseReads(_ gate: IndexedReloadGate) { self.gate = gate }
+
+    func getCategoricalForecast(for day: SPCForecastDay) async throws -> SPCCategoricalForecastSnapshot? {
+        readCount += 1
+        if fails { throw SpcError.missingData }
+        let snapshot = forecasts[day]
+        if day == .day2 {
+            day2Reads += 1
+            await gate?.run(day2Reads)
+        }
+        try Task.checkCancellation()
+        return snapshot
+    }
+
+    func getHazardForecast(for day: SPCForecastDay) throws -> SPCHazardForecastSnapshot? {
+        readCount += 1
+        if fails { throw SpcError.missingData }
+        let category = forecastSnapshot(day: .day2)
+        return SPCHazardForecastSnapshot(day: .day2, issued: category.issued.addingTimeInterval(-60),
+            valid: category.valid, expires: category.expires,
+            shapes: [ThreatType.tornado, .hail, .wind].map {
+                makeSevereRisk(type: $0, probability: .percent(0.15), title: $0.rawValue)
+            })
+    }
+
+    func getSevereRiskShapes() -> [SevereRiskShapeDTO] { [] }
+    func getStormRiskMapData() -> [StormRiskDTO] { [] }
+    func getMesoMapData() -> [MdDTO] { [] }
+    func getFireRisk() -> [FireRiskDTO] { [] }
 }
