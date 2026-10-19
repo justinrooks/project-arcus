@@ -13,7 +13,7 @@ final class ConvectiveOutlook {
     var id: UUID                            // usually the GUID or derived from it
     @Attribute(.unique) var title: String   // e.g., "Day 1 Convective Outlook" This allows upserts if contents change
     var link: URL                           // link to full outlook page
-    var published: Date                     // pubDate
+    var published: Date                     // Source issuance for ordering, or RSS pubDate when issuance is absent
     var fullText: String?                   // description / CDATA
     
     // MARK: Derived Data - Keep it optional until it can be backfilled
@@ -88,14 +88,15 @@ enum ConvectiveOutlookCollectionSnapshot: Sendable, Equatable {
     case unavailable
     case accepted([ConvectiveOutlookDTO])
 
-    init(rows: [ConvectiveOutlook], day: Int? = nil) {
+    init(rows: [ConvectiveOutlook], day: Int? = nil, asOf now: Date = .now) {
         guard rows.contains(where: \.isCollectionMarker) else {
             self = .unavailable
             return
         }
-        self = .accepted(rows.filter { !$0.isCollectionMarker && (day == nil || $0.day == day) }
-            .sorted { $0.published > $1.published }
-            .map(\.dto))
+        let accepted = SPCDiscussionAcceptance.retained(rows.filter { !$0.isCollectionMarker }.map(\.dto), asOf: now)
+        // An expired cache is unavailable, not a newly confirmed empty source response.
+        guard !accepted.isEmpty else { self = .unavailable; return }
+        self = .accepted(accepted.filter { day == nil || $0.day == day })
     }
 
     var outlooks: [ConvectiveOutlookDTO] {

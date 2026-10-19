@@ -16,15 +16,20 @@ struct ConvectiveOutlookDayPresentation {
         collection: [ConvectiveOutlookDTO],
         refreshStatus: ConvectiveOutlookRefreshStatus,
         hasAcceptedEmptySnapshot: Bool = false,
-        isOffline: Bool = false
+        isOffline: Bool = false,
+        asOf now: Date = .now
     ) {
-        outlooks = sortedConvectiveOutlooks(collection.filter { $0.day == day.rawValue })
-        // A missing day in an accepted collection is a confirmed absence for that day.
-        // Preserve that fact during refresh, failure, and offline reads.
+        outlooks = SPCDiscussionAcceptance.retained(collection, asOf: now).filter { $0.day == day.rawValue }
+        if outlooks.isEmpty && collection.contains(where: { $0.day == day.rawValue }) {
+            // Expired cached text is unavailable, not a newly confirmed source absence.
+            state = .unavailable
+            return
+        }
+        // A partial publication feed cannot confirm absence for an omitted day.
         state = ConvectiveOutlookPresentationState.resolve(
             dtos: outlooks,
             refreshStatus: refreshStatus,
-            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot || (!collection.isEmpty && outlooks.isEmpty),
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
             isOffline: isOffline
         )
     }
