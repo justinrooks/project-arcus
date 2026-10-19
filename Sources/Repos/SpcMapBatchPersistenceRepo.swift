@@ -16,6 +16,44 @@ enum SpcMapBatchPersistenceFailureInjection: Sendable {
 
 @ModelActor
 actor SpcMapBatchPersistenceRepo {
+    func acceptHazardForecast(
+        _ responses: [GeoJSONProduct: HTTPResponse], day: SPCForecastDay, now: Date
+    ) throws {
+        guard responses.count == 3,
+              responses.values.allSatisfy({ $0.source == .live || $0.source == .cacheRevalidated304 }),
+              let tornado = responses[.tornado]?.data, let hail = responses[.hail]?.data,
+              let wind = responses[.wind]?.data else { throw SpcError.parsingError }
+        let snapshot = try SPCHazardForecastSnapshot.parse(tornado: tornado, hail: hail, wind: wind, day: day)
+        guard snapshot.issued <= now, snapshot.valid > now,
+              now.timeIntervalSince(snapshot.issued) < 86400 else { throw SpcError.parsingError }
+        let rows = try modelContext.fetch(FetchDescriptor<SPCHazardForecast>())
+        guard rows.allSatisfy({ $0.issued <= snapshot.issued && $0.valid <= snapshot.valid }) else {
+            throw SpcError.parsingError
+        }
+        try Task.checkCancellation()
+        if let previous = rows.first, previous.issued == snapshot.issued {
+            guard previous.tornado == tornado, previous.hail == hail, previous.wind == wind else {
+                throw SpcError.parsingError
+            }
+            return
+        }
+        do {
+            for row in rows { modelContext.delete(row) }
+            modelContext.insert(SPCHazardForecast(snapshot: snapshot, tornado: tornado, hail: hail, wind: wind, now: now))
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
+    /// Reads accepted geometry with its source period, including expired last-known-good data.
+    func hazardForecast(for day: SPCForecastDay) throws -> SPCHazardForecastSnapshot? {
+        guard day == .day2 else { throw SpcError.parsingError }
+        guard let row = try modelContext.fetch(FetchDescriptor<SPCHazardForecast>()).first else { return nil }
+        return try SPCHazardForecastSnapshot.parse(tornado: row.tornado, hail: row.hail, wind: row.wind, day: day)
+    }
+
     /// Replaces only this forecast day, atomically with its source identity and explicit empty state.
     func acceptCategoricalForecast(
         _ data: Data, day: SPCForecastDay, source: HTTPResponse.Source, now: Date

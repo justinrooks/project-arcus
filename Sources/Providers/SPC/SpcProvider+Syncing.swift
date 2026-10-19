@@ -67,7 +67,32 @@ extension SpcProvider: SpcSyncing {
         // Retry each failed future day without fetching or republishing accepted current domains.
         _ = await syncFutureCategoricalForecast(for: .day2)
         _ = await syncFutureCategoricalForecast(for: .day3)
+        await syncFutureHazardForecast()
         return mapSyncOutcome
+    }
+
+    private func syncFutureHazardForecast() async {
+        if let acceptedAt = futureHazardsAcceptedAt,
+           Date().timeIntervalSince(acceptedAt) < mapSyncCooldownSeconds { return }
+        let feedID = "spc.map.hazards.day2"
+        var source: HTTPResponse.Source?
+        do {
+            try Task.checkCancellation()
+            var responses: [GeoJSONProduct: HTTPResponse] = [:]
+            for product in [GeoJSONProduct.tornado, .hail, .wind] {
+                try Task.checkCancellation()
+                let response = try await client.fetchGeoJsonResponse(for: product, day: .day2)
+                source = response.source
+                guard response.source == .live || response.source == .cacheRevalidated304,
+                      response.data != nil else { throw SpcError.missingData }
+                responses[product] = response
+            }
+            try await spcMapBatchPersistenceRepo.acceptHazardForecast(responses, day: .day2, now: Date())
+            futureHazardsAcceptedAt = Date()
+            await recordMapDomain(outcome: .accepted, source: source, feedID: feedID)
+        } catch {
+            await recordMapDomain(outcome: .rejected, source: source, feedID: feedID)
+        }
     }
     
     private func syncFutureCategoricalForecast(for day: SPCForecastDay) async -> Bool {
