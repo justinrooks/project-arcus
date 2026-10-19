@@ -1307,6 +1307,106 @@ struct HomeViewKeyedProjectionObservationTests {
 @Suite("HomeView Outlook Display")
 @MainActor
 struct HomeViewOutlookDisplayTests {
+    @Test("detail Back and Outlooks root reattachment preserve the selected forecast day", arguments: [
+        SPCForecastDay.day2, .day3
+    ])
+    func detailBackAndRootReattachmentPreserveDay(day: SPCForecastDay) {
+        var state = HomeOutlookNavigationState(selectedDay: day, navigationPath: [makeOutlook(day: day)])
+
+        // Back pops the detail path; root reattachment does not represent a tab transition.
+        state.navigationPath = []
+        state.tabSelectionChanged(from: .outlooks, to: .outlooks)
+
+        #expect(state.selectedDay == day)
+        #expect(state.navigationPath.isEmpty)
+    }
+
+    @Test("actual Outlooks tab exit clears retained detail and preserves the selected day", arguments: [
+        SPCForecastDay.day2, .day3
+    ])
+    func outlooksTabExitClearsPathAndPreservesDay(day: SPCForecastDay) {
+        var state = HomeOutlookNavigationState(selectedDay: day, navigationPath: [makeOutlook(day: day)])
+
+        state.tabSelectionChanged(from: .outlooks, to: .map)
+
+        #expect(state.navigationPath.isEmpty)
+        #expect(state.selectedDay == day)
+    }
+
+    @Test("ordinary entry into Outlooks resets day and retained detail path")
+    func ordinaryTabEntryResetsOutlooksState() {
+        var state = HomeOutlookNavigationState(selectedDay: .day3, navigationPath: [makeOutlook(day: .day3)])
+
+        state.tabSelectionChanged(from: .map, to: .outlooks)
+
+        #expect(state.selectedDay == .day1)
+        #expect(state.navigationPath.isEmpty)
+    }
+
+    @Test("explicit Map to Outlooks request survives either acknowledgement order", arguments: [
+        SPCForecastDay.day2, .day3
+    ])
+    func explicitMapToOutlooksPreservesRequestedDay(day: SPCForecastDay) {
+        let discussion = makeOutlook(day: day)
+        let request = HomeTabNavigationRequest(destination: .outlooks(day: day, opensLatestDiscussion: true))
+
+        var childAcknowledgesFirst = HomeOutlookNavigationState(
+            selectedDay: .day1,
+            navigationPath: [makeOutlook(day: .day1)]
+        )
+        childAcknowledgesFirst.prepareExplicitOutlooksEntry(request)
+        var sharedRequest: HomeTabNavigationRequest? = request
+        let childFirstResolution = ConvectiveOutlookView.navigationResolution(
+            for: day,
+            opensLatestDiscussion: true,
+            dtos: [discussion],
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        )
+        guard case let .resolved(resolvedDay, childFirstPath) = childFirstResolution else {
+            Issue.record("Expected the accepted \(day) discussion to resolve")
+            return
+        }
+        if let resolvedDay { childAcknowledgesFirst.selectedDay = resolvedDay }
+        childAcknowledgesFirst.navigationPath = childFirstPath
+        if sharedRequest?.id == request.id { sharedRequest = nil }
+        childAcknowledgesFirst.tabSelectionChanged(from: .map, to: .outlooks)
+
+        #expect(sharedRequest == nil)
+        #expect(childAcknowledgesFirst.selectedDay == day)
+        #expect(childAcknowledgesFirst.navigationPath == [discussion])
+        #expect(childAcknowledgesFirst.pendingExplicitEntryRequestID == nil)
+
+        var homeHandlesFirst = HomeOutlookNavigationState(
+            selectedDay: .day1,
+            navigationPath: [makeOutlook(day: .day1)]
+        )
+        homeHandlesFirst.prepareExplicitOutlooksEntry(request)
+        homeHandlesFirst.tabSelectionChanged(from: .map, to: .outlooks)
+        #expect(homeHandlesFirst.selectedDay == day)
+        #expect(homeHandlesFirst.navigationPath.isEmpty)
+        #expect(homeHandlesFirst.pendingExplicitEntryRequestID == nil)
+
+        let resolution = ConvectiveOutlookView.navigationResolution(
+            for: day,
+            opensLatestDiscussion: true,
+            dtos: [discussion],
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        )
+        guard case let .resolved(day, path) = resolution else {
+            Issue.record("Expected the accepted discussion to resolve")
+            return
+        }
+        if let day { homeHandlesFirst.selectedDay = day }
+        homeHandlesFirst.navigationPath = path
+
+        #expect(homeHandlesFirst.selectedDay == discussion.day.flatMap(SPCForecastDay.init(rawValue:)))
+        #expect(homeHandlesFirst.navigationPath == [discussion])
+    }
+
     @Test("cached outlooks remain during failure, but accepted empty replaces them")
     func cachedOutlooks_followAcceptance() {
         let cachedOutlooks = [
@@ -1339,20 +1439,29 @@ struct HomeViewOutlookDisplayTests {
     }
 
     private func makeOutlook(title: String) -> ConvectiveOutlookDTO {
+        makeOutlook(title: title, day: .day1)
+    }
+
+    private func makeOutlook(day: SPCForecastDay) -> ConvectiveOutlookDTO {
+        makeOutlook(title: "Day \(day.rawValue) Outlook", day: day)
+    }
+
+    private func makeOutlook(title: String, day: SPCForecastDay) -> ConvectiveOutlookDTO {
         guard let url = URL(string: "https://www.weather.gov") else {
             preconditionFailure("Invalid outlook URL")
         }
+        let issued = Date.now
 
         return ConvectiveOutlookDTO(
             title: title,
             link: url,
-            published: Date(timeIntervalSince1970: 1_000),
+            published: issued,
             summary: "Summary for \(title)",
             fullText: "Full text for \(title)",
-            day: 1,
+            day: day.rawValue,
             riskLevel: "SLGT",
-            issued: Date(timeIntervalSince1970: 900),
-            validUntil: Date(timeIntervalSince1970: 2_000)
+            issued: issued,
+            validUntil: issued.addingTimeInterval(24 * 60 * 60)
         )
     }
 }

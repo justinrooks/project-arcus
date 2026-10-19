@@ -15,6 +15,7 @@
     {
       "parallelizable" : true,
       "selectedTests" : [
+        "SkyAwareUITests\\/testOutlookDiscussionMapRoundTripRendersLatestDiscussionForEachDay()",
         "SkyAwareUITests\/testAlertCenterMesoscaleInfoBubbleOpensExplanationPopover()",
         "SkyAwareUITests\/testAlertCenterOrdersWarningsBeforeWatchesAndMesoscaleDiscussions()",
         "SkyAwareUITests\/testAlertCenterRowsRemainReadableAtAccessibilityTextSizes()",

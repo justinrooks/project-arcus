@@ -14,7 +14,7 @@ struct ConvectiveOutlookView: View {
     }
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var selectedDay: SPCForecastDay = .day1
+    @Binding var selectedDay: SPCForecastDay
     @State private var navigationRequestGate = HomeTabNavigationRequestGate()
 
     let dtos: [ConvectiveOutlookDTO]
@@ -179,6 +179,7 @@ struct ConvectiveOutlookView: View {
         isVisible: Bool = true,
         navigationRequest: HomeTabNavigationRequest? = nil,
         navigationPath: Binding<[ConvectiveOutlookDTO]> = .constant([]),
+        selectedDay: Binding<SPCForecastDay> = .constant(.day1),
         onNavigationRequestHandled: @escaping (UUID) -> Void = { _ in },
         onOpenMap: @escaping (SPCForecastDay) -> Void = { _ in },
         onRefresh: (() async -> Void)? = nil
@@ -191,6 +192,7 @@ struct ConvectiveOutlookView: View {
         self.isVisible = isVisible
         self.navigationRequest = navigationRequest
         self._navigationPath = navigationPath
+        self._selectedDay = selectedDay
         self.onNavigationRequestHandled = onNavigationRequestHandled
         self.onOpenMap = onOpenMap
     }
@@ -322,7 +324,6 @@ struct ConvectiveOutlookView: View {
         }
         .onChange(of: isVisible, initial: true) { _, newValue in
             guard newValue else {
-                navigationPath = []
                 if let pendingRequestID = navigationRequestGate.pendingRequestID,
                    pendingRequestID == navigationRequest?.id,
                    navigationRequestGate.cancelPending(pendingRequestID) {
@@ -330,9 +331,7 @@ struct ConvectiveOutlookView: View {
                 }
                 return
             }
-            guard case .notApplicable = applyNavigationRequestIfNeeded() else { return }
-            selectedDay = .day1
-            navigationPath = []
+            _ = applyNavigationRequestIfNeeded()
         }
         .onChange(of: navigationRequest?.id, initial: true) { _, _ in
             _ = applyNavigationRequestIfNeeded()
