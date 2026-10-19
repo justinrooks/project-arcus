@@ -324,7 +324,6 @@ struct ConvectiveOutlookView: View {
         }
         .onChange(of: isVisible, initial: true) { _, newValue in
             guard newValue else {
-                navigationPath = []
                 if let pendingRequestID = navigationRequestGate.pendingRequestID,
                    pendingRequestID == navigationRequest?.id,
                    navigationRequestGate.cancelPending(pendingRequestID) {
@@ -332,9 +331,7 @@ struct ConvectiveOutlookView: View {
                 }
                 return
             }
-            guard case .notApplicable = applyNavigationRequestIfNeeded() else { return }
-            selectedDay = .day1
-            navigationPath = []
+            _ = applyNavigationRequestIfNeeded()
         }
         .onChange(of: navigationRequest?.id, initial: true) { _, _ in
             _ = applyNavigationRequestIfNeeded()

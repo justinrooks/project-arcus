@@ -34,8 +34,7 @@ struct HomeView: View {
     @State private var selectedTab: HomeTab = .today
     @State private var selectedMapLayer: MapLayer = .categorical
     @State private var crossSurfaceNavigationRequest: HomeTabNavigationRequest?
-    @State private var outlookNavigationPath: [ConvectiveOutlookDTO] = []
-    @State private var selectedOutlookDay: SPCForecastDay = .day1
+    @State private var outlookNavigationState = HomeOutlookNavigationState()
     @State private var projectionRetentionTask: Task<Void, Never>?
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
@@ -405,7 +404,7 @@ struct HomeView: View {
     }
 
     private var outlooksTab: some View {
-        NavigationStack(path: $outlookNavigationPath) {
+        NavigationStack(path: $outlookNavigationState.navigationPath) {
             ConvectiveOutlookView(
                 dtos: displayedOutlooks,
                 refreshStatus: refreshPipeline.outlookRefreshStatus,
@@ -413,8 +412,8 @@ struct HomeView: View {
                 isOffline: runtimeConnectivityState.isOffline,
                 isVisible: selectedTab == .outlooks,
                 navigationRequest: crossSurfaceNavigationRequest,
-                navigationPath: $outlookNavigationPath,
-                selectedDay: $selectedOutlookDay,
+                navigationPath: $outlookNavigationState.navigationPath,
+                selectedDay: $outlookNavigationState.selectedDay,
                 onNavigationRequestHandled: { requestID in
                     if crossSurfaceNavigationRequest?.id == requestID {
                         crossSurfaceNavigationRequest = nil
@@ -482,6 +481,13 @@ struct HomeView: View {
             .toolbarBackground(.visible, for: .tabBar)
             .toolbarBackground(.skyAwareBackground, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
+            .onChange(of: selectedTab) { oldTab, newTab in
+                outlookNavigationState.tabSelectionChanged(
+                    from: oldTab,
+                    to: newTab,
+                    navigationRequest: crossSurfaceNavigationRequest
+                )
+            }
         }
         .tint(.skyAwareAccent)
         .task {
@@ -835,6 +841,26 @@ struct HomeTabNavigationRequest: Identifiable, Equatable {
 
     let id = UUID()
     let destination: Destination
+}
+
+struct HomeOutlookNavigationState {
+    var selectedDay: SPCForecastDay = .day1
+    var navigationPath: [ConvectiveOutlookDTO] = []
+
+    mutating func tabSelectionChanged(
+        from oldTab: HomeView.HomeTab,
+        to newTab: HomeView.HomeTab,
+        navigationRequest: HomeTabNavigationRequest?
+    ) {
+        guard oldTab != .outlooks, newTab == .outlooks else { return }
+        if let navigationRequest, case let .outlooks(day, _) = navigationRequest.destination {
+            selectedDay = day
+            navigationPath = []
+            return
+        }
+        selectedDay = .day1
+        navigationPath = []
+    }
 }
 
 struct HomeTabNavigationRequestGate {
