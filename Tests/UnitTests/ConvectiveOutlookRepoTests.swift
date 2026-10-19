@@ -608,6 +608,49 @@ struct ConvectiveOutlookRepoTests {
         #expect(try await FeedStateStore(directoryURL: directory).record(for: "spc.outlook")?.generation == 1)
     }
 
+    @Test("all accepted days and earlier issuances survive failure and store reopen")
+    func multiDayCollection_reopensAfterFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("outlooks.sqlite")
+        let rss = "<rss version=\"2.0\"><channel>" + [(1, 12), (2, 11), (3, 10), (2, 9)].map { day, hour in
+            """
+            <item><title>SPC Nov 12, 2025 \(hour)00 UTC Day \(day) Convective Outlook</title>
+            <link>https://www.spc.noaa.gov/products/outlook/day\(day)otlk.html</link>
+            <pubDate>Wed, 12 Nov 2025 \(String(format: "%02d", hour)):00:00 GMT</pubDate>
+            <description>Discussion for Day \(day)</description></item>
+            """
+        }.joined() + "</channel></rss>"
+        let accepted = try await { () async throws -> ConvectiveOutlookCollectionSnapshot in
+            let container = try await MainActor.run {
+                try ModelContainer(for: ConvectiveOutlook.self, configurations: ModelConfiguration(url: storeURL))
+            }
+            let repo = ConvectiveOutlookRepo(modelContainer: container)
+            try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(Data(rss.utf8))))
+            let snapshot = try await repo.collectionSnapshot()
+            do {
+                try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .failure(TestError.boom)))
+                Issue.record("Expected refresh failure")
+            } catch TestError.boom {}
+            #expect(try await repo.collectionSnapshot() == snapshot)
+            return snapshot
+        }()
+        let reopened = try await MainActor.run {
+            try ModelContainer(for: ConvectiveOutlook.self, configurations: ModelConfiguration(url: storeURL))
+        }
+        let restored = try await ConvectiveOutlookRepo(modelContainer: reopened).collectionSnapshot()
+        #expect(restored == accepted)
+        for day in [SPCForecastDay.day1, .day2, .day3] {
+            let presentation = ConvectiveOutlookDayPresentation(
+                day: day, collection: restored.outlooks, refreshStatus: .failed
+            )
+            #expect(presentation.state == .populated(.failed))
+            #expect(presentation.outlooks.count == (day == .day2 ? 2 : 1))
+            #expect(presentation.outlooks.allSatisfy { $0.day == day.rawValue && $0.validUntil == nil })
+        }
+    }
+
     @Test("rejected and failed refresh preserve the accepted collection")
     func rejectedAndFailedRefresh_preserveAcceptedCollection() async throws {
         let (container, directory) = try await MainActor.run {
@@ -1173,5 +1216,78 @@ struct ConvectiveOutlookViewPresentationStateTests {
         #expect(ConvectiveOutlookPresentationState.resolve(
             dtos: [], refreshStatus: .success(hasContent: true)
         ) == .unavailable)
+    }
+}
+
+@Suite("Convective outlook day selection")
+@MainActor
+struct ConvectiveOutlookDayPresentationTests {
+    @Test("latest and earlier are scoped to the selected day", arguments: [SPCForecastDay.day1, .day2, .day3])
+    func selectionScopesLatestAndEarlier(day: SPCForecastDay) {
+        let collection = [outlook(day: 1, time: 500), outlook(day: 2, time: 400),
+                          outlook(day: 3, time: 300), outlook(day: day.rawValue, time: 100),
+                          outlook(day: nil, time: 900)]
+        let displayed = HomeView.preferredOutlooks(
+            cachedOutlooks: [], liveOutlooks: collection, refreshStatus: .success(hasContent: true)
+        )
+        #expect(displayed == collection)
+        let selection = ConvectiveOutlookDayPresentation(
+            day: day, collection: displayed, refreshStatus: .success(hasContent: true)
+        )
+        #expect(selection.state == .populated(.current))
+        #expect(selection.outlooks.count == 2)
+        #expect(selection.outlooks.allSatisfy { $0.day == day.rawValue })
+        #expect(selection.outlooks.first?.published == Date(timeIntervalSince1970: Double(600 - day.rawValue * 100)))
+        #expect(selection.outlooks.last?.published == Date(timeIntervalSince1970: 100))
+        #expect(selection.outlooks.first?.validUntil == Date(timeIntervalSince1970: 2_000))
+    }
+
+    @Test("single-day cache preserves selected-day absence and refresh activity")
+    func missingDayAndFailureWithCache() {
+        let cached = [outlook(day: 2, time: 400)]
+        for (status, offline, activity) in [
+            (ConvectiveOutlookRefreshStatus.success(hasContent: true), false, ConvectiveOutlookPresentationState.Activity.current),
+            (.loading, false, .refreshing), (.failed, false, .failed), (.stale, false, .stale),
+            (.loading, true, .stale), (.failed, true, .failed)
+        ] {
+            let displayed = HomeView.preferredOutlooks(
+                cachedOutlooks: cached, liveOutlooks: [], refreshStatus: status
+            )
+            for day in [SPCForecastDay.day1, .day2, .day3] {
+                let selection = ConvectiveOutlookDayPresentation(
+                    day: day, collection: displayed, refreshStatus: status, isOffline: offline
+                )
+                #expect(selection.state == (day == .day2 ? .populated(activity) : .empty(activity)))
+                #expect(selection.outlooks == (day == .day2 ? cached : []))
+            }
+        }
+    }
+
+    @Test("no accepted collection stays loading or unavailable; accepted empty stays empty")
+    func emptyAndUnavailable() {
+        for day in [SPCForecastDay.day1, .day2, .day3] {
+            for (status, offline, expected) in [
+                (ConvectiveOutlookRefreshStatus.loading, false, ConvectiveOutlookPresentationState.loading),
+                (.loading, true, .unavailable), (.failed, false, .unavailable),
+                (.success(hasContent: false), false, .empty(.current))
+            ] {
+                #expect(ConvectiveOutlookDayPresentation(
+                    day: day, collection: [], refreshStatus: status, isOffline: offline
+                ).state == expected)
+            }
+            #expect(ConvectiveOutlookDayPresentation(
+                day: day, collection: [], refreshStatus: .failed,
+                hasAcceptedEmptySnapshot: true, isOffline: true
+            ).state == .empty(.failed))
+        }
+    }
+
+    private func outlook(day: Int?, time: Int) -> ConvectiveOutlookDTO {
+        ConvectiveOutlookDTO(
+            title: day.map { "Day \($0) Convective Outlook" } ?? "Convective Outlook",
+            link: URL(string: "https://example.com/outlook")!,
+            published: Date(timeIntervalSince1970: Double(time)), summary: "Summary", fullText: "Discussion",
+            day: day, riskLevel: nil, issued: nil, validUntil: Date(timeIntervalSince1970: 2_000)
+        )
     }
 }
