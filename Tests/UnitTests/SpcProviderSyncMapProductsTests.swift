@@ -2042,6 +2042,79 @@ struct SPCFutureCategoricalForecastTests {
         #expect(await client.currentCalls == 5)
     }
 
+    @Test("Offline reopened forecasts reach Map scenes without cross-day publication or current-risk changes")
+    func persistedForecasts_integrateWithMapScenes() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        let configuration = ModelConfiguration(schema: schema, url: directory.appendingPathComponent("cache.store"))
+        let point = CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let document = try JSONDecoder().decode(GeoJSONFeatureCollection.self,
+                from: payload(day: .day1, at: now))
+            let context = ModelContext(container)
+            context.insert(StormRisk(riskLevel: .enhanced, issued: now, expires: now.addingTimeInterval(86400),
+                valid: now, stroke: nil, fill: nil,
+                polygons: try #require(document.features.first).createPolygonEntities(polyTitle: "Current risk")))
+            try context.save()
+            let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+            try await repo.acceptCategoricalForecast(payload(day: .day2, at: now),
+                day: .day2, source: .live, now: now)
+            await #expect(throws: (any Error).self) {
+                try await repo.acceptCategoricalForecast(Data("partial publication".utf8),
+                    day: .day3, source: .live, now: now)
+            }
+        }
+
+        // A new container, provider and model consume only the durable accepted cache.
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: FireMockClient(fireData: Data()))
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        let currentRisk = StormRiskRepo(modelContainer: container)
+        #expect(try await currentRisk.active(asOf: now, for: point) == .enhanced)
+        var clock = now
+        let model = MapFeatureModel(nowProvider: { clock })
+        model.captureInitialCenterCoordinateIfNeeded(point)
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        await model.reload(using: provider, warningSource: warnings, selectedLayer: .categorical)
+        model.selectForecast(day: .day2, layer: .categorical)
+        let day2Keys = model.activeScene.canvasState.overlays.map(\.key)
+        #expect(!day2Keys.isEmpty)
+        #expect(model.activeScene.legendState.forecastPeriod?.issued == now.asMinute)
+        model.selectForecast(day: .day3, layer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .unavailable)
+        #expect(model.activeScene.canvasState.overlays.isEmpty)
+
+        let next = now.addingTimeInterval(3600)
+        try await repo.acceptCategoricalForecast(payload(day: .day3, at: next, noArea: true),
+            day: .day3, source: .live, now: next)
+        clock = next
+        await model.reload(using: provider, warningSource: warnings, selectedLayer: .categorical)
+        #expect(model.activeScene.legendState.forecastDay == .day3)
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
+        #expect(model.activeScene.legendState.forecastPeriod?.issued == next.asMinute)
+        #expect(model.activeScene.canvasState.overlays.isEmpty)
+        model.selectForecast(day: .day2, layer: .categorical)
+        #expect(model.activeScene.canvasState.overlays.map(\.key) == day2Keys)
+        #expect(model.activeScene.legendState.forecastPeriod?.issued == now.asMinute)
+
+        // Advance beyond source validity without refreshing: each cached scene remains day-scoped and stale.
+        clock = now.addingTimeInterval(5 * 86400)
+        for day in [SPCForecastDay.day3, .day2] {
+            model.selectForecast(day: day, layer: .categorical)
+            #expect(model.activeScene.legendState.forecastDay == day)
+            #expect(model.activeScene.legendState.presentationState == .stale)
+            let center = try #require(model.activeScene.canvasState.initialCenterCoordinate)
+            #expect(center.latitude == point.latitude && center.longitude == point.longitude)
+        }
+        #expect(model.activeScene.canvasState.overlays.map(\.key) == day2Keys)
+        #expect(!model.selectForecast(day: .day3, layer: .tornado))
+        #expect(model.selectedForecastDay == .day2)
+        #expect(try await currentRisk.active(asOf: now, for: point) == .enhanced)
+    }
+
     @Test("Rollover replaces expired cached geometry only with a coherent newer source period")
     func rollover() async throws {
         let container = try TestStore.container(for: [SPCCategoricalForecast.self])
