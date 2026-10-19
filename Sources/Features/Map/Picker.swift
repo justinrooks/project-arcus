@@ -78,6 +78,7 @@ struct MapLayerMenu: View {
 
     @Binding var selection: MapLayer
     @Binding var showsWarningGeometry: Bool
+    var forecastDay: SPCForecastDay = .day1
 
     var body: some View {
         Menu {
@@ -95,7 +96,7 @@ struct MapLayerMenu: View {
 
             Divider()
 
-            Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
+            Toggle(MapForecastPresentationPolicy.warningToggleTitle(forecastDay), isOn: $showsWarningGeometry)
         } label: {
             MapLayerMenuLabel(layer: selection)
                 .transaction { transaction in

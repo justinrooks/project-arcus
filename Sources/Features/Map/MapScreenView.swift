@@ -140,7 +140,8 @@ private struct MapScreenContent: View {
         MapAccessibilitySummary.make(
             scene: scene,
             locationCoordinate: locationCoordinate,
-            showsWarningGeometry: showsWarningGeometry
+            showsWarningGeometry: showsWarningGeometry,
+            forecastDay: forecastDay
         )
     }
 
@@ -180,7 +181,7 @@ private struct MapScreenContent: View {
             .presentationDetents([.medium, .large])
         }
         .onChange(of: forecastDay) { _, day in
-            if day != .day1, activeMapSheet == .awareness {
+            if MapForecastPresentationPolicy.dismissesAwarenessSheet(day), activeMapSheet == .awareness {
                 activeMapSheet = nil
             }
         }
@@ -189,7 +190,8 @@ private struct MapScreenContent: View {
     private var layerMenu: some View {
         MapLayerMenu(
             selection: $selected,
-            showsWarningGeometry: $showsWarningGeometry
+            showsWarningGeometry: $showsWarningGeometry,
+            forecastDay: forecastDay
         )
     }
 
@@ -215,7 +217,7 @@ private struct MapScreenContent: View {
 
     @ViewBuilder
     private func awarenessSummary(maximumHeight: CGFloat) -> some View {
-        if forecastDay == .day1, primaryAwareness.mapSummaryIsVisible {
+        if MapForecastPresentationPolicy.showsCurrentAwareness(forecastDay), primaryAwareness.mapSummaryIsVisible {
             MapAwarenessDisclosure(
                 primary: primaryAwareness,
                 maximumHeight: maximumHeight,
