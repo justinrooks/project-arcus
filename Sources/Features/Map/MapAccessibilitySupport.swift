@@ -1,6 +1,25 @@
 import CoreLocation
 import CoreGraphics
 import MapKit
+import ArcusCore
+
+enum MapForecastPresentationPolicy {
+    static func isFutureOutlook(_ day: SPCForecastDay) -> Bool {
+        day == .day2 || day == .day3
+    }
+
+    static func showsCurrentAwareness(_ day: SPCForecastDay) -> Bool {
+        !isFutureOutlook(day)
+    }
+
+    static func dismissesAwarenessSheet(_ day: SPCForecastDay) -> Bool {
+        isFutureOutlook(day)
+    }
+
+    static func warningToggleTitle(_ day: SPCForecastDay) -> String {
+        isFutureOutlook(day) ? "Show Current-Day Alerts" : "Show Active Alerts"
+    }
+}
 
 struct MapAccessibilitySummary: Equatable {
     let label: String
@@ -9,12 +28,17 @@ struct MapAccessibilitySummary: Equatable {
     static func make(
         scene: MapLayerScene,
         locationCoordinate: CLLocationCoordinate2D?,
-        showsWarningGeometry: Bool
+        showsWarningGeometry: Bool,
+        forecastDay: SPCForecastDay = .day1
     ) -> MapAccessibilitySummary {
         let parts = [
             scene.legendState.voiceOverText,
             relationshipText(for: scene, locationCoordinate: locationCoordinate),
-            warningOverlayText(for: scene, showsWarningGeometry: showsWarningGeometry)
+            warningOverlayText(
+                for: scene,
+                showsWarningGeometry: showsWarningGeometry,
+                forecastDay: forecastDay
+            )
         ]
 
         return MapAccessibilitySummary(
@@ -50,8 +74,13 @@ struct MapAccessibilitySummary: Equatable {
 
     private static func warningOverlayText(
         for scene: MapLayerScene,
-        showsWarningGeometry: Bool
+        showsWarningGeometry: Bool,
+        forecastDay: SPCForecastDay
     ) -> String {
+        if MapForecastPresentationPolicy.isFutureOutlook(forecastDay) {
+            return "Active warnings are current-day only and are not displayed in future outlooks."
+        }
+
         guard showsWarningGeometry else {
             return "Active warnings overlay hidden."
         }

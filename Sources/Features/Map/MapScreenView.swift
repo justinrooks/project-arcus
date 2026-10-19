@@ -51,6 +51,10 @@ struct MapScreenView: View {
         MapScreenContent(
             selected: $selected,
             showsWarningGeometry: $showsWarningGeometry,
+            forecastDay: model.selectedForecastDay,
+            onSelectForecastDay: { day in
+                _ = model.selectForecast(day: day, layer: selected)
+            },
             scene: model.activeScene,
             locationCoordinate: locationSession.currentSnapshot?.coordinates,
             primaryAwareness: primaryAwareness
@@ -120,6 +124,8 @@ private struct MapScreenContent: View {
     @Binding var selected: MapLayer
     @Binding var showsWarningGeometry: Bool
 
+    let forecastDay: SPCForecastDay
+    let onSelectForecastDay: (SPCForecastDay) -> Void
     let scene: MapLayerScene
     let locationCoordinate: CLLocationCoordinate2D?
     let primaryAwareness: SummaryAwarenessPrimaryState
@@ -134,7 +140,8 @@ private struct MapScreenContent: View {
         MapAccessibilitySummary.make(
             scene: scene,
             locationCoordinate: locationCoordinate,
-            showsWarningGeometry: showsWarningGeometry
+            showsWarningGeometry: showsWarningGeometry,
+            forecastDay: forecastDay
         )
     }
 
@@ -173,18 +180,44 @@ private struct MapScreenContent: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .onChange(of: forecastDay) { _, day in
+            if MapForecastPresentationPolicy.dismissesAwarenessSheet(day), activeMapSheet == .awareness {
+                activeMapSheet = nil
+            }
+        }
     }
 
     private var layerMenu: some View {
         MapLayerMenu(
             selection: $selected,
-            showsWarningGeometry: $showsWarningGeometry
+            showsWarningGeometry: $showsWarningGeometry,
+            forecastDay: forecastDay
         )
+    }
+
+    private var mapControlRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                layerMenu
+                forecastDayMenu
+            }
+
+            VStack(alignment: .trailing, spacing: 8) {
+                layerMenu
+                forecastDayMenu
+            }
+        }
+        .padding(.horizontal, 14)
+    }
+
+    @ViewBuilder
+    private var forecastDayMenu: some View {
+        MapForecastDayMenu(layer: selected, selectedDay: forecastDay, onSelect: onSelectForecastDay)
     }
 
     @ViewBuilder
     private func awarenessSummary(maximumHeight: CGFloat) -> some View {
-        if primaryAwareness.mapSummaryIsVisible {
+        if MapForecastPresentationPolicy.showsCurrentAwareness(forecastDay), primaryAwareness.mapSummaryIsVisible {
             MapAwarenessDisclosure(
                 primary: primaryAwareness,
                 maximumHeight: maximumHeight,
@@ -197,8 +230,7 @@ private struct MapScreenContent: View {
     private var mapTopSurfaces: some View {
         GeometryReader { geometry in
             VStack(alignment: .trailing, spacing: 12) {
-                layerMenu
-                    .padding(.horizontal, 14)
+                mapControlRow
 
                 awarenessSummary(maximumHeight: max(120, geometry.size.height * 0.36))
                 Spacer(minLength: 0)
@@ -426,6 +458,8 @@ private struct MapScreenContentPreview: View {
         MapScreenContent(
             selected: .constant(selectedLayer),
             showsWarningGeometry: .constant(true),
+            forecastDay: legendState.forecastDay,
+            onSelectForecastDay: { _ in },
             scene: MapLayerScene(
                 canvasState: MapCanvasState(
                     overlays: warningOverlays,

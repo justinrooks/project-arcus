@@ -65,6 +65,12 @@ struct MapLayerMenuAccessibilityState: Equatable, Sendable {
     let isSelected: Bool
 }
 
+struct MapForecastDayMenuAccessibilityState: Equatable, Sendable {
+    let label: String
+    let value: String
+    let hint: String
+}
+
 // MARK: - Menu
 
 struct MapLayerMenu: View {
@@ -72,6 +78,7 @@ struct MapLayerMenu: View {
 
     @Binding var selection: MapLayer
     @Binding var showsWarningGeometry: Bool
+    var forecastDay: SPCForecastDay = .day1
 
     var body: some View {
         Menu {
@@ -89,7 +96,7 @@ struct MapLayerMenu: View {
 
             Divider()
 
-            Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
+            Toggle(MapForecastPresentationPolicy.warningToggleTitle(forecastDay), isOn: $showsWarningGeometry)
         } label: {
             MapLayerMenuLabel(layer: selection)
                 .transaction { transaction in
@@ -116,7 +123,75 @@ struct MapLayerMenu: View {
     }
 }
 
-private struct MapLayerPickerButtonStyle: ViewModifier {
+struct MapForecastDayMenu: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let layer: MapLayer
+    let selectedDay: SPCForecastDay
+    let onSelect: (SPCForecastDay) -> Void
+
+    private var supportedDays: [SPCForecastDay] {
+        Self.supportedDays(for: layer)
+    }
+
+    var body: some View {
+        if Self.isVisible(for: layer) {
+            let accessibilityState = Self.accessibilityState(for: selectedDay)
+
+            Menu {
+                Picker("Forecast day", selection: Binding(
+                    get: { selectedDay.rawValue },
+                    set: { rawValue in
+                        guard let day = SPCForecastDay(rawValue: rawValue) else { return }
+                        onSelect(day)
+                    }
+                )) {
+                    ForEach(supportedDays, id: \.rawValue) { day in
+                        Text(day.description).tag(day.rawValue)
+                    }
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Text(selectedDay.description)
+                        .font(dynamicTypeSize >= .accessibility1 ? .headline.weight(.semibold) : .subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .contentShape(Capsule())
+            }
+            .accessibilityLabel(accessibilityState.label)
+            .accessibilityValue(accessibilityState.value)
+            .accessibilityHint(accessibilityState.hint)
+            .modifier(MapLayerPickerButtonStyle())
+            .sensoryFeedback(.selection, trigger: selectedDay)
+        }
+    }
+
+    static func supportedDays(for layer: MapLayer) -> [SPCForecastDay] {
+        SPCForecastDay.allCases.filter { day in
+            day != .current && MapForecastSelection.supports(day: day, layer: layer)
+        }
+    }
+
+    static func isVisible(for layer: MapLayer) -> Bool {
+        supportedDays(for: layer).count > 1
+    }
+
+    static func accessibilityState(for selectedDay: SPCForecastDay) -> MapForecastDayMenuAccessibilityState {
+        MapForecastDayMenuAccessibilityState(
+            label: "Forecast day",
+            value: selectedDay.description,
+            hint: "Choose a supported forecast day for this map layer."
+        )
+    }
+}
+
+struct MapLayerPickerButtonStyle: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 

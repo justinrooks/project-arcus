@@ -414,6 +414,59 @@ struct MapFeatureModelTests {
         )
     }
 
+    @Test("forecast presentation keeps awareness on current days and limits warnings to current day")
+    func forecastPresentationPolicy_currentAndFutureDays() {
+        #expect(MapForecastPresentationPolicy.showsCurrentAwareness(.day1))
+        #expect(MapForecastPresentationPolicy.showsCurrentAwareness(.current))
+        #expect(!MapForecastPresentationPolicy.showsCurrentAwareness(.day2))
+        #expect(!MapForecastPresentationPolicy.showsCurrentAwareness(.day3))
+
+        #expect(!MapForecastPresentationPolicy.dismissesAwarenessSheet(.day1))
+        #expect(!MapForecastPresentationPolicy.dismissesAwarenessSheet(.current))
+        #expect(MapForecastPresentationPolicy.dismissesAwarenessSheet(.day2))
+        #expect(MapForecastPresentationPolicy.dismissesAwarenessSheet(.day3))
+
+        #expect(MapForecastPresentationPolicy.warningToggleTitle(.day1) == "Show Active Alerts")
+        #expect(MapForecastPresentationPolicy.warningToggleTitle(.current) == "Show Active Alerts")
+        #expect(MapForecastPresentationPolicy.warningToggleTitle(.day2) == "Show Current-Day Alerts")
+        #expect(MapForecastPresentationPolicy.warningToggleTitle(.day3) == "Show Current-Day Alerts")
+    }
+
+    @Test("future forecast warning summary ignores the persisted warning preference")
+    func accessibilitySummary_futureOutlookWarningsAreCurrentDayOnly() {
+        let scene = MapLayerScene.placeholder(for: .tornado)
+        let expected = "Active warnings are current-day only and are not displayed in future outlooks."
+
+        for day in [SPCForecastDay.day1, .current] {
+            let summary = MapAccessibilitySummary.make(
+                scene: scene,
+                locationCoordinate: nil,
+                showsWarningGeometry: true,
+                forecastDay: day
+            )
+
+            #expect(summary.value.hasSuffix("Active warnings overlay on. No active warning areas are displayed."))
+        }
+
+        for day in [SPCForecastDay.day2, .day3] {
+            let enabledSummary = MapAccessibilitySummary.make(
+                scene: scene,
+                locationCoordinate: nil,
+                showsWarningGeometry: true,
+                forecastDay: day
+            )
+            let disabledSummary = MapAccessibilitySummary.make(
+                scene: scene,
+                locationCoordinate: nil,
+                showsWarningGeometry: false,
+                forecastDay: day
+            )
+
+            #expect(enabledSummary.value.hasSuffix(expected))
+            #expect(disabledSummary.value.hasSuffix(expected))
+        }
+    }
+
     @Test("differentiate-without-color styles stay dormant until requested")
     func differentiateWithoutColorStyle_defaultState() {
         let style = MapOverlayDifferentiationStyle.severe(probability: .percent(0.10))
