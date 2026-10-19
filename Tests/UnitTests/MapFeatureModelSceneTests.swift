@@ -10,6 +10,45 @@ import Testing
 struct MapFeatureModelSceneTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
+    @Test("Layer transitions preserve supported days and reset unsupported days")
+    func layerTransitions_preserveOrResetForecastDay() {
+        let model = MapFeatureModel(nowProvider: { self.now })
+
+        #expect(model.selectForecast(day: .day3, layer: .categorical))
+        model.selectLayer(.tornado)
+        #expect(model.selectedForecastDay == .day1)
+
+        #expect(model.selectForecast(day: .day2, layer: .tornado))
+        model.selectLayer(.hail)
+        #expect(model.selectedForecastDay == .day2)
+        model.selectLayer(.wind)
+        #expect(model.selectedForecastDay == .day2)
+        model.selectLayer(.fire)
+        #expect(model.selectedForecastDay == .current)
+        model.selectLayer(.categorical)
+        #expect(model.selectedForecastDay == .day1)
+    }
+
+    @Test("Forecast day menu follows layer capabilities and exposes its selection")
+    func forecastDayMenu_usesCapabilityAndAccessibilityPolicies() {
+        #expect(MapForecastDayMenu.supportedDays(for: .categorical) == [.day1, .day2, .day3])
+        #expect(MapForecastDayMenu.supportedDays(for: .tornado) == [.day1, .day2])
+        #expect(MapForecastDayMenu.supportedDays(for: .hail) == [.day1, .day2])
+        #expect(MapForecastDayMenu.supportedDays(for: .wind) == [.day1, .day2])
+        #expect(MapForecastDayMenu.supportedDays(for: .fire).isEmpty)
+        #expect(MapForecastDayMenu.supportedDays(for: .meso).isEmpty)
+
+        #expect(MapForecastDayMenu.isVisible(for: .categorical))
+        #expect(MapForecastDayMenu.isVisible(for: .tornado))
+        #expect(MapForecastDayMenu.isVisible(for: .fire) == false)
+        #expect(MapForecastDayMenu.isVisible(for: .meso) == false)
+
+        let accessibility = MapForecastDayMenu.accessibilityState(for: .day2)
+        #expect(accessibility.label == "Forecast day")
+        #expect(accessibility.value == "Day 2")
+        #expect(accessibility.hint.contains("supported forecast day"))
+    }
+
     @Test("forecast selection uses accepted day-specific cache, retains center, and excludes current warnings")
     func forecastSelection_isCachedAndScoped() async throws {
         let service = ForecastMapData()
