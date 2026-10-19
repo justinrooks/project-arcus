@@ -7,6 +7,29 @@
 
 import Foundation
 
+struct ConvectiveOutlookDayPresentation {
+    let outlooks: [ConvectiveOutlookDTO]
+    let state: ConvectiveOutlookPresentationState
+
+    init(
+        day: SPCForecastDay,
+        collection: [ConvectiveOutlookDTO],
+        refreshStatus: ConvectiveOutlookRefreshStatus,
+        hasAcceptedEmptySnapshot: Bool = false,
+        isOffline: Bool = false
+    ) {
+        outlooks = sortedConvectiveOutlooks(collection.filter { $0.day == day.rawValue })
+        // A missing day in an accepted collection is a confirmed absence for that day.
+        // Preserve that fact during refresh, failure, and offline reads.
+        state = ConvectiveOutlookPresentationState.resolve(
+            dtos: outlooks,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot || (!collection.isEmpty && outlooks.isEmpty),
+            isOffline: isOffline
+        )
+    }
+}
+
 enum ConvectiveOutlookRefreshStatus: Equatable {
     case loading
     case success(hasContent: Bool)

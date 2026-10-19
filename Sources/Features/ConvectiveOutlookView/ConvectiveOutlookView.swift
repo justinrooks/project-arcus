@@ -9,17 +9,30 @@ import SwiftUI
 
 struct ConvectiveOutlookView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var selectedDay: SPCForecastDay = .day1
 
     let dtos: [ConvectiveOutlookDTO]
     let onRefresh: (() async -> Void)?
-    let presentationState: ConvectiveOutlookPresentationState
+    let refreshStatus: ConvectiveOutlookRefreshStatus
+    let hasAcceptedEmptySnapshot: Bool
+    let isOffline: Bool
 
-    private var sortedOutlooks: [ConvectiveOutlookDTO] {
-        sortedConvectiveOutlooks(dtos)
+    private var dayPresentation: ConvectiveOutlookDayPresentation {
+        ConvectiveOutlookDayPresentation(
+            day: selectedDay,
+            collection: dtos,
+            refreshStatus: refreshStatus,
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
+        )
+    }
+
+    private var presentationState: ConvectiveOutlookPresentationState {
+        dayPresentation.state
     }
 
     private var latestOutlook: ConvectiveOutlookDTO? {
-        sortedOutlooks.first
+        dayPresentation.outlooks.first
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -27,7 +40,7 @@ struct ConvectiveOutlookView: View {
     }
 
     private var earlierOutlooks: [ConvectiveOutlookDTO] {
-        Array(sortedOutlooks.dropFirst())
+        Array(dayPresentation.outlooks.dropFirst())
     }
 
     init(
@@ -39,17 +52,23 @@ struct ConvectiveOutlookView: View {
     ) {
         self.dtos = dtos
         self.onRefresh = onRefresh
-        self.presentationState = ConvectiveOutlookPresentationState.resolve(
-            dtos: dtos,
-            refreshStatus: refreshStatus ?? (dtos.isEmpty ? .loading : .success(hasContent: true)),
-            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
-            isOffline: isOffline
-        )
+        self.refreshStatus = refreshStatus ?? (dtos.isEmpty ? .loading : .success(hasContent: true))
+        self.hasAcceptedEmptySnapshot = hasAcceptedEmptySnapshot
+        self.isOffline = isOffline
     }
 
     var body: some View {
         List {
             Section {
+                Picker("Forecast day", selection: $selectedDay) {
+                    ForEach([SPCForecastDay.day1, .day2, .day3], id: \.self) { day in
+                        Text("Day \(day.rawValue)").tag(day)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("outlook-day-picker")
+                .listRowBackground(Color.clear)
+
                 overviewCard
                     .listRowInsets(
                         EdgeInsets(
@@ -105,8 +124,8 @@ struct ConvectiveOutlookView: View {
             case .empty:
                 Section {
                     stateCard(
-                        title: "No outlooks returned",
-                        message: "The latest SPC refresh did not return any convective outlooks.",
+                        title: "No Day \(selectedDay.rawValue) outlooks returned",
+                        message: emptyMessage,
                         symbol: "cloud.sun.fill"
                     )
                     .listRowInsets(
@@ -252,10 +271,14 @@ struct ConvectiveOutlookView: View {
         case .unavailable:
             "SkyAware could not load the latest SPC outlooks right now. Severe-weather risk can still exist even when this feed is unavailable."
         case .empty:
-            "The latest SPC refresh did not return any convective outlooks."
+            emptyMessage
         case .populated:
             Self.overviewMessage(for: latestOutlook)
         }
+    }
+
+    private var emptyMessage: String {
+        "The last confirmed SPC collection did not include a Day \(selectedDay.rawValue) convective outlook."
     }
 
     private func stateCard(
