@@ -89,6 +89,73 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testOutlookDiscussionMapRoundTripRendersLatestDiscussionForEachDay() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let outlooksTab = app.tabBars.buttons["Outlooks"]
+        XCTAssertTrue(outlooksTab.waitForExistence(timeout: 10))
+        outlooksTab.tap()
+
+        let summarySnippets = [
+            "Isolated severe thunderstorms are possible through the day",
+            "Isolated severe storms are possible across parts of the northern Plains",
+            "Scattered thunderstorms are expected across the central Plains"
+        ]
+        let fullTextSnippets = [
+            "far southwest WA coast",
+            "Day 2 Convective Outlook. Isolated severe storms are possible",
+            "Day 3 Convective Outlook. Scattered thunderstorms are expected"
+        ]
+
+        for day in 1...3 {
+            let dayPicker = app.buttons["outlook-day-picker"]
+            XCTAssertTrue(dayPicker.waitForExistence(timeout: 10))
+            dayPicker.tap()
+            app.buttons["Day \(day)"].tap()
+
+            let latestRow = app.descendants(matching: .any).matching(identifier: "outlook-latest-row").firstMatch
+            XCTAssertTrue(latestRow.waitForExistence(timeout: 10), "Expected accepted Day \(day) discussion row.")
+            latestRow.tap()
+
+            XCTAssertTrue(app.navigationBars["Day \(day) Outlook"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["Day \(day) Convective Outlook"].exists)
+            XCTAssertTrue(app.staticTexts["Summary"].exists)
+            XCTAssertTrue(app.staticTexts["Full Discussion"].exists)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", summarySnippets[day - 1])).firstMatch.exists)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", fullTextSnippets[day - 1])).firstMatch.exists)
+
+            app.buttons["View Day \(day) on Map"].tap()
+            let mapDiscussion = app.buttons["View Day \(day) Discussion"]
+            XCTAssertTrue(mapDiscussion.waitForExistence(timeout: 10))
+            mapDiscussion.tap()
+
+            XCTAssertTrue(app.navigationBars["Day \(day) Outlook"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["Day \(day) Convective Outlook"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["Summary"].exists)
+            XCTAssertTrue(app.staticTexts["Full Discussion"].exists)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", summarySnippets[day - 1])).firstMatch.exists)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", fullTextSnippets[day - 1])).firstMatch.exists)
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+
+            let returnedDayPicker = app.buttons["outlook-day-picker"]
+            XCTAssertTrue(returnedDayPicker.waitForExistence(timeout: 10))
+            XCTAssertTrue(returnedDayPicker.label.contains("Day \(day)"))
+            XCTAssertTrue(app.buttons["outlook-latest-row"].exists)
+        }
+
+        app.tabBars.buttons["Map"].tap()
+        outlooksTab.tap()
+        let dayPicker = app.buttons["outlook-day-picker"]
+        XCTAssertTrue(dayPicker.waitForExistence(timeout: 10))
+        XCTAssertTrue(dayPicker.label.contains("Day 1"), "Ordinary Outlooks entry should reset the forecast day to Day 1.")
+    }
+
+    @MainActor
     func testNoCacheResolvingFixturePresentsOutsideSummaryInLightAndDarkAppearance() throws {
         let lightApp = launchNoCacheResolvingFixtureApp(colorScheme: "light", accessibilityTextSize: true)
         assertNoCacheResolvingPresentation(in: lightApp, appearance: "light")

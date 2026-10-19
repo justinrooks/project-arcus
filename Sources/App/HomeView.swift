@@ -859,7 +859,14 @@ struct HomeOutlookNavigationState {
         from oldTab: HomeView.HomeTab,
         to newTab: HomeView.HomeTab
     ) {
-        guard oldTab != .outlooks, newTab == .outlooks else { return }
+        guard oldTab != newTab else { return }
+
+        if oldTab == .outlooks, newTab != .outlooks {
+            navigationPath = []
+            return
+        }
+
+        guard newTab == .outlooks else { return }
         if pendingExplicitEntryRequestID != nil {
             pendingExplicitEntryRequestID = nil
             return
