@@ -268,15 +268,15 @@ struct MapPolygonMapper: Sendable {
     private func warningPolygonEntries(
         from warning: ActiveWarningGeometry
     ) -> [MapPolygonEntry] {
-        let coordinatesByPolygonIndex: [[Coordinate2D]]
+        let ringsByPolygonIndex: [(exterior: [Coordinate2D], interiors: [[Coordinate2D]])]
         switch warning.geometry {
         case .polygon(let rings):
-            guard let exteriorRing = exteriorRing(from: rings) else { return [] }
-            coordinatesByPolygonIndex = [exteriorRing]
+            guard let polygonRings = validWarningRings(from: rings) else { return [] }
+            ringsByPolygonIndex = [polygonRings]
 
         case .multiPolygon(let polygons):
-            coordinatesByPolygonIndex = polygons.compactMap { polygon in
-                exteriorRing(from: polygon)
+            ringsByPolygonIndex = polygons.compactMap { polygon in
+                validWarningRings(from: polygon)
             }
         }
 
@@ -284,27 +284,43 @@ struct MapPolygonMapper: Sendable {
         let eventKey = sanitizedKeyPart(warning.event)
         let alertID = sanitizedKeyPart(warning.id)
 
-        return coordinatesByPolygonIndex.enumerated().map { index, coordinates in
-            let geometryFingerprint = warningGeometryFingerprint(for: coordinates)
+        return ringsByPolygonIndex.enumerated().map { index, rings in
+            let geometryFingerprint = warningGeometryFingerprint(
+                exterior: rings.exterior,
+                interiors: rings.interiors
+            )
             return MapPolygonEntry(
                 key: "warn|\(alertID)|\(revisionIdentity)|\(eventKey)|\(index)|\(geometryFingerprint)",
                 title: warning.event,
                 subtitle: nil,
-                coordinates: coordinates
+                coordinates: rings.exterior,
+                interiorCoordinates: rings.interiors
             )
         }
     }
 
-    private func exteriorRing(
+    private func validWarningRings(
         from rings: [[DeviceAlertCoordinate]]
-    ) -> [Coordinate2D]? {
-        guard let firstRing = rings.first, !firstRing.isEmpty else {
+    ) -> (exterior: [Coordinate2D], interiors: [[Coordinate2D]])? {
+        guard let exteriorCoordinates = rings.first,
+              let exterior = validWarningRing(from: exteriorCoordinates) else {
             return nil
         }
 
-        return firstRing.map { coordinate in
-            Coordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let interiors = rings.dropFirst().compactMap(validWarningRing(from:))
+        return (exterior, interiors)
+    }
+
+    private func validWarningRing(from ring: [DeviceAlertCoordinate]) -> [Coordinate2D]? {
+        guard ring.count >= 3,
+              ring.allSatisfy({
+                  $0.latitude.isFinite && (-90...90).contains($0.latitude) &&
+                      $0.longitude.isFinite && (-180...180).contains($0.longitude)
+              }) else {
+            return nil
         }
+
+        return ring.map { Coordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
     private func warningRevisionIdentity(
@@ -322,12 +338,20 @@ struct MapPolygonMapper: Sendable {
     }
 
     private func warningGeometryFingerprint(
-        for coordinates: [Coordinate2D]
+        exterior: [Coordinate2D],
+        interiors: [[Coordinate2D]]
     ) -> String {
         var hasher = StableMapHasher()
-        hasher.combine(coordinates.count)
-        for coordinate in coordinates {
+        hasher.combine(exterior.count)
+        for coordinate in exterior {
             hasher.combine(coordinate)
+        }
+        hasher.combine(interiors.count)
+        for interior in interiors {
+            hasher.combine(interior.count)
+            for coordinate in interior {
+                hasher.combine(coordinate)
+            }
         }
         return hasher.hexString
     }
