@@ -131,12 +131,16 @@ struct MapLegendState: Sendable {
             ? "\(forecastDay.description) · \(statusHeadlineText)" : statusHeadlineText
     }
 
+    var showsUpdatingStatus: Bool {
+        presentationState == .resolving
+    }
+
     private var statusHeadlineText: String {
         switch presentationState {
         case .loading:
             "Getting \(layer.legendSubject)…"
         case .resolving:
-            "\(layer.legendDisplayTitle) · Updating"
+            layer.legendDisplayTitle
         case .current:
             layer.legendDisplayTitle
         case .confirmedEmpty:

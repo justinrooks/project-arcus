@@ -336,11 +336,27 @@ private struct MapScreenContent: View {
                 mapControlRow
 
                 awarenessSummary(maximumHeight: max(120, geometry.size.height * 0.36))
+
+                if scene.legendState.showsUpdatingStatus {
+                    updatingStatusChip
+                        .transition(.opacity)
+                }
                 Spacer(minLength: 0)
             }
+            .animation(SkyAwareMotion.disclosure(reduceMotion), value: scene.legendState.showsUpdatingStatus)
             .padding(.top, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
+    }
+
+    private var updatingStatusChip: some View {
+        Label("Updating…", systemImage: "arrow.triangle.2.circlepath")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.regularMaterial, in: Capsule())
+            .accessibilityHidden(true)
     }
 
     private var showsWarningLegend: Bool {
