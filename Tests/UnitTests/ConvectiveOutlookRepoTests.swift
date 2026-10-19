@@ -712,6 +712,13 @@ struct ConvectiveOutlookRepoTests {
             #expect(presentation.outlooks[0].published > presentation.outlooks[1].published)
             print("issue-732 accepted/restored/Home/presentation Day \(day.rawValue): \(presentation.outlooks.count)")
             #expect(presentation.outlooks.allSatisfy { $0.day == day.rawValue && $0.validUntil == nil })
+            let path = await MainActor.run {
+                ConvectiveOutlookView.navigationPath(
+                    for: day, opensLatestDiscussion: true, dtos: displayed,
+                    refreshStatus: .failed, hasAcceptedEmptySnapshot: false, isOffline: true
+                )
+            }
+            #expect(path == [presentation.outlooks[0]])
         }
     }
 
