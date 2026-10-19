@@ -152,17 +152,17 @@ struct MapScreenView: View {
             let updates = await dependencies.feedStateStore.acceptedGenerationUpdates()
             scheduleReload()
 
-            await MapFeatureModel.observeAcceptedFeedUpdates(from: updates) { _ in
-                scheduleReload()
+            await MapFeatureModel.observeAcceptedFeedUpdates(from: updates) { update in
+                scheduleReload(for: update)
             }
         }
     }
     
     @MainActor
-    private func scheduleReload() {
-        model.invalidateAcceptedInputs()
+    private func scheduleReload(for update: FeedStateGenerationUpdate? = nil) {
+        guard model.invalidateAcceptedInputs(for: update) else { return }
         reloadCoordinator.schedule {
-            await model.reload(
+            await model.reloadAcceptedInputs(
                 using: dependencies.spcMapData,
                 mesoSource: dependencies.arcusMesoProvider,
                 warningSource: dependencies.arcusProvider,

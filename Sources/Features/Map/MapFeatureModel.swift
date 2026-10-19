@@ -38,19 +38,9 @@ private extension MapLayerScene {
 @MainActor
 @Observable
 final class MapFeatureModel {
-    private static let invalidatingFeedIDs: Set<String> = [
-        "spc.map.convective",
-        "spc.map.fire",
-        "spc.map.categorical.day2",
-        "spc.map.categorical.day3",
-        "spc.map.hazards.day2",
-        "arcus.alert",
-        "arcus.alerts"
-    ]
-
     private let logger = Logger.uiMap
     private let polygonMapper = MapPolygonMapper()
-    private let planner = MapScenePlanner()
+    private let planner: any MapScenePlanning
     private let nowProvider: () -> Date
     private var renderPlans: [MapLayer: MapLayerRenderPlan] = [:]
     private var sceneCache = MapSceneCache()
@@ -61,18 +51,30 @@ final class MapFeatureModel {
     private var isLoading = false
     private var pendingReload = false
     private var acceptedInputRevision = 0
+    private var pendingScope: MapAcceptedUpdateScope = []
+    private var observedGenerations: [String: Int] = [:]
 
-    init(nowProvider: @escaping () -> Date = Date.init) {
+    init(nowProvider: @escaping () -> Date = Date.init, planner: any MapScenePlanning = MapScenePlanner()) {
         self.nowProvider = nowProvider
+        self.planner = planner
     }
 
-    /// Called at scheduling time, before the coordinator can defer the next reload.
-    func invalidateAcceptedInputs() {
+    /// Record identity before the coordinator can defer or replace its pending operation.
+    @discardableResult
+    func invalidateAcceptedInputs(for update: FeedStateGenerationUpdate? = nil) -> Bool {
+        let scope = update.map { MapAcceptedUpdateScope.acceptedFeed($0.feedID) } ?? .all
+        guard !scope.isEmpty else { return false }
+        if let update {
+            guard update.generation > (observedGenerations[update.feedID] ?? 0) else { return false }
+            observedGenerations[update.feedID] = update.generation
+        }
+        pendingScope.formUnion(scope)
         acceptedInputRevision += 1
+        return true
     }
 
     static func shouldReload(forAcceptedFeedID feedID: String) -> Bool {
-        invalidatingFeedIDs.contains(feedID) || feedID.hasPrefix("home.hot.")
+        !MapAcceptedUpdateScope.acceptedFeed(feedID).isEmpty
     }
 
     static func observeAcceptedFeedUpdates(
@@ -94,7 +96,19 @@ final class MapFeatureModel {
         warningSource: any ArcusAlertQuerying,
         selectedLayer: MapLayer
     ) async {
-        selectLayer(selectedLayer)
+        invalidateAcceptedInputs()
+        await reloadAcceptedInputs(using: service, mesoSource: mesoSource,
+            warningSource: warningSource, selectedLayer: selectedLayer)
+    }
+
+    /// Drains scopes recorded at scheduling time. Unlike `reload`, this never implies a full read.
+    func reloadAcceptedInputs(
+        using service: any SpcMapData,
+        mesoSource: any ArcusMesoQuerying,
+        warningSource: any ArcusAlertQuerying,
+        selectedLayer: MapLayer
+    ) async {
+        if currentSelectedLayer != selectedLayer { selectLayer(selectedLayer) }
 
         if isLoading {
             pendingReload = true
@@ -107,16 +121,21 @@ final class MapFeatureModel {
             pendingReload = false
         }
 
-        showRefreshStateForCurrentSelection()
+        if pendingScope == .all { showRefreshStateForCurrentSelection() }
 
         while Task.isCancelled == false {
+            guard !pendingScope.isEmpty else { return }
             pendingReload = false
+            let scope = pendingScope
+            pendingScope = []
             let inputRevision = acceptedInputRevision
             let didReplaceRenderPlans = await performReload(
                 using: service,
                 mesoSource: mesoSource,
-                warningSource: warningSource
+                warningSource: warningSource,
+                scope: scope
             )
+            if !didReplaceRenderPlans { pendingScope.formUnion(scope) }
 
             if pendingReload == false {
                 if didReplaceRenderPlans == false, inputRevision == acceptedInputRevision {
@@ -124,11 +143,12 @@ final class MapFeatureModel {
                 }
                 return
             }
-            showRefreshStateForCurrentSelection()
+            if pendingScope == .all { showRefreshStateForCurrentSelection() }
         }
     }
 
     func reloadMesoscale(using source: any ArcusMesoQuerying) async {
+        let inputRevision = acceptedInputRevision
         let mesos = await fetchMesoShapes(using: source)
         guard Task.isCancelled == false, mesos.isCancellation == false else { return }
 
@@ -146,18 +166,23 @@ final class MapFeatureModel {
             polygonMapper: polygonMapper,
             warningPolygons: KeyedMapPolygons(entries: [])
         )
-        guard Task.isCancelled == false else { return }
+        guard Task.isCancelled == false,
+              inputRevision == acceptedInputRevision || !pendingScope.contains(.meso) else { return }
 
-        renderPlans[.meso] = plan
-        sceneCache.remove(.meso)
-        applySelectedLayer(currentSelectedLayer)
+        publish(currentPlans: renderPlans.merging([.meso: plan]) { _, new in new },
+            futurePlans: forecastPlans, scope: .meso)
     }
 
     private func performReload(
         using service: any SpcMapData,
         mesoSource: any ArcusMesoQuerying,
-        warningSource: any ArcusAlertQuerying
+        warningSource: any ArcusAlertQuerying,
+        scope: MapAcceptedUpdateScope
     ) async -> Bool {
+        if scope != .all {
+            return await performScopedReload(using: service, mesoSource: mesoSource,
+                warningSource: warningSource, scope: scope)
+        }
         let inputRevision = acceptedInputRevision
         let selectedLayer = currentSelectedLayer
         let selectedPayload = await fetchSelectedLayerPayload(
@@ -213,24 +238,96 @@ final class MapFeatureModel {
               Task.isCancelled == false, pendingReload == false,
               inputRevision == acceptedInputRevision else { return false }
 
-        renderPlans = candidatePlans
-        forecastPlans = candidateForecastPlans
-        sceneCache.removeAll()
-        applySelectedLayer(currentSelectedLayer)
+        publish(currentPlans: candidatePlans, futurePlans: candidateForecastPlans)
         return true
     }
 
-    /// Fixed supported set: five future plans, replaced together with current plans.
-    /// Serial reload ownership and cache invalidation make accepted replacement the scene generation.
-    private func buildForecastPlans(using service: any SpcMapData) async -> [MapForecastSelection: MapLayerRenderPlan]? {
+    private func performScopedReload(
+        using service: any SpcMapData,
+        mesoSource: any ArcusMesoQuerying,
+        warningSource: any ArcusAlertQuerying,
+        scope: MapAcceptedUpdateScope
+    ) async -> Bool {
+        let revision = acceptedInputRevision
+        async let storm = scope.contains(.convective) ? fetchStormRiskShapes(using: service) : .failure
+        async let severe = scope.contains(.convective) ? fetchSevereRiskShapes(using: service) : .failure
+        async let fire = scope.contains(.fire) ? fetchFireRiskShapes(using: service) : .failure
+        async let meso = scope.contains(.meso) ? fetchMesoShapes(using: mesoSource) : .failure
+        async let warnings = scope.contains(.warnings) ? fetchActiveWarningGeometry(using: warningSource) : .failure
+        let payload = await MapDataPayload(stormRisk: storm, severeRisks: severe,
+            mesos: meso, fireRisk: fire, activeWarnings: warnings)
+        guard !Task.isCancelled, !containsCancellation(in: payload) else { return false }
+
+        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings.value ?? [])
+        var candidates = renderPlans
+        for layer in MapLayer.allCases {
+            if scope.affectsCurrentThematic(layer) {
+                let plan = await planner.buildRenderPlan(for: layer, payload: payload,
+                    existingPlan: renderPlans[layer], polygonMapper: polygonMapper, warningPolygons: warningPolygons)
+                candidates[layer] = scope.contains(.warnings) ? plan
+                    : MapRenderPlanBuilder.retainingWarnings(in: plan, from: renderPlans[layer])
+            } else if scope.contains(.warnings), let plan = candidates[layer] {
+                candidates[layer] = MapRenderPlanBuilder.updatingWarnings(
+                    in: plan, outcome: payload.activeWarnings, polygons: warningPolygons)
+            }
+        }
+        guard let futurePlans = await buildForecastPlans(using: service, scope: scope),
+              !Task.isCancelled, revision == acceptedInputRevision, !pendingReload else { return false }
+        publish(currentPlans: candidates, futurePlans: futurePlans, scope: scope)
+        return true
+    }
+
+    /// Commit the affected slices together; unchanged plans retain their materialized scenes.
+    private func publish(
+        currentPlans: [MapLayer: MapLayerRenderPlan],
+        futurePlans: [MapForecastSelection: MapLayerRenderPlan],
+        scope: MapAcceptedUpdateScope = .all
+    ) {
+        let previousSelection = selectedPlan
+        let replacement = selectedForecastDay == .day2 || selectedForecastDay == .day3
+            ? futurePlans[MapForecastSelection(day: selectedForecastDay, layer: currentSelectedLayer)]
+            : currentPlans[currentSelectedLayer]
+        let selectionChanged = scope.affects(day: selectedForecastDay, layer: currentSelectedLayer) &&
+            (replacement.map { !$0.hasSameContent(as: previousSelection) } ?? false)
+        for (layer, plan) in currentPlans where scope.affects(day: .day1, layer: layer)
+            && !plan.hasSameContent(as: renderPlans[layer]) {
+            sceneCache.updateScenes(where: { $0.layer == layer && ($0.day == .day1 || $0.day == .current) }) {
+                selection, scene in
+                MapSceneMaterializer.materialize(plan: plan, initialCenterCoordinate: initialCenterCoordinate,
+                    showsWarningGeometry: showsWarningGeometry, reusing: scene).withForecastDay(selection.day)
+            }
+        }
+        for (selection, plan) in futurePlans where scope.affects(day: selection.day, layer: selection.layer)
+            && !plan.hasSameContent(as: forecastPlans[selection]) {
+            sceneCache.updateScenes(where: { $0 == selection }) { selection, scene in
+                MapSceneMaterializer.materialize(plan: plan, initialCenterCoordinate: initialCenterCoordinate,
+                    showsWarningGeometry: showsWarningGeometry, reusing: scene).withForecastDay(selection.day)
+            }
+        }
+        renderPlans = currentPlans
+        forecastPlans = futurePlans
+        if selectionChanged || activeScene.legendState.presentationState == .resolving {
+            applySelectedLayer(currentSelectedLayer)
+        }
+    }
+
+    /// Affected members of the fixed five-plan future set are staged with current plans.
+    /// Existing forecast selection identity remains authoritative across partial replacements.
+    private func buildForecastPlans(
+        using service: any SpcMapData, scope: MapAcceptedUpdateScope = .all
+    ) async -> [MapForecastSelection: MapLayerRenderPlan]? {
         var plans = forecastPlans
         for day in [SPCForecastDay.day2, .day3] {
-            let categorical = await acceptedForecast { try await service.getCategoricalForecast(for: day) }
-            let hazards = day == .day2
+            let readsCategorical = scope.contains(day == .day2 ? .day2Categorical : .day3Categorical)
+            let categorical = readsCategorical
+                ? await acceptedForecast { try await service.getCategoricalForecast(for: day) }
+                : MapFetchOutcome<SPCCategoricalForecastSnapshot?>.success(nil)
+            let hazards = day == .day2 && scope.contains(.day2Hazards)
                 ? await acceptedForecast { try await service.getHazardForecast(for: day) }
                 : MapFetchOutcome<SPCHazardForecastSnapshot?>.success(nil)
             guard !categorical.isCancellation, !hazards.isCancellation else { return nil }
-            for layer in MapLayer.allCases where MapForecastSelection.supports(day: day, layer: layer) {
+            for layer in MapLayer.allCases where MapForecastSelection.supports(day: day, layer: layer)
+                && scope.affects(day: day, layer: layer) {
                 let key = MapForecastSelection(day: day, layer: layer)
                 let category = categorical.value.flatMap { $0 }
                 let hazard = hazards.value.flatMap { $0 }
@@ -463,7 +560,9 @@ final class MapFeatureModel {
         let scene = MapSceneMaterializer.materialize(
             plan: plan,
             initialCenterCoordinate: initialCenterCoordinate,
-            showsWarningGeometry: showsWarningGeometry
+            showsWarningGeometry: showsWarningGeometry,
+            reusing: activeScene.legendState.layer == layer && activeScene.legendState.forecastDay == selectedForecastDay
+                ? activeScene : nil
         )
         let scopedScene = scene.withForecastDay(selectedForecastDay)
         sceneCache.insert(scopedScene, for: layer, day: selectedForecastDay)
@@ -687,6 +786,15 @@ struct MapSceneCache {
     mutating func removeAll(except layer: MapLayer) {
         scenes = scenes.filter { $0.key.layer == layer }
         selections = selections.filter { $0.layer == layer }
+    }
+
+    mutating func updateScenes(
+        where matches: (MapForecastSelection) -> Bool,
+        _ transform: (MapForecastSelection, MapLayerScene) -> MapLayerScene
+    ) {
+        for selection in selections where matches(selection) {
+            if let scene = scenes[selection] { scenes[selection] = transform(selection, scene) }
+        }
     }
 
     mutating func remove(_ layer: MapLayer) {

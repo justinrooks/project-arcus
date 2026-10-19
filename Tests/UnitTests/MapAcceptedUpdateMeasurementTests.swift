@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import MapKit
 import XCTest
+import Testing
 @testable import SkyAware
 
 @MainActor
@@ -21,6 +22,9 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
         let stableWarning = makeWarning(event: "Severe Thunderstorm Warning", id: "warn-warning")
         let scenarios: [(String, String?, SPCForecastDay, [ActiveWarningGeometry])] = [
             ("full-reload", nil, .day1, []),
+            ("day1-accepted", "spc.map.convective", .day1, []),
+            ("fire-accepted", "spc.map.fire", .day1, []),
+            ("day2-hazards-accepted", "spc.map.hazards.day2", .day2, []),
             ("day2-accepted", "spc.map.categorical.day2", .day2,
                 [makeWarning(event: "Tornado Warning", id: "warn-day2")]),
             ("day3-accepted", "spc.map.categorical.day3", .day3,
@@ -45,13 +49,20 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
             var selectedOverlayRevision = 0
             var completedReloads = 0
 
-            for _ in 0..<Self.repetitions {
+            for generation in 1...Self.repetitions {
                 await counts.reset()
-                if feedID != nil { model.invalidateAcceptedInputs() }
+                if let feedID {
+                    model.invalidateAcceptedInputs(for: .init(feedID: feedID, generation: generation + (name == "unchanged-accepted" ? Self.repetitions : 0)))
+                }
                 let start = ContinuousClock.now
                 var cpuStart = timespec()
                 clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpuStart)
-                await model.reload(using: spc, mesoSource: meso, warningSource: alerts, selectedLayer: .categorical)
+                if feedID == nil {
+                    await model.reload(using: spc, mesoSource: meso, warningSource: alerts, selectedLayer: .categorical)
+                } else {
+                    await model.reloadAcceptedInputs(using: spc, mesoSource: meso, warningSource: alerts,
+                        selectedLayer: .categorical)
+                }
                 let elapsed = start.duration(to: .now).components
                 wallMilliseconds.append(Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15)
                 var cpuEnd = timespec()
@@ -117,6 +128,26 @@ private actor CountedMapSpcData: SpcMapData {
     private let counts: MapAcceptedUpdateReadCounts
     private var day2Revision = 0
     private var day3Revision = 0
+    private var currentRevision = 0
+    private var richProducts = false
+    private var currentFailure = false
+    private var emptyCurrent = false
+    func setRichProducts() { richProducts = true }
+    func setCurrentFailure(_ value: Bool) { currentFailure = value }
+    func setEmptyCurrent() { emptyCurrent = true }
+
+    private var periodRevision = 0
+    func setPeriodRevision(_ value: Int) { periodRevision = value }
+    private var gate: IndexedReloadGate?
+    private var gateIndex = 0
+    private var failingForecast = false
+    private var emptyForecast = false
+
+    func setCurrentRevision(_ revision: Int) { currentRevision = revision }
+    func setGate(_ gate: IndexedReloadGate?) { self.gate = gate; gateIndex = 0 }
+    func setForecastFailure(_ failing: Bool) { failingForecast = failing }
+    func setForecastEmpty(_ empty: Bool) { emptyForecast = empty }
+
 
     init(counts: MapAcceptedUpdateReadCounts) { self.counts = counts }
 
@@ -125,24 +156,55 @@ private actor CountedMapSpcData: SpcMapData {
 
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
         await counts.record("severe")
-        return []
+        if currentFailure { throw StubError() }
+        return richProducts ? revisionedHazards() : []
     }
 
     func getStormRiskMapData() async throws -> [StormRiskDTO] {
         await counts.record("categorical-current")
-        return [makeStormRisk(level: .slight, title: "current")]
+        if currentFailure { throw StubError() }
+        if emptyCurrent { return [] }
+        return [makeStormRisk(level: .slight, title: "current-r\(currentRevision)")]
     }
 
     func getMesoMapData() async throws -> [MdDTO] { [] }
     func getFireRisk() async throws -> [FireRiskDTO] {
         await counts.record("fire")
-        return []
+        if currentFailure { throw StubError() }
+        guard richProducts else { return [] }
+        let now = Date(timeIntervalSince1970: 1_735_689_600)
+        return [FireRiskDTO(product: "fire", issued: now, expires: now.addingTimeInterval(3600), valid: now,
+            riskLevel: currentRevision == 0 ? 5 : 8, riskLevelDescription: "Fire", label: "Fire",
+            stroke: nil, fill: nil, polygons: [revisionedPolygon(title: "fire-r\(currentRevision)")])]
+    }
+
+    private func revisionedPolygon(title: String) -> GeoPolygonEntity {
+        let offset = Double(currentRevision) * 0.2
+        return makeGeoPolygon(title: title, coordinates: [
+            Coordinate2D(latitude: 35 + offset, longitude: -97),
+            Coordinate2D(latitude: 35.2 + offset, longitude: -96.8),
+            Coordinate2D(latitude: 35.3 + offset, longitude: -97.1)])
+    }
+
+    private func revisionedHazards() -> [SevereRiskShapeDTO] {
+        [ThreatType.wind, .hail, .tornado].map { type in
+            SevereRiskShapeDTO(type: type, probabilities: .percent(currentRevision == 0 ? 0.05 : 0.15),
+                stroke: nil, fill: nil, polygons: [revisionedPolygon(title: "hazard-r\(currentRevision)")])
+        }
     }
 
     func getCategoricalForecast(for day: SPCForecastDay) async throws -> SPCCategoricalForecastSnapshot? {
         await counts.record("categorical-day\(day.rawValue)")
         let revision = day == .day2 ? day2Revision : day == .day3 ? day3Revision : 0
-        return measurementForecastSnapshot(day: day, revision: revision)
+        let original = measurementForecastSnapshot(day: day, revision: revision, empty: emptyForecast)
+        let offset = Double(periodRevision) * 60
+        let snapshot = SPCCategoricalForecastSnapshot(day: day,
+            issued: original.issued.addingTimeInterval(offset), valid: original.valid.addingTimeInterval(offset),
+            expires: original.expires.addingTimeInterval(offset), risks: original.risks)
+        let failing = failingForecast
+        if let gate { gateIndex += 1; await gate.run(gateIndex) }
+        if failing { throw StubError() }
+        return snapshot
     }
 
     func getHazardForecast(for day: SPCForecastDay) async throws -> SPCHazardForecastSnapshot? {
@@ -151,17 +213,19 @@ private actor CountedMapSpcData: SpcMapData {
         let category = measurementForecastSnapshot(day: day)
         return SPCHazardForecastSnapshot(
             day: day,
-            issued: category.issued.addingTimeInterval(-60),
+            issued: category.issued.addingTimeInterval(-60 + (richProducts ? Double(currentRevision) * 60 : 0)),
             valid: category.valid,
             expires: category.expires,
-            shapes: [makeSevereRisk(type: .wind, probability: .percent(0.15), title: "Day 2 wind")]
+            shapes: richProducts ? revisionedHazards()
+                : [makeSevereRisk(type: .wind, probability: .percent(0.15), title: "Day 2 wind")]
         )
     }
 }
 
 private func measurementForecastSnapshot(
     day: SPCForecastDay,
-    revision: Int = 0
+    revision: Int = 0,
+    empty: Bool = false
 ) -> SPCCategoricalForecastSnapshot {
     let issued = Date(timeIntervalSince1970: 1_735_689_600).addingTimeInterval(Double(revision) * 60)
     return SPCCategoricalForecastSnapshot(
@@ -169,18 +233,25 @@ private func measurementForecastSnapshot(
         issued: issued,
         valid: issued.addingTimeInterval(Double(day.rawValue) * 86_400),
         expires: issued.addingTimeInterval(4 * 86_400),
-        risks: [makeStormRisk(level: .slight, title: "day\(day.rawValue)-r\(revision)")]
+        risks: empty ? [] : [makeStormRisk(level: .slight, title: "day\(day.rawValue)-r\(revision)")]
     )
 }
 
 private actor CountedMapMesoSource: ArcusMesoQuerying {
     private let counts: MapAcceptedUpdateReadCounts
+    private var gate: IndexedReloadGate?
+    private var payloads: [MesoscaleDiscussionPayload] = []
+    func setGate(_ gate: IndexedReloadGate) { self.gate = gate }
+    func setPayloads(_ payloads: [MesoscaleDiscussionPayload]) { self.payloads = payloads }
 
     init(counts: MapAcceptedUpdateReadCounts) { self.counts = counts }
 
     func getActiveMesos(h3Cell: Int64?) async throws -> ArcusMesoQueryResponse<[MesoscaleDiscussionPayload]> {
+        #expect(h3Cell == nil)
         await counts.record("meso")
-        return ArcusMesoQueryResponse(value: [], source: .live)
+        let accepted = payloads
+        if let gate { await gate.run(1) }
+        return ArcusMesoQueryResponse(value: accepted, source: .live)
     }
 
     func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? { nil }
@@ -189,6 +260,8 @@ private actor CountedMapMesoSource: ArcusMesoQuerying {
 private actor CountedMapAlertSource: ArcusAlertQuerying {
     private let counts: MapAcceptedUpdateReadCounts
     private var warnings: [ActiveWarningGeometry] = []
+    private var fails = false
+    func setFailure(_ value: Bool) { fails = value }
 
     init(counts: MapAcceptedUpdateReadCounts) { self.counts = counts }
 
@@ -196,7 +269,423 @@ private actor CountedMapAlertSource: ArcusAlertQuerying {
     func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] { [] }
     func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
         await counts.record("warnings")
+        if fails { throw StubError() }
         return warnings
     }
     func getAlert(id: String) async throws -> AlertDTO? { nil }
+}
+
+@Suite("Scoped Map accepted updates")
+@MainActor
+struct MapAcceptedUpdateScopeTests {
+    @Test("initial load and explicit refresh establish all selectable plans")
+    func fullReloadRemainsExplicit() async {
+        let h = ScopedMapHarness()
+        for _ in 0..<2 {
+            await h.resetCounts()
+            await h.load()
+            #expect(await h.counts.snapshot() == ["categorical-current": 1, "severe": 1, "fire": 1,
+                "meso": 1, "warnings": 1, "categorical-day2": 1, "categorical-day3": 1, "hazards-day2": 1])
+            #expect(await h.planner.snapshot() == [.categorical: 3, .wind: 2, .hail: 2, .tornado: 2, .meso: 1, .fire: 1])
+        }
+    }
+
+    @Test("validity-only acceptance updates the legend while reusing identical geometry")
+    func validityOnlyUpdatePublishes() async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        let overlay = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        let period = h.model.activeScene.legendState.forecastPeriod
+        await h.spc.setPeriodRevision(1)
+        await h.accept("spc.map.categorical.day2")
+        #expect(h.model.activeScene.legendState.forecastPeriod != period)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === overlay)
+    }
+
+    @Test("scoped fire and hazards replace risk geometry and legends without touching another day", arguments: [
+        MapForecastSelection(day: .current, layer: .fire),
+        MapForecastSelection(day: .day1, layer: .wind), MapForecastSelection(day: .day1, layer: .hail),
+        MapForecastSelection(day: .day1, layer: .tornado),
+        MapForecastSelection(day: .day2, layer: .wind), MapForecastSelection(day: .day2, layer: .hail),
+        MapForecastSelection(day: .day2, layer: .tornado)
+    ])
+    func scopedRiskReplacement(selection: MapForecastSelection) async throws {
+        let h = ScopedMapHarness()
+        await h.spc.setRichProducts()
+        await h.load()
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        let untouched = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        h.model.selectForecast(day: selection.day, layer: selection.layer)
+        let prior = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        let period = h.model.activeScene.legendState.forecastPeriod
+        await h.spc.setCurrentRevision(1)
+        let feed = selection.layer == .fire ? "spc.map.fire"
+            : selection.day == .day2 ? "spc.map.hazards.day2" : "spc.map.convective"
+        await h.accept(feed)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay !== prior)
+        #expect(overlayTitles(in: h.model.activeScene) == [selection.layer == .fire ? "fire-r1" : "hazard-r1"])
+        if selection.layer == .fire {
+            #expect(h.model.activeScene.legendState.fireItems.map(\.riskLevel) == [8])
+        } else {
+            #expect(h.model.activeScene.legendState.severeItems.map(\.probability) == [.percent(0.15)])
+        }
+        if selection.day == .day2 { #expect(h.model.activeScene.legendState.forecastPeriod != period) }
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === untouched)
+    }
+
+    @Test("failed scoped thematic reads retain warnings after accepted empty and unavailable plans")
+    func failedEmptyThematicReadRetainsWarnings() async throws {
+        let h = ScopedMapHarness()
+        await h.spc.setEmptyCurrent()
+        await h.alerts.setWarnings([makeWarning(event: "Tornado Warning")])
+        await h.load()
+        #expect(h.model.activeScene.legendState.presentationState == .confirmedEmpty)
+        let warning = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        await h.spc.setCurrentFailure(true)
+        for generation in 1...2 {
+            await h.accept("spc.map.convective", generation: generation)
+            #expect(h.model.activeScene.canvasState.overlays.first?.overlay === warning)
+            #expect(h.model.activeScene.warningLegendItems.map(\.title) == ["Tornado"])
+        }
+    }
+
+    @Test("materializer reuses equal overlays and replaces changed signatures or titles")
+    func materializerReuseHonorsContent() throws {
+        func plan(signature: Int, title: String, offset: Double = 0) -> MapLayerRenderPlan {
+            MapLayerRenderPlan(layer: .categorical,
+                polygonEntries: [MapPolygonEntry(key: "stable", title: title, subtitle: nil, coordinates: [
+                    Coordinate2D(latitude: 35 + offset, longitude: -97),
+                    Coordinate2D(latitude: 35.2 + offset, longitude: -96.8),
+                    Coordinate2D(latitude: 35.3 + offset, longitude: -97.1)])],
+                overlayPlans: [MapOverlayBuildPlan(key: "stable|probability", polygonKey: "stable",
+                    kind: .probability, signature: signature)], overlayRevision: signature,
+                legendState: .confirmedEmpty(for: .categorical))
+        }
+        let original = MapSceneMaterializer.materialize(plan: plan(signature: 1, title: "original"),
+            initialCenterCoordinate: nil, showsWarningGeometry: true)
+        let entry = try #require(original.canvasState.overlays.first)
+        let duplicated = MapLayerScene(canvasState: MapCanvasState(overlays: [entry, entry], overlayRevision: 1,
+            initialCenterCoordinate: nil), legendState: original.legendState, warningLegendItems: [])
+        let equal = MapSceneMaterializer.materialize(plan: plan(signature: 1, title: "original"),
+            initialCenterCoordinate: nil, showsWarningGeometry: true, reusing: duplicated)
+        #expect(equal.canvasState.overlays.first?.overlay === entry.overlay)
+        for changed in [plan(signature: 2, title: "original", offset: 0.2),
+                        plan(signature: 1, title: "corrected title")] {
+            let scene = MapSceneMaterializer.materialize(plan: changed, initialCenterCoordinate: nil,
+                showsWarningGeometry: true, reusing: original)
+            #expect(scene.canvasState.overlays.first?.overlay !== entry.overlay)
+        }
+    }
+
+    @Test("accepted feeds read and plan only their contracted slices", arguments: [
+        "spc.map.convective", "spc.map.fire", "spc.map.categorical.day2",
+        "spc.map.categorical.day3", "spc.map.hazards.day2", "home.hot.test", "arcus.alert", "arcus.alerts"
+    ])
+    func feedScopes(feed: String) async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        await h.resetCounts()
+        #expect(h.model.invalidateAcceptedInputs(for: .init(feedID: feed, generation: 1)))
+        await h.drain()
+        let expected: [String: ([String], [MapLayer])] = [
+            "spc.map.convective": (["categorical-current", "severe"], [.categorical, .wind, .hail, .tornado]),
+            "spc.map.fire": (["fire"], [.fire]),
+            "spc.map.categorical.day2": (["categorical-day2"], [.categorical]),
+            "spc.map.categorical.day3": (["categorical-day3"], [.categorical]),
+            "spc.map.hazards.day2": (["hazards-day2"], [.wind, .hail, .tornado]),
+            "home.hot.test": (["meso", "warnings"], [.meso]),
+            "arcus.alert": (["warnings"], []), "arcus.alerts": (["warnings"], [])
+        ]
+        let (reads, builds) = try #require(expected[feed])
+        #expect(await h.counts.snapshot() == Dictionary(uniqueKeysWithValues: reads.map { ($0, 1) }))
+        #expect(await h.planner.snapshot() == Dictionary(uniqueKeysWithValues: builds.map { ($0, 1) }))
+    }
+
+    @Test("unrelated, duplicate, and unchanged acceptances retain scene and overlay identity")
+    func unchangedAcceptancePreservesCache() async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        let current = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        let future = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        await h.resetCounts()
+        #expect(!h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.outlook", generation: 100)))
+        await h.drain()
+        #expect(await h.counts.snapshot().isEmpty)
+        #expect(await h.planner.snapshot().isEmpty)
+        h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day3", generation: 2))
+        let gate = IndexedReloadGate()
+        await h.spc.setGate(gate)
+        let task = Task { await h.drain() }
+        await gate.waitUntilStarted(1)
+        #expect(h.model.activeScene.legendState.presentationState == .current)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === future)
+        #expect(!h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day3", generation: 2)))
+        #expect(!h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day3", generation: 1)))
+        await gate.release(1)
+        await task.value
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === future)
+        h.model.selectForecast(day: .day1, layer: .categorical)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === current)
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === future)
+        #expect(await h.counts.snapshot() == ["categorical-day3": 1])
+        await h.resetCounts()
+        await h.drain()
+        #expect(await h.counts.snapshot().isEmpty)
+        #expect(await h.planner.snapshot().isEmpty)
+    }
+
+    @Test("warning acceptance preserves thematic overlays, legend, toggles, and future cache")
+    func warningSliceIsIndependent() async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        let thematic = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        let future = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        await h.alerts.setWarnings([makeWarning(event: "Tornado Warning")])
+        await h.accept("arcus.alert")
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === future)
+        #expect(h.model.activeScene.warningLegendItems.isEmpty)
+        h.model.selectForecast(day: .day1, layer: .categorical)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === thematic)
+        #expect(h.model.activeScene.warningLegendItems.count == 1)
+        #expect(h.model.activeScene.legendState.presentationState == .current)
+        h.model.setWarningGeometryVisible(false)
+        #expect(h.model.activeScene.warningLegendItems.isEmpty)
+        await h.alerts.setWarnings([makeWarning(event: "Flash Flood Warning", id: "new")])
+        await h.accept("arcus.alerts")
+        #expect(h.model.activeScene.warningLegendItems.isEmpty)
+        h.model.setWarningGeometryVisible(true)
+        #expect(h.model.activeScene.warningLegendItems.map(\.title) == ["Flash Flood"])
+        await h.alerts.setFailure(true)
+        await h.accept("arcus.alerts", generation: 2)
+        #expect(h.model.activeScene.warningLegendItems.map(\.title) == ["Flash Flood"])
+        #expect(h.model.activeScene.legendState.presentationState == .current)
+        await h.alerts.setFailure(false)
+        await h.alerts.setWarnings([])
+        await h.accept("arcus.alerts", generation: 3)
+        #expect(h.model.activeScene.warningLegendItems.isEmpty)
+    }
+
+    @Test("changed, empty, and failed forecasts preserve the exact day and validity")
+    func changedEmptyAndFailedForecasts() async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        let original = h.model.activeScene.legendState.forecastPeriod
+        await h.spc.setDay2Revision(1)
+        await h.accept("spc.map.categorical.day2")
+        #expect(overlayTitles(in: h.model.activeScene) == ["day2-r1"])
+        #expect(h.model.activeScene.legendState.forecastPeriod != original)
+        let accepted = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        let period = h.model.activeScene.legendState.forecastPeriod
+        await h.spc.setForecastFailure(true)
+        await h.accept("spc.map.categorical.day2", generation: 2)
+        #expect(h.model.activeScene.legendState.presentationState == .stale)
+        #expect(h.model.activeScene.legendState.forecastPeriod == period)
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === accepted)
+        await h.spc.setForecastFailure(false)
+        await h.spc.setForecastEmpty(true)
+        await h.accept("spc.map.categorical.day2", generation: 3)
+        #expect(h.model.activeScene.legendState.presentationState == .confirmedEmpty)
+        #expect(h.model.activeScene.canvasState.overlays.isEmpty)
+        #expect(h.model.activeScene.legendState.forecastPeriod == period)
+    }
+
+    @Test("coordinator merges every pending feed while withholding superseded candidates")
+    func coordinatorMergesScopesAndPublishesAtomically() async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        let original = h.model.activeScene.legendState.forecastPeriod
+        let gate = IndexedReloadGate()
+        await h.spc.setGate(gate)
+        await h.spc.setDay2Revision(1)
+        await h.resetCounts()
+        let coordinator = MapReloadCoordinator()
+        let (completions, continuation) = AsyncStream<Void>.makeStream()
+        let schedule: (String, Int) -> Void = { feed, generation in
+            guard h.model.invalidateAcceptedInputs(for: .init(feedID: feed, generation: generation)) else { return }
+            coordinator.schedule { await h.drain(); continuation.yield(()) }
+        }
+        schedule("spc.map.categorical.day2", 1)
+        await gate.waitUntilStarted(1)
+        await h.spc.setDay2Revision(2)
+        await h.spc.setDay3Revision(1)
+        await h.spc.setCurrentRevision(1)
+        await h.alerts.setWarnings([makeWarning(event: "Tornado Warning")])
+        for feed in ["spc.map.convective", "spc.map.categorical.day2", "spc.map.categorical.day3",
+                     "home.hot.test", "arcus.alerts"] {
+            schedule(feed, 2)
+        }
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        h.model.selectForecast(day: .day2, layer: .wind)
+        h.model.setWarningGeometryVisible(false)
+        h.model.setWarningGeometryVisible(true)
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        await gate.release(1)
+        await gate.waitUntilStarted(2)
+        #expect(h.model.activeScene.legendState.forecastPeriod == original)
+        await gate.release(2)
+        await gate.waitUntilStarted(3)
+        h.model.selectForecast(day: .day1, layer: .categorical)
+        #expect(overlayTitles(in: h.model.activeScene) == ["current-r0"])
+        #expect(h.model.activeScene.warningLegendItems.isEmpty)
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        await gate.release(3)
+        var iterator = completions.makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await iterator.next()
+        #expect(overlayTitles(in: h.model.activeScene) == ["day2-r2"])
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        #expect(overlayTitles(in: h.model.activeScene) == ["day3-r1"])
+        h.model.selectForecast(day: .day1, layer: .categorical)
+        #expect(overlayTitles(in: h.model.activeScene) == ["current-r1"])
+        #expect(h.model.activeScene.warningLegendItems.count == 1)
+        #expect(await h.counts.snapshot() == ["categorical-day2": 2, "categorical-day3": 1,
+            "categorical-current": 1, "severe": 1, "meso": 1, "warnings": 1])
+    }
+
+    @Test("cancelled scoped reads retain accepted content and their pending scope for reentry")
+    func cancellationRetainsPendingScope() async throws {
+        let h = ScopedMapHarness()
+        await h.load()
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        let original = try #require(h.model.activeScene.canvasState.overlays.first?.overlay)
+        let gate = IndexedReloadGate()
+        await h.spc.setGate(gate)
+        await h.spc.setDay2Revision(1)
+        h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day2", generation: 1))
+        let task = Task { await h.drain() }
+        await gate.waitUntilStarted(1)
+        task.cancel()
+        await h.spc.setDay3Revision(1)
+        h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day3", generation: 1))
+        await gate.release(1)
+        await task.value
+        #expect(h.model.activeScene.canvasState.overlays.first?.overlay === original)
+        #expect(h.model.activeScene.legendState.presentationState == .current)
+        await h.spc.setGate(nil)
+        await h.resetCounts()
+        await h.drain()
+        #expect(overlayTitles(in: h.model.activeScene) == ["day2-r1"])
+        #expect(await h.counts.snapshot() == ["categorical-day2": 1, "categorical-day3": 1])
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        #expect(overlayTitles(in: h.model.activeScene) == ["day3-r1"])
+    }
+
+    @Test("direct in-flight reload requests merge scopes before coherent replacement")
+    func directReloadMergesScopes() async {
+        let h = ScopedMapHarness()
+        await h.load()
+        let gate = IndexedReloadGate()
+        await h.spc.setGate(gate)
+        h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day2", generation: 1))
+        let task = Task { await h.drain() }
+        await gate.waitUntilStarted(1)
+        await h.spc.setDay2Revision(1)
+        await h.spc.setDay3Revision(1)
+        h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.categorical.day3", generation: 1))
+        await h.drain()
+        await gate.release(1)
+        await gate.waitUntilStarted(2)
+        await gate.release(2)
+        await gate.waitUntilStarted(3)
+        await gate.release(3)
+        await task.value
+        h.model.selectForecast(day: .day2, layer: .categorical)
+        #expect(overlayTitles(in: h.model.activeScene) == ["day2-r1"])
+        h.model.selectForecast(day: .day3, layer: .categorical)
+        #expect(overlayTitles(in: h.model.activeScene) == ["day3-r1"])
+    }
+
+    @Test("unrelated acceptance cannot discard a foreground meso result")
+    func foregroundMesoSurvivesUnrelatedAcceptance() async {
+        let h = ScopedMapHarness()
+        await h.load()
+        let gate = IndexedReloadGate()
+        await h.meso.setGate(gate)
+        await h.meso.setPayloads([makeMesoPayload(number: 709,
+            coordinates: [Coordinate2D(latitude: 35, longitude: -97),
+                Coordinate2D(latitude: 35.2, longitude: -96.8), Coordinate2D(latitude: 35.3, longitude: -97.1)])])
+        let task = Task { await h.model.reloadMesoscale(using: h.meso) }
+        await gate.waitUntilStarted(1)
+        h.model.invalidateAcceptedInputs(for: .init(feedID: "spc.map.fire", generation: 1))
+        await gate.release(1)
+        await task.value
+        await h.drain()
+        h.model.selectLayer(.meso)
+        #expect(overlayKeys(in: h.model.activeScene).contains { $0.hasPrefix("meso|709|") })
+    }
+
+    @Test("foreground meso refresh reads no SPC or warning source")
+    func foregroundMesoIsIndependent() async {
+        let h = ScopedMapHarness()
+        await h.load()
+        await h.resetCounts()
+        await h.model.reloadMesoscale(using: h.meso)
+        #expect(await h.counts.snapshot() == ["meso": 1])
+        #expect(await h.planner.snapshot() == [.meso: 1])
+    }
+}
+
+@MainActor
+private struct ScopedMapHarness {
+    let counts = MapAcceptedUpdateReadCounts()
+    let planner = CountedMapPlanner()
+    let spc: CountedMapSpcData
+    let meso: CountedMapMesoSource
+    let alerts: CountedMapAlertSource
+    let model: MapFeatureModel
+
+    init() {
+        spc = CountedMapSpcData(counts: counts)
+        meso = CountedMapMesoSource(counts: counts)
+        alerts = CountedMapAlertSource(counts: counts)
+        model = MapFeatureModel(nowProvider: { Date(timeIntervalSince1970: 1_735_689_600) }, planner: planner)
+    }
+
+    func load() async {
+        await model.reload(using: spc, mesoSource: meso, warningSource: alerts, selectedLayer: .categorical)
+    }
+
+    func drain() async {
+        await model.reloadAcceptedInputs(using: spc, mesoSource: meso, warningSource: alerts,
+            selectedLayer: model.activeScene.legendState.layer)
+    }
+
+    func accept(_ feed: String, generation: Int = 1) async {
+        model.invalidateAcceptedInputs(for: .init(feedID: feed, generation: generation))
+        await drain()
+    }
+
+    func resetCounts() async { await counts.reset(); await planner.reset() }
+}
+
+private actor CountedMapPlanner: MapScenePlanning {
+    private var builds: [MapLayer: Int] = [:]
+    func snapshot() -> [MapLayer: Int] { builds }
+    func reset() { builds = [:] }
+
+    func buildRenderPlan(
+        for layer: MapLayer, payload: MapDataPayload, existingPlan: MapLayerRenderPlan?,
+        polygonMapper: MapPolygonMapper, warningPolygons: KeyedMapPolygons
+    ) -> MapLayerRenderPlan {
+        builds[layer, default: 0] += 1
+        return MapRenderPlanBuilder.build(layer: layer, payload: payload, existingPlan: existingPlan,
+            polygonMapper: polygonMapper, warningPolygons: warningPolygons)
+    }
+
+    func buildRemainingRenderPlans(
+        excluding selectedLayer: MapLayer, payload: MapDataPayload, existingPlans: [MapLayer: MapLayerRenderPlan],
+        polygonMapper: MapPolygonMapper, warningPolygons: KeyedMapPolygons
+    ) -> [MapLayer: MapLayerRenderPlan] {
+        Dictionary(uniqueKeysWithValues: MapLayer.allCases.filter { $0 != selectedLayer }.map { layer in
+            (layer, buildRenderPlan(for: layer, payload: payload, existingPlan: existingPlans[layer],
+                polygonMapper: polygonMapper, warningPolygons: warningPolygons))
+        })
+    }
 }

@@ -268,13 +268,16 @@ struct MapFeatureModelSceneTests {
                 Coordinate2D(latitude: 35.3, longitude: -97.1)
             ])
         ]), expectsNationwideRequest: true)
+        await model.reload(using: service, mesoSource: mesoSource, warningSource: warnings, selectedLayer: .meso)
+        let initialCounts = await counter.snapshot()
         var observed: [FeedStateGenerationUpdate] = []
         let (reloads, reloadContinuation) = AsyncStream<Void>.makeStream()
         var reloadIterator = reloads.makeAsyncIterator()
         let observer = Task { @MainActor in
             await MapFeatureModel.observeAcceptedFeedUpdates(from: updates) { update in
                 observed.append(update)
-                await model.reload(
+                model.invalidateAcceptedInputs(for: update)
+                await model.reloadAcceptedInputs(
                     using: service,
                     mesoSource: mesoSource,
                     warningSource: warnings,
@@ -296,10 +299,10 @@ struct MapFeatureModelSceneTests {
 
         #expect(observed == [FeedStateGenerationUpdate(feedID: "home.hot.h3:8928308280fffff", generation: 1)])
         let counts = await counter.snapshot()
-        #expect(counts.storm == 1)
-        #expect(counts.severe == 1)
+        #expect(counts.storm == initialCounts.storm)
+        #expect(counts.severe == initialCounts.severe)
         #expect(counts.meso == 0)
-        #expect(counts.fire == 1)
+        #expect(counts.fire == initialCounts.fire)
         #expect(overlayKeys(in: model.activeScene).contains { $0.hasPrefix("meso|601|") })
     }
 
@@ -431,8 +434,8 @@ struct MapFeatureModelSceneTests {
         }
     }
 
-    @Test("reload refetches map products on each call")
-    func reload_refetchesEachTime() async {
+    @Test("explicit full refresh refetches all map products on each call")
+    func fullReload_refetchesEachTime() async {
         let counter = MapDataCallCounter()
         let service = CountingSpcMapData(
             counter: counter,
