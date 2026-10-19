@@ -1057,6 +1057,12 @@ private struct SourceTrackingSpcClient: SpcClient {
     let client: any SpcClient
     let transport: SpcTextTransportTracker
 
+    func fetchCurrentOutlookResponse(for day: SPCForecastDay) async throws -> HTTPResponse {
+        let response = try await client.fetchCurrentOutlookResponse(for: day)
+        await transport.record(response.source)
+        return response
+    }
+
     func fetchRssData(for product: RssProduct) async throws -> Data {
         try await client.fetchRssData(for: product)
     }

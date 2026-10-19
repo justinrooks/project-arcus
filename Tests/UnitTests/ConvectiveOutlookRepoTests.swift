@@ -57,6 +57,15 @@ private struct LegacyGeoJSONSpcClient: SpcClient {
 
 private enum TestError: Error { case boom }
 
+private let rssTestNow = Date.now
+private func rssDate(_ hoursAgo: Double) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .gmt
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+    return formatter.string(from: rssTestNow.addingTimeInterval(-hoursAgo * 3600))
+}
+
 // MARK: - Sample RSS payloads
 private let sampleValidRSS: String = {
     // Two valid Convective Outlook items (Day 1, Day 2) and one non-matching title.
@@ -67,7 +76,7 @@ private let sampleValidRSS: String = {
         <item>
           <title>Day 1 Convective Outlook</title>
           <link>https://www.spc.noaa.gov/products/outlook/day1otlk.html</link>
-          <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
+          <pubDate>\(rssDate(1))</pubDate>
           <description><![CDATA[
             ... ISSUED: 1200Z ... VALID UNTIL: 0000Z ... RISK: SLGT ... SUMMARY: Some summary for Day 1 ...
           ]]></description>
@@ -75,7 +84,7 @@ private let sampleValidRSS: String = {
         <item>
           <title>Day 2 Convective Outlook</title>
           <link>https://www.spc.noaa.gov/products/outlook/day2otlk.html</link>
-          <pubDate>Wed, 12 Nov 2025 11:00:00 GMT</pubDate>
+          <pubDate>\(rssDate(2))</pubDate>
           <description><![CDATA[
             ... ISSUED: 1100Z ... VALID UNTIL: 2300Z ... RISK: MDT ... SUMMARY: Some summary for Day 2 ...
           ]]></description>
@@ -174,7 +183,7 @@ private func makeDiskContainer(for models: [any PersistentModel.Type]) throws ->
 @Suite("ConvectiveOutlookRepo", .serialized)
 struct ConvectiveOutlookRepoTests {
 
-    @Test("refresh inserts parsed outlooks and filters titles containing ' Convective Outlook'")
+    @Test("refresh inserts supported convective outlooks and filters unrelated products")
     func refresh_parsesAndUpserts() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
         try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
@@ -437,13 +446,13 @@ struct ConvectiveOutlookRepoTests {
         let newer = ConvectiveOutlook(
             title: "Day 1 Convective Outlook",
             link: URL(string: "https://example.com/newer")!,
-            published: Date().addingTimeInterval(3600),
+            published: Date().addingTimeInterval(-60),
             fullText: "...",
             summary: "newer",
             day: 1,
             riskLevel: "SLGT",
-            issued: Date(),
-            validUntil: Date()
+            issued: nil,
+            validUntil: nil
         )
         let older = ConvectiveOutlook(
             title: "Day 2 Convective Outlook",
@@ -453,8 +462,8 @@ struct ConvectiveOutlookRepoTests {
             summary: "older",
             day: 2,
             riskLevel: "MRGL",
-            issued: Date(),
-            validUntil: Date()
+            issued: nil,
+            validUntil: nil
         )
         ctx.insert(newer)
         ctx.insert(older)
@@ -476,37 +485,37 @@ struct ConvectiveOutlookRepoTests {
         let base = Date()
         let a = ConvectiveOutlook(title: "Day 1 Convective Outlook A",
                                   link: URL(string: "https://example.com/a")!,
-                                  published: base.addingTimeInterval(100),
+                                  published: base.addingTimeInterval(-300),
                                   fullText: "a",
                                   summary: "a",
                                   day: 1,
                                   riskLevel: nil,
-                                  issued: base,
-                                  validUntil: base)
+                                  issued: nil,
+                                  validUntil: base.addingTimeInterval(3600))
         let b = ConvectiveOutlook(title: "Day 1 Convective Outlook B",
                                   link: URL(string: "https://example.com/b")!,
-                                  published: base.addingTimeInterval(200),
+                                  published: base.addingTimeInterval(-200),
                                   fullText: "b",
                                   summary: "b",
                                   day: 1,
                                   riskLevel: nil,
-                                  issued: base,
-                                  validUntil: base)
+                                  issued: nil,
+                                  validUntil: base.addingTimeInterval(3600))
         let c = ConvectiveOutlook(title: "Day 2 Convective Outlook C",
                                   link: URL(string: "https://example.com/c")!,
-                                  published: base.addingTimeInterval(300),
+                                  published: base.addingTimeInterval(-100),
                                   fullText: "c",
                                   summary: "c",
                                   day: 2,
                                   riskLevel: nil,
-                                  issued: base,
-                                  validUntil: base)
+                                  issued: nil,
+                                  validUntil: base.addingTimeInterval(3600))
         ctx.insert(a); ctx.insert(b); ctx.insert(c)
         try ctx.save()
 
         let repo = ConvectiveOutlookRepo(modelContainer: container)
         let day1 = try await repo.fetchConvectiveOutlooks(for: 1)
-        #expect(day1.count == 2)
+        try #require(day1.count == 2)
         #expect(day1[0].title.contains("B")) // newest first
         #expect(day1[1].title.contains("A"))
 
@@ -515,7 +524,7 @@ struct ConvectiveOutlookRepoTests {
         #expect(day2[0].title.contains("C"))
     }
 
-    @Test("purge discards an aged accepted collection as a unit")
+    @Test("purge removes expired legacy rows without inventing acceptance")
     @MainActor
     func purge_removesOldItems() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
@@ -550,14 +559,14 @@ struct ConvectiveOutlookRepoTests {
         let repo = ConvectiveOutlookRepo(modelContainer: container)
         try await repo.purge(asOf: now)
 
-        // Partial retention would misrepresent the accepted collection.
+        // Both source validity periods have expired.
         let remaining = try await repo.fetchConvectiveOutlooks(for: 1)
         #expect(remaining.isEmpty)
         #expect(try await repo.collectionSnapshot() == .unavailable)
     }
 
-    @Test("accepted Day 1 absence replaces old rows and survives a disk reopen")
-    func acceptedEmpty_reopensAndPreservesProvenance() async throws {
+    @Test("a partial RSS response preserves omitted accepted days across restart")
+    func partialRSS_reopensAndPreservesProvenance() async throws {
         let (container, directory) = try await MainActor.run {
             try makeDiskContainer(for: [ConvectiveOutlook.self])
         }
@@ -583,8 +592,8 @@ struct ConvectiveOutlookRepoTests {
         try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(populated)))
         #expect(try await repo.collectionSnapshot().outlooks.count == 2)
         try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(dayTwoOnly)))
-        #expect(try await repo.collectionSnapshot(for: 1) == .accepted([]))
-        #expect(try await repo.fetchConvectiveOutlooks(for: 1).isEmpty)
+        #expect(try await repo.collectionSnapshot(for: 1).outlooks.count == 1)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 1).count == 1)
         #expect(try await repo.fetchConvectiveOutlooks(for: 2).count == 1)
 
         let reopened = try await MainActor.run { () throws -> ModelContainer in
@@ -596,14 +605,14 @@ struct ConvectiveOutlookRepoTests {
             return try ModelContainer(for: schema, configurations: configuration)
         }
         let reopenedRepo = ConvectiveOutlookRepo(modelContainer: reopened)
-        #expect(try await reopenedRepo.collectionSnapshot(for: 1) == .accepted([]))
+        #expect(try await reopenedRepo.collectionSnapshot(for: 1).outlooks.count == 1)
 
         let feedState = FeedStateStore(directoryURL: directory)
         let acceptedAt = Date.now
         _ = try await feedState.update(FeedStateUpdate(
             feedID: "spc.outlook", attemptedAt: acceptedAt, canonicalAcceptedAt: acceptedAt
         ))
-        try await reopenedRepo.purge(asOf: utcDate(2025, 11, 15, 12))
+        try await reopenedRepo.purge(asOf: rssTestNow.addingTimeInterval(49 * 3600))
         #expect(try await reopenedRepo.collectionSnapshot() == .unavailable)
         #expect(try await FeedStateStore(directoryURL: directory).record(for: "spc.outlook")?.generation == 1)
     }
@@ -614,14 +623,22 @@ struct ConvectiveOutlookRepoTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("outlooks.sqlite")
-        let rss = "<rss version=\"2.0\"><channel>" + [(1, 12), (2, 11), (3, 10), (2, 9)].map { day, hour in
-            """
-            <item><title>SPC Nov 12, 2025 \(hour)00 UTC Day \(day) Convective Outlook</title>
+        // SPC uses Severe Thunderstorm Outlook for Day 3; the synthetic Convective title hid its rejection.
+        let products = [(1, 12), (2, 11), (3, 10), (2, 9), (3, 8), (1, 7), (4, 6), (10, 5)]
+        let rss = "<rss version=\"2.0\"><channel>" + products.map { day, hour in
+            let product = day == 3 ? "Severe Thunderstorm" : "Convective"
+            return """
+            <item><title>SPC Nov 12, 2025 \(hour)00 UTC Day \(day) \(product) Outlook</title>
             <link>https://www.spc.noaa.gov/products/outlook/day\(day)otlk.html</link>
-            <pubDate>Wed, 12 Nov 2025 \(String(format: "%02d", hour)):00:00 GMT</pubDate>
+            <pubDate>\(rssDate(Double(13 - hour)))</pubDate>
             <description>Discussion for Day \(day)</description></item>
             """
-        }.joined() + "</channel></rss>"
+        }.joined() + """
+        <item><title>SPC Day 2 Fire Weather Outlook</title></item>
+        <item><title>SPC Convective Outlook</title></item>
+        <item><title>SPC Mesoscale Discussion 1234</title></item>
+        </channel></rss>
+        """
         let accepted = try await { () async throws -> ConvectiveOutlookCollectionSnapshot in
             let container = try await MainActor.run {
                 try ModelContainer(for: ConvectiveOutlook.self, configurations: ModelConfiguration(url: storeURL))
@@ -629,6 +646,31 @@ struct ConvectiveOutlookRepoTests {
             let repo = ConvectiveOutlookRepo(modelContainer: container)
             try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(Data(rss.utf8))))
             let snapshot = try await repo.collectionSnapshot()
+            #expect(snapshot.outlooks.count == 6)
+            for day in 1...3 {
+                #expect(snapshot.outlooks.filter { $0.day == day }.count == 2)
+            }
+            // Recognized malformed Day 3, invalid XML, and unrecognized feeds must not replace any day.
+            for rejected in [rss,
+                             "<rss><channel><item>", sampleOnlyNonMatchingTitlesRSS] {
+                // Use an invalid publication date to make the recognized Day 3 item definitively invalid.
+                let malformed = rejected.replacingOccurrences(
+                    of: rssDate(3), with: "invalid date"
+                )
+                do {
+                    try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(Data(malformed.utf8))))
+                    Issue.record("Expected rejected refresh")
+                } catch let error as SpcError {
+                    #expect(error == .parsingError)
+                }
+                #expect(try await repo.collectionSnapshot() == snapshot)
+            }
+            for source in [HTTPResponse.Source.cacheFallback, .localCache] {
+                _ = try await repo.refreshConvectiveOutlooks(using: SourcedRssSpcClient(
+                    response: HTTPResponse(status: 200, headers: [:], data: Data(sampleValidRSS.utf8), source: source)
+                ))
+                #expect(try await repo.collectionSnapshot() == snapshot)
+            }
             do {
                 try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .failure(TestError.boom)))
                 Issue.record("Expected refresh failure")
@@ -639,14 +681,36 @@ struct ConvectiveOutlookRepoTests {
         let reopened = try await MainActor.run {
             try ModelContainer(for: ConvectiveOutlook.self, configurations: ModelConfiguration(url: storeURL))
         }
-        let restored = try await ConvectiveOutlookRepo(modelContainer: reopened).collectionSnapshot()
+        let restoredRepo = ConvectiveOutlookRepo(modelContainer: reopened)
+        let restored = try await restoredRepo.collectionSnapshot()
         #expect(restored == accepted)
+        let provider = SpcProvider(
+            outlookRepo: restoredRepo, mesoRepo: MesoRepo(modelContainer: reopened),
+            alertRepo: AlertRepo(modelContainer: reopened), stormRiskRepo: StormRiskRepo(modelContainer: reopened),
+            severeRiskRepo: SevereRiskRepo(modelContainer: reopened), fireRiskRepo: FireRiskRepo(modelContainer: reopened),
+            spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo(modelContainer: reopened),
+            client: FakeSpcClient(mode: .failure(TestError.boom))
+        )
+        let home = try await HomeSnapshotStore(
+            spcRisk: provider, spcOutlook: provider,
+            arcusAlerts: StubArcusAlertQuerying(activeWarnings: .success([])),
+            arcusMesos: StubArcusMesoQuerying(mesos: .success([]))
+        ).loadSnapshot(for: nil, weather: nil, freshness: .init(), refreshMesos: false)
+        let displayed = await MainActor.run {
+            let pipeline = HomeRefreshPipeline(initialOutlooks: home.outlooks)
+            return HomeView.preferredOutlooks(
+                cachedOutlooks: [], liveOutlooks: pipeline.outlooks, refreshStatus: .success(hasContent: true)
+            )
+        }
+        #expect(displayed == restored.outlooks)
         for day in [SPCForecastDay.day1, .day2, .day3] {
             let presentation = ConvectiveOutlookDayPresentation(
-                day: day, collection: restored.outlooks, refreshStatus: .failed
+                day: day, collection: displayed, refreshStatus: .failed
             )
             #expect(presentation.state == .populated(.failed))
-            #expect(presentation.outlooks.count == (day == .day2 ? 2 : 1))
+            try #require(presentation.outlooks.count == 2)
+            #expect(presentation.outlooks[0].published > presentation.outlooks[1].published)
+            print("issue-732 accepted/restored/Home/presentation Day \(day.rawValue): \(presentation.outlooks.count)")
             #expect(presentation.outlooks.allSatisfy { $0.day == day.rawValue && $0.validUntil == nil })
         }
     }
@@ -809,6 +873,19 @@ struct SpcHttpClientTests {
         #expect(request.headers["User-Agent"]?.isEmpty == false)
         #expect((request.headers["Accept"] ?? "").contains("application/rss+xml"))
         #expect(request.fallbackPolicy == .maximumAge(10 * 60))
+    }
+
+    @Test("current discussion requests use official day pages and preserve HTTP cache provenance", arguments: [SPCForecastDay.day1, .day2, .day3])
+    func currentDiscussionRequest(day: SPCForecastDay) async throws {
+        let payload = Data(capturedSPCDiscussions[day.rawValue - 1].utf8)
+        let http = SpcMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: payload, source: .cacheRevalidated304))
+        let response = try await SpcHttpClient(http: http).fetchCurrentOutlookResponse(for: day)
+        let request = try #require(await http.firstRequest())
+        #expect(request.url.absoluteString == "https://www.spc.noaa.gov/products/outlook/day\(day.rawValue)otlk.html")
+        #expect(request.headers["Accept"] == "text/html")
+        #expect(request.fallbackPolicy == .maximumAge(600))
+        #expect(response.source == .cacheRevalidated304)
+        #expect(response.data == payload)
     }
 
     @Test("fetchGeoJsonData builds outlook path and geojson accept headers")
@@ -1364,9 +1441,9 @@ struct ConvectiveOutlookDayPresentationTests {
         #expect(selection.state == .populated(.current))
         #expect(selection.outlooks.count == 2)
         #expect(selection.outlooks.allSatisfy { $0.day == day.rawValue })
-        #expect(selection.outlooks.first?.published == Date(timeIntervalSince1970: Double(600 - day.rawValue * 100)))
-        #expect(selection.outlooks.last?.published == Date(timeIntervalSince1970: 100))
-        #expect(selection.outlooks.first?.validUntil == Date(timeIntervalSince1970: 2_000))
+        #expect(selection.outlooks.first?.published == rssTestNow.addingTimeInterval(Double(-400 - day.rawValue * 100)))
+        #expect(selection.outlooks.last?.published == rssTestNow.addingTimeInterval(-900))
+        #expect(selection.outlooks.first?.validUntil == rssTestNow.addingTimeInterval(2_000))
     }
 
     @Test("single-day cache preserves selected-day absence and refresh activity")
@@ -1384,7 +1461,8 @@ struct ConvectiveOutlookDayPresentationTests {
                 let selection = ConvectiveOutlookDayPresentation(
                     day: day, collection: displayed, refreshStatus: status, isOffline: offline
                 )
-                #expect(selection.state == (day == .day2 ? .populated(activity) : .empty(activity)))
+                let missingState: ConvectiveOutlookPresentationState = status == .loading && !offline ? .loading : .unavailable
+                #expect(selection.state == (day == .day2 ? .populated(activity) : missingState))
                 #expect(selection.outlooks == (day == .day2 ? cached : []))
             }
         }
@@ -1411,10 +1489,334 @@ struct ConvectiveOutlookDayPresentationTests {
 
     private func outlook(day: Int?, time: Int) -> ConvectiveOutlookDTO {
         ConvectiveOutlookDTO(
-            title: day.map { "Day \($0) Convective Outlook" } ?? "Convective Outlook",
+            title: day.map { "Day \($0) Convective Outlook \(time)" } ?? "Convective Outlook",
             link: URL(string: "https://example.com/outlook")!,
-            published: Date(timeIntervalSince1970: Double(time)), summary: "Summary", fullText: "Discussion",
-            day: day, riskLevel: nil, issued: nil, validUntil: Date(timeIntervalSince1970: 2_000)
+            published: rssTestNow.addingTimeInterval(Double(time - 1000)), summary: "Summary", fullText: "Discussion",
+            day: day, riskLevel: nil, issued: nil, validUntil: rssTestNow.addingTimeInterval(2_000)
         )
     }
 }
+
+private struct CurrentDiscussionClient: SpcClient {
+    var rss: HTTPResponse? = nil
+    var pages: [Int: HTTPResponse] = [:]
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        guard let data = rss?.data else { throw SpcError.missingData }
+        return data
+    }
+    func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
+        guard let rss else { throw SpcError.networkError(status: 503) }
+        return rss
+    }
+    func fetchCurrentOutlookResponse(for day: SPCForecastDay) async throws -> HTTPResponse {
+        guard let response = pages[day.rawValue] else { throw SpcError.networkError(status: 404) }
+        return response
+    }
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data { throw SpcError.missingData }
+}
+
+@Suite("SPC current discussion acquisition", .serialized)
+struct SPCCurrentDiscussionTests {
+    private let now = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970 / 60) * 60 - 60)
+
+    private func page(_ day: Int, issued: Date? = nil, rolloverHours: Double = 0) -> Data {
+        // Captured official <pre> bodies below; shift only their clock headers to keep tests deterministic over time.
+        let source = capturedSPCDiscussions[day - 1]
+        let issue = issued ?? now.addingTimeInterval(Double(-day) * 3600)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/Chicago")
+        formatter.dateFormat = "hhmm a z EEE MMM dd yyyy"
+        let issuePattern = #"\d{4} [AP]M [A-Z]{3} [A-Za-z]{3} [A-Za-z]{3} \d{2} \d{4}"#
+        let stamped = source.replacingOccurrences(of: issuePattern, with: formatter.string(from: issue), options: .regularExpression)
+        formatter.timeZone = .gmt
+        formatter.dateFormat = "ddHHmm'Z'"
+        let start = now.addingTimeInterval((Double(day - 1) * 24 - 1 + rolloverHours) * 3600)
+        let end = start.addingTimeInterval(24 * 3600)
+        let validity = "Valid \(formatter.string(from: start)) - \(formatter.string(from: end))"
+        return Data(stamped.replacingOccurrences(of: #"Valid \d{6}Z - \d{6}Z"#, with: validity, options: .regularExpression).utf8)
+    }
+
+    private func response(_ data: Data, source: HTTPResponse.Source = .live) -> HTTPResponse {
+        HTTPResponse(status: 200, headers: [:], data: data, source: source)
+    }
+
+    private func dayOneRSS(_ issued: Date? = nil) throws -> HTTPResponse {
+        let item = try SPCDiscussionAcceptance.parseCurrent(page(1, issued: issued), day: .day1)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .gmt
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return response(Data("""
+        <rss><channel><item><title>SPC Day 1 Convective Outlook</title>
+        <link>https://www.spc.noaa.gov/products/outlook/day1otlk.html</link>
+        <pubDate>\(formatter.string(from: item.published))</pubDate>
+        <description><![CDATA[\(item.fullText)]]></description></item></channel></rss>
+        """.utf8))
+    }
+
+    private func provider(_ container: ModelContainer, _ client: any SpcClient) -> SpcProvider {
+        SpcProvider(
+            outlookRepo: ConvectiveOutlookRepo(modelContainer: container), mesoRepo: MesoRepo(modelContainer: container),
+            alertRepo: AlertRepo(modelContainer: container), stormRiskRepo: StormRiskRepo(modelContainer: container),
+            severeRiskRepo: SevereRiskRepo(modelContainer: container), fireRiskRepo: FireRiskRepo(modelContainer: container),
+            spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo(modelContainer: container), client: client
+        )
+    }
+
+    @Test("current pages bootstrap all days, partial RSS preserves them, and failures/restart preserve accepted text")
+    func acquisition_partialUpdate_failure_restart() async throws {
+        let (container, directory) = try await MainActor.run { try makeDiskContainer(for: [ConvectiveOutlook.self]) }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = CurrentDiscussionClient(rss: try dayOneRSS(), pages: [1: response(page(1)), 2: response(page(2)), 3: response(page(3))])
+        let spc = provider(container, client)
+        #expect(await spc.syncConvectiveOutlooks() == .live)
+        let initial = try await spc.getConvectiveOutlookSnapshot()
+        #expect(Set(initial.outlooks.compactMap(\.day)) == [1, 2, 3])
+        #expect(initial.outlooks.count == 3) // RSS and the current page share the same Day 1 issuance.
+
+        let partial = provider(container, CurrentDiscussionClient(rss: try dayOneRSS(now)))
+        #expect(await partial.syncConvectiveOutlooks() == .live)
+        let updated = try await partial.getConvectiveOutlookSnapshot()
+        #expect(updated.outlooks.filter { $0.day == 1 }.count == 2)
+        #expect(updated.outlooks.filter { $0.day == 2 } == initial.outlooks.filter { $0.day == 2 })
+        #expect(updated.outlooks.filter { $0.day == 3 } == initial.outlooks.filter { $0.day == 3 })
+        #expect(await provider(container, CurrentDiscussionClient()).syncConvectiveOutlooks() == .failed)
+        let rejected = CurrentDiscussionClient(pages: [2: response(Data("<pre>invalid</pre>".utf8))])
+        #expect(await provider(container, rejected).syncConvectiveOutlooks() == .failed)
+        let fallback = CurrentDiscussionClient(pages: [2: response(page(2, issued: now), source: .cacheFallback)])
+        #expect(await provider(container, fallback).syncConvectiveOutlooks() == .errorFallback)
+        #expect(try await partial.getConvectiveOutlookSnapshot() == updated)
+
+        let reopened = try await MainActor.run { try ModelContainer(
+            for: ConvectiveOutlook.self,
+            configurations: ModelConfiguration("ConvectiveOutlookRepoTests", url: directory.appendingPathComponent("SkyAware.sqlite"))
+        ) }
+        let restored = provider(reopened, CurrentDiscussionClient())
+        #expect(try await restored.getConvectiveOutlookSnapshot() == updated)
+        let home = try await HomeSnapshotStore(
+            spcRisk: restored, spcOutlook: restored,
+            arcusAlerts: StubArcusAlertQuerying(activeWarnings: .success([])),
+            arcusMesos: StubArcusMesoQuerying(mesos: .success([]))
+        ).loadSnapshot(for: nil, weather: nil, freshness: .init(), refreshMesos: false)
+        for day in [SPCForecastDay.day1, .day2, .day3] {
+            let presentation = ConvectiveOutlookDayPresentation(day: day, collection: home.outlooks, refreshStatus: .failed)
+            #expect(presentation.state == .populated(.failed))
+            #expect(presentation.outlooks.count == (day == .day1 ? 2 : 1))
+            #expect(presentation.outlooks.allSatisfy { $0.day == day.rawValue && $0.validUntil != nil })
+        }
+    }
+
+    @Test("new issuance, bounded earlier text, out-of-order acceptance, and forecast rollover remain day scoped")
+    func issuance_rollover_and_bounds() async throws {
+        let (container, directory) = try await MainActor.run { try makeDiskContainer(for: [ConvectiveOutlook.self]) }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+        for index in 0..<15 {
+            let issue = now.addingTimeInterval(Double(index - 16) * 60)
+            _ = try await repo.refreshConvectiveOutlooks(using: CurrentDiscussionClient(pages: [2: response(page(2, issued: issue))]), asOf: now)
+        }
+        let retained = try await repo.collectionSnapshot(asOf: now).outlooks
+        #expect(retained.count == 12)
+        #expect(retained.map(\.published) == retained.map(\.published).sorted(by: >))
+        // The older run stages its response first, then a newer run commits during its final await.
+        let old = CurrentDiscussionClient(pages: [2: response(page(2, issued: now.addingTimeInterval(-1800)))])
+        let newer = CurrentDiscussionClient(pages: [2: response(page(2, issued: now, rolloverHours: 24))])
+        _ = try await repo.refreshConvectiveOutlooks(using: old, asOf: now) {
+            _ = try? await repo.refreshConvectiveOutlooks(using: newer, asOf: now)
+            return true
+        }
+        let rolled = try await repo.collectionSnapshot(asOf: now).outlooks
+        #expect(rolled.count == 1)
+        #expect(rolled.first?.issued == now)
+        #expect(rolled.first?.day == 2)
+        // Reads retire expired content before scheduled cleanup; purge persists that retirement.
+        let expiredAt = now.addingTimeInterval(72 * 3600)
+        #expect(try await repo.collectionSnapshot(asOf: expiredAt) == .unavailable)
+        let expiredPresentation = ConvectiveOutlookDayPresentation(
+            day: .day2, collection: rolled, refreshStatus: .success(hasContent: true), asOf: expiredAt
+        )
+        #expect(expiredPresentation.outlooks.isEmpty)
+        #expect(expiredPresentation.state == .unavailable)
+        try await repo.purge(asOf: expiredAt)
+        #expect(try await repo.collectionSnapshot(asOf: expiredAt) == .unavailable)
+    }
+
+    @Test("missing products stay absent; valid Day 3 survives an old Day 1 purge; metadata-free rows expire in 48 hours")
+    func missingProduct_and_retention() async throws {
+        let (container, directory) = try await MainActor.run { try makeDiskContainer(for: [ConvectiveOutlook.self]) }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+        _ = try await repo.refreshConvectiveOutlooks(using: CurrentDiscussionClient(rss: try dayOneRSS(), pages: [3: response(page(3))]), asOf: now)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 2, asOf: now).isEmpty)
+        let future = now.addingTimeInterval(49 * 3600)
+        try await repo.purge(asOf: future)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 1, asOf: future).isEmpty)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 3, asOf: future).count == 1)
+        _ = try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(Data(sampleValidRSS.utf8))), asOf: rssTestNow)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 2, asOf: rssTestNow).count == 1)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 2, asOf: rssTestNow.addingTimeInterval(49 * 3600)).isEmpty)
+    }
+
+    @Test("legacy disk rows reconstruct source validity instead of displaying an incorrectly anchored cached date")
+    func legacyValidityMetadata() async throws {
+        let (container, directory) = try await MainActor.run { try makeDiskContainer(for: [ConvectiveOutlook.self]) }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let parsed = try SPCDiscussionAcceptance.parseCurrent(page(3), day: .day3)
+        try await MainActor.run {
+            let row = ConvectiveOutlook(
+                title: parsed.title, link: parsed.link, published: parsed.published,
+                fullText: parsed.fullText, summary: parsed.summary, day: 3, riskLevel: nil,
+                issued: parsed.issued, validUntil: now.addingTimeInterval(30 * 86400)
+            )
+            container.mainContext.insert(row)
+            container.mainContext.insert(ConvectiveOutlook.collectionMarker(published: parsed.published))
+            try container.mainContext.save()
+        }
+        let snapshot = try await ConvectiveOutlookRepo(modelContainer: container).collectionSnapshot(asOf: now)
+        #expect(snapshot.outlooks.count == 1)
+        #expect(snapshot.outlooks.first?.validUntil == parsed.validUntil)
+    }
+
+    @Test("captured SPC current products expose distinct issue and validity dates, including month/year rollover")
+    func sourceMetadata() throws {
+        let parser = OutlookParser()
+        for day in 1...3 {
+            let dto = try SPCDiscussionAcceptance.parseCurrent(Data(capturedSPCDiscussions[day - 1].utf8), day: SPCForecastDay(rawValue: day)!)
+            #expect(dto.day == day)
+            #expect(dto.issued == parser.extractIssuedDate(dto.fullText))
+            let issued = try #require(dto.issued)
+            let expiry = try #require(dto.validUntil)
+            #expect(expiry > issued)
+            #expect(issued.ISO8601Format() == ["2026-10-19T00:44:00Z", "2026-10-18T16:58:00Z", "2026-10-18T19:07:00Z"][day - 1])
+            #expect(expiry.ISO8601Format() == ["2026-10-19T12:00:00Z", "2026-10-20T12:00:00Z", "2026-10-21T12:00:00Z"][day - 1])
+            #expect(dto.published == issued)
+        }
+        let issued = try #require("1158 PM CST Thu Dec 31 2026".parseAsIssuedDate())
+        let interval = try #require(SPCDiscussionAcceptance.validity(in: "Valid 011200Z - 021200Z", issued: issued))
+        #expect(interval.start.ISO8601Format() == "2027-01-01T12:00:00Z")
+        #expect(interval.end.ISO8601Format() == "2027-01-02T12:00:00Z")
+        #expect(SPCDiscussionAcceptance.validity(in: "Valid 012400Z - 021200Z", issued: issued) == nil)
+    }
+}
+
+// Official https://www.spc.noaa.gov/products/outlook/day{1,2,3}otlk.html, captured 2026-10-19 UTC.
+private let capturedSPCDiscussions: [String] = [
+    #"""
+    <html><pre>
+    SPC AC 190044
+
+       Day 1 Convective Outlook
+       NWS Storm Prediction Center Norman OK
+       0744 PM CDT Sun Oct 18 2026
+
+       Valid 190100Z - 191200Z
+
+       ...NO SEVERE THUNDERSTORM AREAS FORECAST...
+
+       ...SUMMARY...
+       Severe thunderstorms are not forecast across the U.S. through
+       tonight.
+
+       ...DISCUSSION...
+       An upper-level ridge will move eastward into the southern
+       Appalachians tonight, as southwesterly flow at mid-levels remains in
+       place across much of the western and central U.S. At the surface, a
+       large area of high pressure will remain entrenched from the Gulf
+       Coast states to the Northeast. As a result, dry and cool conditions
+       will remain over much of the continental U.S. Isolated thunderstorms
+       will be possible over south Florida and in parts of the Desert
+       Southwest, but no severe threat is forecast this evening through
+       tonight.
+
+       ..Broyles.. 10/19/2026
+
+       CLICK TO GET <a href="archive/2026/KWNSPTSDY1_202610190100.txt">WUUS01 PTSDY1</a> PRODUCT
+
+       NOTE: THE NEXT DAY 1 OUTLOOK IS SCHEDULED BY 0600Z
+    <script type="text/javascript" src="/misc/utctime.js"></script>
+    </pre></html>
+    """#,
+    #"""
+    <html><pre>
+    SPC AC 181658
+
+       Day 2 Convective Outlook
+       NWS Storm Prediction Center Norman OK
+       1158 AM CDT Sun Oct 18 2026
+
+       Valid 191200Z - 201200Z
+
+       ...NO SEVERE THUNDERSTORM AREAS FORECAST...
+
+       ...SUMMARY...
+       Severe thunderstorms are not expected on Monday.
+
+       ...Synopsis...
+       An upper low will linger off the East Coast while an upper trough
+       amplifies just off the West Coast. Meanwhile, a leading wave will
+       affect the area from Baja CA into the Four Corners states.
+
+       Instability will be minimal over most of the CONUS due to an area of
+       high pressure, with the surface ridge extending from the Great
+       Lakes/Upper Midwest to the Gulf Coast. The exceptions will be near
+       the FL Keys where moist easterly winds will persist, supporting
+       scattered showers and a few thunderstorms, and over AZ and NM, where
+       midlevel moisture will support weak instability. In either case,
+       severe weather is not anticipated due to weak instability.
+
+       ..Jewell.. 10/18/2026
+
+       CLICK TO GET <a href="archive/2026/KWNSPTSDY2_202610181730.txt">WUUS02 PTSDY2</a> PRODUCT
+
+       NOTE: THE NEXT DAY 2 OUTLOOK IS SCHEDULED BY 0600Z
+    <script type="text/javascript" src="/misc/utctime.js"></script>
+    </pre></html>
+    """#,
+    #"""
+    <html><pre>
+    SPC AC 181907
+
+       Day 3 Convective Outlook
+       NWS Storm Prediction Center Norman OK
+       0207 PM CDT Sun Oct 18 2026
+
+       Valid 201200Z - 211200Z
+
+       ...NO SEVERE THUNDERSTORM AREAS FORECAST...
+
+       ...SUMMARY...
+       No severe thunderstorms are expected on Tuesday.
+
+       ...Synopsis...
+       A large upper trough is forecast to amplify just off the CA coast,
+       with increasing south/southwest winds aloft, as well as cooling
+       aloft near the coast overnight. To the east, minor height rises will
+       occur over the Plains, while an upper low meanders off the Mid
+       Atlantic coast.
+
+       At the surface, high pressure over the Upper Great Lakes and Ontario
+       will shift eastward, though the surface ridge will remain entrenched
+       into the Southern Plains. This will maintain stable conditions over
+       the central and eastern states.
+
+       General thunderstorm chances will be limited to parts of the
+       southwestern states in relation to the upper trough. Veering winds
+       with height and moderate deep-layer shear will develop over AZ and
+       NM as the upper trough amplified. However, forecast soundings show a
+       subsidence inversion above 500 mb during the day, which will limit
+       storm intensity. Overnight, elevated instability may increase as
+       cooling aloft occurs, with isolated storms still possible. Potential
+       should generally increase into Wednesday/D4 as the upper trough
+       strengthens.
+
+       ..Jewell.. 10/18/2026
+
+       CLICK TO GET <a href="archive/2026/KWNSPTSDY3_202610181930.txt">WUUS03 PTSDY3</a> PRODUCT
+
+       NOTE: THE NEXT DAY 3 OUTLOOK IS SCHEDULED BY 0730Z
+    <script type="text/javascript" src="/misc/utctime.js"></script>
+    </pre></html>
+    """#,
+]

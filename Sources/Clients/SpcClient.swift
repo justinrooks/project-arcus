@@ -95,6 +95,7 @@ enum RssProduct: String, CustomStringConvertible {
 }
 
 protocol SpcClient: Sendable {
+    func fetchCurrentOutlookResponse(for day: SPCForecastDay) async throws -> HTTPResponse
     /// Fetches  the backing data for rss product
     ///  includes Convective outlook, Meso Discussions, Severe Watches
     func fetchRssData(for product: RssProduct) async throws -> Data
@@ -109,6 +110,10 @@ protocol SpcClient: Sendable {
 }
 
 extension SpcClient {
+    func fetchCurrentOutlookResponse(for day: SPCForecastDay) async throws -> HTTPResponse {
+        throw SpcError.missingData
+    }
+
     func fetchGeoJsonData(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> Data {
         guard product.forecastProduct.supports(day) else {
             throw SpcError.unsupportedForecastRequest(day: day, product: product.forecastProduct)
@@ -167,6 +172,13 @@ struct SpcHttpClient: SpcClient {
         self.http = http
     }
     
+    /// The official current-product pages include the full discussion and source issuance/validity headers.
+    func fetchCurrentOutlookResponse(for day: SPCForecastDay) async throws -> HTTPResponse {
+        guard [.day1, .day2, .day3].contains(day) else { throw SpcError.invalidUrl }
+        let url = try makeSPCURL(path: "/products/outlook/day\(day.rawValue)otlk.html")
+        return try await fetchSpcResponse(for: url, headers: ["Accept": "text/html"])
+    }
+
     /// Tries to get GeoJSON data for the provided product
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the Data

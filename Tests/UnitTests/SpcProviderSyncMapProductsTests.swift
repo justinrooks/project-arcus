@@ -1516,6 +1516,14 @@ private actor OutlookSyncClient: SpcClient {
         self.description = description
     }
 
+    private static func publicationDate() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .gmt
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return formatter.string(from: .now)
+    }
+
     func fetchRssData(for product: RssProduct) async throws -> Data {
         let response = try await fetchRssResponse(for: product)
         guard let data = response.data else { throw SpcError.missingData }
@@ -1567,7 +1575,7 @@ private actor OutlookSyncClient: SpcClient {
                 <rss><channel><item>
                 <title>Day 1 Convective Outlook</title>
                 <link>https://www.spc.noaa.gov/products/outlook/day1otlk.html</link>
-                <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
+                <pubDate>\(Self.publicationDate())</pubDate>
                 <description>\(description)</description>
                 </item></channel></rss>
                 """.utf8),

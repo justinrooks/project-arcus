@@ -45,6 +45,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         guard let context else {
             let collection = try await spcOutlook.getConvectiveOutlookSnapshot()
             let outlooks = collection.outlooks
+            logOutlookCounts(outlooks)
             let latestOutlook = outlooks.max(by: { $0.published < $1.published })
             return HomeSnapshot(
                 weather: weather,
@@ -66,6 +67,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
 
         let resolvedCollection = try await collection
         let resolvedOutlooks = resolvedCollection.outlooks
+        logOutlookCounts(resolvedOutlooks)
         let latestOutlook = resolvedOutlooks.max(by: { $0.published < $1.published })
 
         let resolvedMesos = try await mesoCollection
@@ -84,6 +86,11 @@ actor HomeSnapshotStore: HomeSnapshotReading {
             hasAcceptedOutlookCollection: resolvedCollection.isAccepted,
             freshness: freshness
         )
+    }
+
+    private func logOutlookCounts(_ outlooks: [ConvectiveOutlookDTO]) {
+        let counts = (1...3).map { day in outlooks.filter { $0.day == day }.count }
+        Logger.appHomeRefresh.info("Home outlook collection day1=\(counts[0], privacy: .public) day2=\(counts[1], privacy: .public) day3=\(counts[2], privacy: .public)")
     }
 
     private func loadMesos(for context: LocationContext) async throws -> (mesos: [MdDTO], isAccepted: Bool) {
