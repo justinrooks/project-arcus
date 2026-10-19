@@ -37,7 +37,18 @@ enum MapFetchOutcome<Value: Sendable>: Sendable {
     }
 }
 
-actor MapScenePlanner {
+protocol MapScenePlanning: Actor {
+    func buildRenderPlan(
+        for layer: MapLayer, payload: MapDataPayload, existingPlan: MapLayerRenderPlan?,
+        polygonMapper: MapPolygonMapper, warningPolygons: KeyedMapPolygons
+    ) -> MapLayerRenderPlan
+    func buildRemainingRenderPlans(
+        excluding selectedLayer: MapLayer, payload: MapDataPayload, existingPlans: [MapLayer: MapLayerRenderPlan],
+        polygonMapper: MapPolygonMapper, warningPolygons: KeyedMapPolygons
+    ) -> [MapLayer: MapLayerRenderPlan]
+}
+
+actor MapScenePlanner: MapScenePlanning {
     func buildRenderPlan(
         for layer: MapLayer,
         payload: MapDataPayload,

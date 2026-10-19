@@ -57,3 +57,41 @@ Wall-time coefficient of variation was 2.2–3.5% for these rows; CPU variation 
 ## Limitations
 
 Provider read counts and selected-scene outputs for the six cases above are emitted by counted test providers. Current/future plan-build counts and cache clearing remain static call-graph measurements; no test-only planner counters were introduced. Timings cover in-memory model reload and synthetic plan materialization, not network transport, feed observer/coordinator scheduling, hatch drawing, manual viewport interaction, Instruments, or physical devices. Rapid selection/reload coalescing was not separately timed. Debug simulator samples, especially the cold full-reload row, have substantial variance, so compare operation counts rather than treating these absolute times as device performance claims.
+
+## Source-scoped follow-up — #709
+
+Comparison base: `c83d137` (integrated #708). The follow-up retains the same small counted-source fixtures, eight repetitions, Debug configuration, and iPhone 17 / iOS 26.5 unit lane. `MapAcceptedUpdateMeasurementTests` now passes actual accepted feed identities and monotonically increasing generations through the model's scoped reload entry point. Separate `MapAcceptedUpdateScopeTests` exercise the production observer/coordinator contracts and gated coalescing; no UI automation or live providers participate. A test-only planner actor delegates to the production builder and counts actual thematic plan calls. Warning-slice patches are reported separately because they preserve existing thematic plans and freshness.
+
+| Accepted update | #708 source reads / plan builds | Scoped source reads / thematic plan builds | Shared warning-slice work |
+| --- | ---: | ---: | --- |
+| Explicit full refresh / initial load | 8 / 11 | 8 / 11 | Included in six current plans |
+| Day 1 convective | 8 / 11 | 2 / 4 | Retain accepted warnings |
+| Day 2 categorical | 8 / 11 | 1 / 1 | None |
+| Day 3 categorical | 8 / 11 | 1 / 1 | None |
+| Day 2 hazards | 8 / 11 | 1 / 3 | None; one shared hazard snapshot |
+| Fire | 8 / 11 | 1 / 1 | Retain accepted warnings |
+| `arcus.alert` or `arcus.alerts` | 8 / 11 | 1 / 0 | Patch six current plans |
+| `home.hot.*` | 8 / 11 | 2 / 1 | Meso build plus five current warning patches |
+| Foreground meso cadence | 1 / 1 | 1 / 1 | Retain accepted warnings |
+| Unrelated or duplicate generation | Unrelated feeds already ignored; duplicate model reloads read 8 / build 11 | 0 / 0 | None |
+
+A newer accepted generation with identical content still rereads and plans its contracted slice: generation alone cannot prove content equality. Final comparison includes geometry, styles, titles, legend items, presentation state, forecast day, and issuance/validity. Equal results retain cached scenes and overlays without publishing resolving state. Changed cached scenes reuse overlays whose semantic keys, signatures, and titles remain equal. Updating a current plan preserves future scenes with the same layer. The cache still retains at most two existing scenes; this change adds no overlay cache and creates no uncached inactive scenes.
+
+Affected plans are staged until the whole requested scope finishes, then committed synchronously. Scheduling records generations and unions scopes before the coordinator can replace a pending operation. Superseded and cancelled candidates return their scope to the pending set, including when a provider returns despite cancellation. Full reentry remains explicit and establishes all selectable accepted inputs; the independent meso cadence remains lower priority than a queued accepted reload. Deterministic tests cover merged Day 1 / Day 2 / Day 3 / hot / warning updates, direct mid-load requests, selection and warning-toggle changes, accepted empty data, failed reads, cancellation, unchanged results, and validity-only changes.
+
+### Final follow-up evidence
+
+The final eleven-suite unit gate passed with 250 logical tests / 266 parameter-expanded executions, 0 failed, 0 skipped, and 0 expected failures. It includes scoped acceptance and measurement, Map feature/scene/warning/freshness/legend/mapper/rendering suites, scene warming, and `HomeRefreshPipelineTests`. Native result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.GqlGso/unit.xcresult`. The final measurement attachment is `A2794C86-9993-48A4-B10B-6E70CCC22F90.txt` in that bundle (exported to `/tmp/issue-709-final-attachments/`). Runtime/test file fingerprints are recorded in `/tmp/issue-709-final-source-fingerprints.txt`; documentation was completed after validation. The focused correction lane also passed 62 logical tests / 75 expanded executions, with no failures or skips, in `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.TVFrda/unit.xcresult`. No UI tests ran.
+
+The following comparable scenarios each completed all eight repetitions. Values are milliseconds; final mean and sample standard deviation accompany each median. Full-refresh counts remain unchanged and its timing varies, illustrating the limits of comparing separate Debug simulator runs.
+
+| Scenario | #708 wall median | Final wall median / mean / SD | Final CPU median / mean / SD |
+| --- | ---: | ---: | ---: |
+| Full refresh | 0.921 | 1.098 / 1.823 / 1.835 | 1.123 / 1.722 / 1.522 |
+| Day 2 categorical acceptance | 0.527 | 0.194 / 0.216 / 0.059 | 0.256 / 0.260 / 0.062 |
+| Day 3 categorical acceptance | 0.557 | 0.253 / 0.264 / 0.118 | 0.258 / 0.257 / 0.068 |
+| Warning acceptance | 0.459 | 0.273 / 0.498 / 0.585 | 0.296 / 0.323 / 0.095 |
+| Hot acceptance | 0.497 | 0.276 / 0.384 / 0.341 | 0.463 / 0.457 / 0.087 |
+| Unchanged accepted content | 0.473 | 0.106 / 0.113 / 0.028 | 0.157 / 0.179 / 0.056 |
+
+Source and planner counts are the repeatable optimization evidence. Timing samples ran alongside other unit suites, include actor scheduling, and show substantial variance in several rows; they establish no user-visible latency promise. The fire and hazard measurement rows retain categorical selection and measure isolated work, while separate parameterized unit tests select fire and all current/Day 2 hazards with changed nonempty geometry, risk legends, and future validity. Deterministic materializer tests cover equal overlay reuse, duplicate prior keys, changed signatures/geometry, and corrected titles. Independent review identified and verified a correction preserving out-of-scope warnings after a failed thematic read from accepted-empty/unavailable state.

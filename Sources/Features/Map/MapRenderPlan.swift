@@ -28,6 +28,24 @@ struct MapLayerRenderPlan: Sendable {
     let overlayRevision: Int
     let legendState: MapLegendState
 
+    func hasSameContent(as other: Self?) -> Bool {
+        guard let other else { return false }
+        let legend = other.legendState
+        return layer == other.layer &&
+            overlayPlans.elementsEqual(other.overlayPlans, by: {
+                $0.key == $1.key && $0.signature == $1.signature && $0.polygonKey == $1.polygonKey
+            }) &&
+            polygonEntries.elementsEqual(other.polygonEntries, by: {
+                $0.key == $1.key && $0.title == $1.title && $0.subtitle == $1.subtitle &&
+                    $0.coordinates == $1.coordinates && $0.interiorCoordinates == $1.interiorCoordinates
+            }) &&
+            legendState.presentationState == legend.presentationState &&
+            legendState.layer == legend.layer && legendState.severeItems == legend.severeItems &&
+            legendState.fireItems == legend.fireItems &&
+            legendState.showsHatchingExplanation == legend.showsHatchingExplanation &&
+            legendState.forecastDay == legend.forecastDay && legendState.forecastPeriod == legend.forecastPeriod
+    }
+
     func withLegendState(_ legendState: MapLegendState) -> MapLayerRenderPlan {
         MapLayerRenderPlan(
             layer: layer,
@@ -44,7 +62,8 @@ enum MapSceneMaterializer {
     static func materialize(
         plan: MapLayerRenderPlan,
         initialCenterCoordinate: CLLocationCoordinate2D?,
-        showsWarningGeometry: Bool
+        showsWarningGeometry: Bool,
+        reusing previousScene: MapLayerScene? = nil
     ) -> MapLayerScene {
         var polygonsByKey: [String: MKPolygon] = [:]
         polygonsByKey.reserveCapacity(plan.polygonEntries.count)
@@ -55,6 +74,9 @@ enum MapSceneMaterializer {
 
         var overlays: [MapOverlayEntry] = []
         overlays.reserveCapacity(plan.overlayPlans.count)
+        let previousOverlays = Dictionary(
+            (previousScene?.canvasState.overlays ?? []).map { ($0.key, $0) },
+            uniquingKeysWith: { first, _ in first })
 
         for overlayPlan in plan.overlayPlans {
             if case .warning = overlayPlan.kind, showsWarningGeometry == false {
@@ -62,6 +84,12 @@ enum MapSceneMaterializer {
             }
 
             guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
+            if let previous = previousOverlays[overlayPlan.key], previous.signature == overlayPlan.signature,
+               let previousPolygon = (previous.overlay as? RiskPolygonOverlay)?.polygon ?? previous.overlay as? MKPolygon,
+               previousPolygon.title == polygon.title, previousPolygon.subtitle == polygon.subtitle {
+                overlays.append(previous)
+                continue
+            }
 
             let overlay: MKOverlay
             switch overlayPlan.kind {
@@ -114,6 +142,36 @@ enum MapSceneMaterializer {
 }
 
 enum MapRenderPlanBuilder {
+    /// A skipped warning read cannot invalidate accepted warnings, even if the thematic plan is empty.
+    static func retainingWarnings(in plan: MapLayerRenderPlan, from previous: MapLayerRenderPlan?) -> MapLayerRenderPlan {
+        guard let previous, !plan.overlayPlans.contains(where: {
+            if case .warning = $0.kind { return true }
+            return false
+        }) else { return plan }
+        return replacingWarningSlice(in: plan, with: previous)
+    }
+
+    /// Warning acceptance changes the shared current-only slice, never thematic freshness.
+    static func updatingWarnings(
+        in plan: MapLayerRenderPlan,
+        outcome: MapFetchOutcome<[ActiveWarningGeometry]>,
+        polygons: KeyedMapPolygons
+    ) -> MapLayerRenderPlan {
+        guard case .success = outcome else { return plan }
+        let oldWarningKeys = Set(plan.overlayPlans.compactMap { overlay in
+            if case .warning = overlay.kind { return overlay.polygonKey }
+            return nil
+        })
+        let thematic = plan.overlayPlans.filter { overlay in
+            if case .warning = overlay.kind { return false }
+            return true
+        }
+        let overlays = thematic + polygons.keyedPolygons.map { overlayPlan(for: $0, kind: .warning) }
+        return MapLayerRenderPlan(layer: plan.layer,
+            polygonEntries: plan.polygonEntries.filter { !oldWarningKeys.contains($0.key) } + polygons.keyedPolygons,
+            overlayPlans: overlays, overlayRevision: overlayRevision(for: overlays), legendState: plan.legendState)
+    }
+
     static func build(
         layer: MapLayer,
         payload: MapDataPayload,
