@@ -10,6 +10,39 @@ import Testing
 struct MapFeatureModelTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
+    @Test("an explicit forecast selection wins whether it arrives before or after tab visibility")
+    func explicitSelectionWinsTabEntryOrdering() {
+        var requestBeforeVisibility = MapTabEntryNavigationState()
+        requestBeforeVisibility.markExplicitSelection()
+        let requestBeforeVisibilityDefault = requestBeforeVisibility.shouldApplyDefaultSelection()
+        let laterVisibilityDefault = requestBeforeVisibility.shouldApplyDefaultSelection()
+        #expect(requestBeforeVisibilityDefault == false)
+        #expect(laterVisibilityDefault)
+
+        var visibilityBeforeRequest = MapTabEntryNavigationState()
+        let initialVisibilityDefault = visibilityBeforeRequest.shouldApplyDefaultSelection()
+        visibilityBeforeRequest.markExplicitSelection()
+        let requestVisibilityDefault = visibilityBeforeRequest.shouldApplyDefaultSelection()
+        #expect(initialVisibilityDefault)
+        #expect(requestVisibilityDefault == false)
+
+        let model = MapFeatureModel()
+        for day in [SPCForecastDay.day2, .day3] {
+            #expect(model.selectForecast(day: day, layer: .categorical))
+            #expect(model.selectedForecastDay == day)
+            #expect(model.activeScene.legendState.layer == .categorical)
+        }
+    }
+
+    @Test("leaving the Map tab clears explicit selection precedence")
+    func explicitSelectionPrecedenceResetsAfterTabExit() {
+        var state = MapTabEntryNavigationState()
+        state.markExplicitSelection()
+        state.resetAfterLeavingTab()
+        let shouldDefaultAfterExit = state.shouldApplyDefaultSelection()
+        #expect(shouldDefaultAfterExit)
+    }
+
     @Test("discussion actions follow convective outlook product availability")
     func discussionRoutesMatchSupportedProductsAndKeepTheRequestedDay() {
         for day in [SPCForecastDay.day1, .day2, .day3] {

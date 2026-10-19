@@ -30,6 +30,26 @@ enum MapOutlookDiscussionPolicy {
     }
 }
 
+struct MapTabEntryNavigationState {
+    private(set) var explicitSelectionAwaitingVisibility = false
+
+    mutating func markExplicitSelection() {
+        explicitSelectionAwaitingVisibility = true
+    }
+
+    mutating func shouldApplyDefaultSelection() -> Bool {
+        guard explicitSelectionAwaitingVisibility == false else {
+            explicitSelectionAwaitingVisibility = false
+            return false
+        }
+        return true
+    }
+
+    mutating func resetAfterLeavingTab() {
+        explicitSelectionAwaitingVisibility = false
+    }
+}
+
 struct MapScreenView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
@@ -43,6 +63,7 @@ struct MapScreenView: View {
     @State private var model = MapFeatureModel()
     @State private var reloadCoordinator = MapReloadCoordinator()
     @State private var navigationRequestGate = HomeTabNavigationRequestGate()
+    @State private var tabEntryNavigationState = MapTabEntryNavigationState()
 
     private let primaryAwareness: SummaryAwarenessPrimaryState
     private let isVisible: Bool
@@ -101,8 +122,15 @@ struct MapScreenView: View {
         }
         .onChange(of: isVisible, initial: true) { _, newValue in
             reloadCoordinator.updateLifecycle(isActive: scenePhase == .active, isVisible: newValue)
-            guard newValue else { return }
-            guard applyNavigationRequestIfNeeded() == false else { return }
+            guard newValue else {
+                tabEntryNavigationState.resetAfterLeavingTab()
+                return
+            }
+            if applyNavigationRequestIfNeeded() {
+                tabEntryNavigationState.markExplicitSelection()
+                return
+            }
+            guard tabEntryNavigationState.shouldApplyDefaultSelection() else { return }
             _ = model.selectForecast(day: .day1, layer: selected)
         }
         .onChange(of: navigationRequest?.id, initial: true) { _, _ in
@@ -165,6 +193,7 @@ struct MapScreenView: View {
 
         selected = layer
         _ = model.selectForecast(day: day, layer: layer)
+        tabEntryNavigationState.markExplicitSelection()
         onNavigationRequestHandled(navigationRequest.id)
         return true
     }

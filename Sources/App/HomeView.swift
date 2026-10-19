@@ -35,6 +35,7 @@ struct HomeView: View {
     @State private var selectedMapLayer: MapLayer = .categorical
     @State private var crossSurfaceNavigationRequest: HomeTabNavigationRequest?
     @State private var outlookNavigationPath: [ConvectiveOutlookDTO] = []
+    @State private var selectedOutlookDay: SPCForecastDay = .day1
     @State private var projectionRetentionTask: Task<Void, Never>?
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
@@ -413,6 +414,7 @@ struct HomeView: View {
                 isVisible: selectedTab == .outlooks,
                 navigationRequest: crossSurfaceNavigationRequest,
                 navigationPath: $outlookNavigationPath,
+                selectedDay: $selectedOutlookDay,
                 onNavigationRequestHandled: { requestID in
                     if crossSurfaceNavigationRequest?.id == requestID {
                         crossSurfaceNavigationRequest = nil
