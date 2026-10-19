@@ -96,6 +96,7 @@ struct ConvectiveOutlookDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let outlook: ConvectiveOutlookDTO
+    var onOpenMap: ((SPCForecastDay) -> Void)?
     
     private let sectionSpacing: CGFloat = 14
     
@@ -156,6 +157,19 @@ struct ConvectiveOutlookDetailView: View {
         .navigationTitle(presentation.navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+        .toolbar {
+            if let onOpenMap, let day = outlook.day.flatMap(SPCForecastDay.init(rawValue:)) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        onOpenMap(day)
+                    } label: {
+                        Image(systemName: "map")
+                    }
+                    .accessibilityLabel("View Day \(day.rawValue) on Map")
+                    .accessibilityHint("Opens this forecast day on the categorical map.")
+                }
+            }
+        }
     }
 
     private var headerCard: some View {

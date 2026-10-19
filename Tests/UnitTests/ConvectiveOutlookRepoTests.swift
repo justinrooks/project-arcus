@@ -1222,6 +1222,45 @@ struct ConvectiveOutlookViewPresentationStateTests {
 @Suite("Convective outlook day selection")
 @MainActor
 struct ConvectiveOutlookDayPresentationTests {
+    @Test("cross-surface navigation chooses the latest accepted discussion for its day")
+    func latestDiscussionUsesRequestedDay() {
+        let collection = [
+            outlook(day: 1, time: 500),
+            outlook(day: 2, time: 400),
+            outlook(day: 3, time: 300),
+            outlook(day: 2, time: 100)
+        ]
+
+        #expect(ConvectiveOutlookView.latestAcceptedOutlook(
+            for: .day2,
+            dtos: collection,
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        ) == collection[1])
+        #expect(ConvectiveOutlookView.latestAcceptedOutlook(
+            for: .day3,
+            dtos: collection,
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        ) == collection[2])
+        #expect(ConvectiveOutlookView.latestAcceptedOutlook(
+            for: .day3,
+            dtos: [collection[0]],
+            refreshStatus: .success(hasContent: true),
+            hasAcceptedEmptySnapshot: false,
+            isOffline: false
+        ) == nil)
+        #expect(ConvectiveOutlookView.latestAcceptedOutlook(
+            for: .day2,
+            dtos: [collection[1], collection[3]],
+            refreshStatus: .failed,
+            hasAcceptedEmptySnapshot: false,
+            isOffline: true
+        ) == collection[1])
+    }
+
     @Test("latest and earlier are scoped to the selected day", arguments: [SPCForecastDay.day1, .day2, .day3])
     func selectionScopesLatestAndEarlier(day: SPCForecastDay) {
         let collection = [outlook(day: 1, time: 500), outlook(day: 2, time: 400),
