@@ -107,8 +107,41 @@ struct AppReviewRequestLedgerTests {
         #expect(ledger.isEligible(appVersion: "1.4.0", onboardingComplete: true, hasActiveAlerts: false))
     }
 
-    @Test("cancelling the scheduled request prevents the native action")
-    func schedule_cancellationPreventsRequest() async {
+    @Test("scheduled request suppresses while a newer manual refresh remains in flight")
+    func schedule_suppressesWhileNewerRefreshIsInFlight() async {
+        let defaults = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: Self.suiteName) }
+        let ledger = AppReviewRequestLedger(userDefaults: defaults)
+        for _ in 0..<4 { ledger.recordSuccessfulManualRefresh() }
+        var activeRefreshCount = 0
+        var sleeperEntered = false
+        var resumeSleep: CheckedContinuation<Void, Error>?
+        var requested = false
+
+        let task = AppReviewRequestSchedule.makeTask(
+            appVersion: "1.4.0",
+            ledger: ledger,
+            sleeper: { _ in
+                sleeperEntered = true
+                try await withCheckedThrowingContinuation { continuation in
+                    resumeSleep = continuation
+                }
+            },
+            isStillEligible: { activeRefreshCount == 0 },
+            requestReview: { requested = true }
+        )
+        while !sleeperEntered { await Task.yield() }
+        activeRefreshCount = 2
+        activeRefreshCount -= 1
+        resumeSleep?.resume()
+        await task.value
+
+        #expect(requested == false)
+        #expect(ledger.isEligible(appVersion: "1.4.0", onboardingComplete: true, hasActiveAlerts: false))
+    }
+
+    @Test("cancelling when a newer refresh starts prevents a later request")
+    func schedule_cancellationWhenNewerRefreshStartsPreventsRequest() async {
         let defaults = makeDefaults()
         defer { defaults.removePersistentDomain(forName: Self.suiteName) }
         let ledger = AppReviewRequestLedger(userDefaults: defaults)

@@ -100,8 +100,7 @@ struct HomeView: View {
                 scheduleReviewRequestIfEligible(presentation: presentation)
             }
             .onChange(of: presentation.alerts.map(\.id)) { _, _ in
-                reviewRequestTask?.cancel()
-                reviewRequestTask = nil
+                cancelPendingReviewRequest()
             }
         }
         .onChange(of: refreshPipeline.manualRefreshAccessibilityEvent) { _, event in
@@ -150,8 +149,7 @@ struct HomeView: View {
     }
 
     private func scheduleReviewRequestIfEligible(presentation: HomePresentationSnapshot) {
-        reviewRequestTask?.cancel()
-        reviewRequestTask = nil
+        cancelPendingReviewRequest()
 
         let ledger = AppReviewRequestLedger.live()
         ledger.recordSuccessfulManualRefresh()
@@ -170,6 +168,7 @@ struct HomeView: View {
             isStillEligible: {
                 guard scenePhase == .active,
                       selectedTab == .today,
+                      !refreshPipeline.isRefreshInFlight,
                       onboardingComplete,
                       refreshPipeline.alerts.isEmpty,
                       let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
@@ -184,6 +183,11 @@ struct HomeView: View {
             },
             requestReview: { requestReview() }
         )
+    }
+
+    private func cancelPendingReviewRequest() {
+        reviewRequestTask?.cancel()
+        reviewRequestTask = nil
     }
 
     private var stormSetupPreferences: StormSetupPreferences {
@@ -362,6 +366,7 @@ struct HomeView: View {
             onOpenAlerts: openAlertsTab,
             onOpenOutlooks: openOutlooksTab,
             refreshAction: {
+                cancelPendingReviewRequest()
                 await refreshPipeline.forceRefreshCurrentContext(
                     showsLoading: true,
                     environment: refreshEnvironment,
@@ -396,6 +401,7 @@ struct HomeView: View {
                 focusedAlertRequest: remoteAlertPresentationState.focusRequest,
                 onRefresh: {
                     logger.notice("Manual alerts refresh requested")
+                    cancelPendingReviewRequest()
                     refreshPipeline.resetLocationRefreshContext()
                     await refreshPipeline.forceRefreshCurrentContext(
                         showsLoading: true,
@@ -535,8 +541,7 @@ struct HomeView: View {
             .toolbarBackground(.skyAwareBackground, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
             .onChange(of: selectedTab) { oldTab, newTab in
-                reviewRequestTask?.cancel()
-                reviewRequestTask = nil
+                cancelPendingReviewRequest()
                 outlookNavigationState.tabSelectionChanged(
                     from: oldTab,
                     to: newTab
@@ -552,8 +557,7 @@ struct HomeView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase != .active {
-                reviewRequestTask?.cancel()
-                reviewRequestTask = nil
+                cancelPendingReviewRequest()
             }
             guard isUITestStaticMode == false else { return }
             Task {
@@ -593,7 +597,7 @@ struct HomeView: View {
         }
         .onDisappear {
             projectionRetentionTask?.cancel()
-            reviewRequestTask?.cancel()
+            cancelPendingReviewRequest()
         }
         .onChange(of: stormSetupEnabled) { oldValue, newValue in
             scheduleStormSetupSettingsRefreshIfNeeded(
