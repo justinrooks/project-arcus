@@ -48,6 +48,7 @@ actor SpcProvider {
     #endif
     var lastMapSyncFinishedAt: Date?
     var futureCategoricalAcceptedAt: [SPCForecastDay: Date] = [:]
+    var futureHazardsAcceptedAt: Date?
     let mapSyncCooldownSeconds: TimeInterval = 20
     
     init(outlookRepo: ConvectiveOutlookRepo,

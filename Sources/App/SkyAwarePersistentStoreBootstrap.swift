@@ -18,20 +18,27 @@ enum SkyAwarePersistenceSchemaV4: VersionedSchema {
     ]
 }
 
-enum SkyAwarePersistenceSchema: VersionedSchema {
+enum SkyAwarePersistenceSchemaV5: VersionedSchema {
     static let versionIdentifier = Schema.Version(5, 0, 0)
     static let models: [any PersistentModel.Type] = SkyAwarePersistenceSchemaV4.models + [SPCCategoricalForecast.self]
+}
+
+enum SkyAwarePersistenceSchema: VersionedSchema {
+    static let versionIdentifier = Schema.Version(6, 0, 0)
+    static let models: [any PersistentModel.Type] = SkyAwarePersistenceSchemaV5.models + [SPCHazardForecast.self]
 }
 
 enum SkyAwarePersistenceMigrationPlan: SchemaMigrationPlan {
     static let schemas: [any VersionedSchema.Type] = [
         SkyAwarePersistenceSchemaV3.self,
         SkyAwarePersistenceSchemaV4.self,
+        SkyAwarePersistenceSchemaV5.self,
         SkyAwarePersistenceSchema.self
     ]
     static let stages: [MigrationStage] = [
         .lightweight(fromVersion: SkyAwarePersistenceSchemaV3.self, toVersion: SkyAwarePersistenceSchemaV4.self),
-        .lightweight(fromVersion: SkyAwarePersistenceSchemaV4.self, toVersion: SkyAwarePersistenceSchema.self)
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV4.self, toVersion: SkyAwarePersistenceSchemaV5.self),
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV5.self, toVersion: SkyAwarePersistenceSchema.self)
     ]
 }
 

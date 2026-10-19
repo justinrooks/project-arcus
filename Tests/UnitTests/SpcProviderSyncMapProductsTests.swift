@@ -2074,11 +2074,248 @@ private actor FutureCategoricalClient: SpcClient {
         return product == .categorical ? makeCategoricalData() : emptyGeoJSONData()
     }
     func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse {
+        guard product == .categorical else { throw SpcError.missingData }
         if day == .day2 { day2Calls += 1 }
         if day == .day3 {
             day3Calls += 1
             if day3Calls == 1 { throw SpcError.missingData }
         }
         return HTTPResponse(status: 200, headers: [:], data: day == .day2 ? day2 : day3, source: .live)
+    }
+}
+
+
+@Suite("Day 2 hazard forecast acceptance", .serialized)
+@MainActor
+struct SPCFutureHazardForecastTests {
+    private let now = Date(timeIntervalSince1970: 1_809_368_000)
+
+    private func bundle(at date: Date, label: String = "0.05", empty: Bool = false,
+                        source: HTTPResponse.Source = .live) -> [GeoJSONProduct: HTTPResponse] {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = .gmt
+        let valid = utc.startOfDay(for: date).addingTimeInterval(129600)
+        let data: Data
+        if empty {
+            data = makeNoAreaData(issue: spcTimestamp(date), valid: spcTimestamp(valid),
+                                 expire: spcTimestamp(valid.addingTimeInterval(86400)))
+        } else {
+            data = makeCategoricalData(label: label, label2: label == "SIGN" ? "10% Significant Risk" : label,
+                dn: 5, issue: spcTimestamp(date), valid: spcTimestamp(valid),
+                expire: spcTimestamp(valid.addingTimeInterval(86400)))
+        }
+        return Dictionary(uniqueKeysWithValues: [GeoJSONProduct.tornado, .hail, .wind].map {
+            let payload = empty ? makeNoAreaData(
+                label: $0 == .tornado ? "Less Than 2% All Areas" : "Less Than 5% All Areas",
+                issue: spcTimestamp(date), valid: spcTimestamp(valid),
+                expire: spcTimestamp(valid.addingTimeInterval(86400))) : data
+            return ($0, HTTPResponse(status: 200, headers: [:], data: payload, source: source))
+        })
+    }
+
+    @Test("Accepted map shapes retain probability and conditional intensity semantics",
+          arguments: ["0.05", "SIGN", "CIG1", "CIG2", "CIG3"])
+    func semantics(label: String) async throws {
+        let container = try TestStore.container(for: [SPCHazardForecast.self, SevereRisk.self])
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        #expect(try await repo.hazardForecast(for: .day2) == nil)
+        try await repo.acceptHazardForecast(bundle(at: now, label: label), day: .day2, now: now)
+        let snapshot = try #require(await repo.hazardForecast(for: .day2))
+        #expect(snapshot.day == .day2)
+        #expect(snapshot.shapes.count == 3)
+        for (shape, threat) in zip(snapshot.shapes, [ThreatType.tornado, .hail, .wind]) {
+            #expect(shape.type == threat)
+            #expect(shape.label == label)
+            #expect(shape.polygons.count == 1)
+            #expect(shape.stroke == "#000000")
+            #expect(shape.fill == "#000000")
+            if label.hasPrefix("CIG") {
+                #expect(shape.intensityLevel == Int(label.dropFirst(3)))
+                #expect(shape.probabilities == .percent(0))
+            } else {
+                #expect(shape.probabilities == (label == "SIGN" ? .significant(10) : .percent(0.05)))
+            }
+        }
+        let current = SevereRiskRepo(modelContainer: container)
+        #expect(try await current.active(asOf: snapshot.valid, for: .init(latitude: 39.5, longitude: -104.5)) == .allClear)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>()) == 0)
+    }
+
+    @Test("Invalid or stale bundle retains all last-known-good hazards",
+          arguments: ["fallback", "local", "missing", "decode", "empty", "mixed", "wrongDay",
+                      "older", "stale", "future", "partial", "unknown", "sameIssue", "day3"])
+    func rejection(reason: String) async throws {
+        let container = try TestStore.container(for: [SPCHazardForecast.self])
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        try await repo.acceptHazardForecast(bundle(at: now), day: .day2, now: now)
+        var next = bundle(at: now.addingTimeInterval(3600))
+        var day = SPCForecastDay.day2
+        switch reason {
+        case "fallback": next = bundle(at: now, source: .cacheFallback)
+        case "local": next = bundle(at: now, source: .localCache)
+        case "missing": next[.wind] = nil
+        case "decode": next[.wind] = HTTPResponse(status: 200, headers: [:], data: Data("broken".utf8))
+        case "empty": next[.wind] = HTTPResponse(status: 200, headers: [:], data: emptyGeoJSONData())
+        case "mixed": next[.wind] = bundle(at: now)[.wind]
+        case "older": next = bundle(at: now.addingTimeInterval(-3600))
+        case "stale": next = bundle(at: now.addingTimeInterval(-86400))
+        case "future": next = bundle(at: now.addingTimeInterval(7200))
+        case "sameIssue": next = bundle(at: now, empty: true)
+        case "unknown": next = bundle(at: now, label: "UNKNOWN")
+        case "day3": day = .day3
+        default:
+            let original = try #require(next[.wind]?.data)
+            let document = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: original)
+            let feature = try #require(document.features.first)
+            var props = feature.properties
+            let geometry: GeoJSONGeometry
+            if reason == "wrongDay" {
+                props = makeProperties(label: "0.05", label2: "5%", issue: props.ISSUE,
+                    valid: spcTimestamp(now.addingTimeInterval(3 * 86400)), expire: props.EXPIRE, dn: 5)
+                geometry = feature.geometry
+            } else {
+                geometry = GeoJSONGeometry(type: "MultiPolygon", coordinates: feature.geometry.coordinates + [[]])
+            }
+            next[.wind] = HTTPResponse(status: 200, headers: [:], data: try JSONEncoder().encode(
+                makeFeatureCollection(features: [makeFeature(properties: props, geometry: geometry)])))
+        }
+        await #expect(throws: (any Error).self) {
+            try await repo.acceptHazardForecast(next, day: day, now: now.addingTimeInterval(3600))
+        }
+        let cached = try #require(await repo.hazardForecast(for: .day2))
+        #expect(cached.issued == now.asMinute)
+        #expect(cached.shapes.count == 3)
+        #expect(cached.shapes.allSatisfy { $0.probabilities == .percent(0.05) })
+    }
+
+    @Test("Distinct hazard payloads retain their mapping while populated Day 1 risk stays authoritative")
+    func hazardMappingAndCurrentRiskIsolation() async throws {
+        let container = try TestStore.container(for: [SPCHazardForecast.self, SevereRisk.self])
+        let context = ModelContext(container)
+        let document = try JSONDecoder().decode(GeoJSONFeatureCollection.self,
+            from: makeTornadoData(issue: spcTimestamp(now), valid: spcTimestamp(now),
+                                  expire: spcTimestamp(now.addingTimeInterval(86400))))
+        let polygons = try #require(document.features.first).createPolygonEntities(polyTitle: "Current tornado")
+        context.insert(SevereRisk(type: .tornado, probability: .percent(0.02), threatLevel: .tornado(probability: 0.02),
+            issued: now, valid: now, expires: now.addingTimeInterval(86400), dn: 2,
+            stroke: nil, fill: nil, polygons: polygons, label: "0.02"))
+        try context.save()
+        let current = SevereRiskRepo(modelContainer: container)
+        let point = CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        let expected = try await current.active(asOf: now, for: point)
+        #expect(expected == .tornado(probability: 0.02))
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        var distinct = bundle(at: now)
+        distinct[.hail] = bundle(at: now, label: "0.15")[.hail]
+        distinct[.wind] = bundle(at: now, label: "CIG2")[.wind]
+        try await repo.acceptHazardForecast(distinct, day: .day2, now: now)
+        let shapes = try #require(await repo.hazardForecast(for: .day2)).shapes
+        #expect(shapes.first { $0.type == .tornado }?.probabilities == .percent(0.05))
+        #expect(shapes.first { $0.type == .hail }?.probabilities == .percent(0.15))
+        #expect(shapes.first { $0.type == .wind }?.intensityLevel == 2)
+        #expect(shapes.first { $0.type == .wind }?.probabilities == .percent(0))
+        #expect(try await current.active(asOf: now, for: point) == expected)
+        await #expect(throws: (any Error).self) {
+            try await repo.acceptHazardForecast(bundle(at: now, source: .cacheFallback), day: .day2, now: now)
+        }
+        #expect(try await current.active(asOf: now, for: point) == expected)
+        let next = now.addingTimeInterval(3600)
+        try await repo.acceptHazardForecast(bundle(at: next, empty: true), day: .day2, now: next)
+        #expect(try await repo.hazardForecast(for: .day2)?.isAcceptedEmpty == true)
+        #expect(try await current.active(asOf: next, for: point) == expected)
+    }
+
+    @Test("V5 migration preserves categorical/current data and hazards survive replacement and reopen")
+    func migrationAndRestart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("cache.store")
+        do {
+            let schema = Schema(versionedSchema: SkyAwarePersistenceSchemaV5.self)
+            let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
+            let context = ModelContext(container)
+            context.insert(SevereRisk(type: .tornado, probability: .percent(0.02), threatLevel: .tornado(probability: 0.02),
+                issued: now, valid: now, expires: now.addingTimeInterval(86400), dn: 2,
+                stroke: nil, fill: nil, polygons: [], label: "0.02"))
+            try context.save()
+            let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+            let data = makeCategoricalData(issue: spcTimestamp(now),
+                valid: spcTimestamp(now.startOfUTCDay.addingTimeInterval(129600)),
+                expire: spcTimestamp(now.startOfUTCDay.addingTimeInterval(216000)))
+            try await repo.acceptCategoricalForecast(data, day: .day2, source: .live, now: now)
+        }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        do {
+            let container = try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                configurations: ModelConfiguration(schema: schema, url: url))
+            let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+            try await repo.acceptHazardForecast(bundle(at: now, label: "CIG2"), day: .day2, now: now)
+        }
+        do {
+            let container = try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                configurations: ModelConfiguration(schema: schema, url: url))
+            let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+            let snapshot = try #require(await repo.hazardForecast(for: .day2))
+            #expect(snapshot.shapes.count == 3)
+            #expect(snapshot.shapes.allSatisfy { $0.intensityLevel == 2 && $0.polygons.first?.coordinates.isEmpty == false })
+            #expect(try await repo.categoricalForecast(for: .day2) != nil)
+            #expect(try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>()) == 1)
+            let next = now.addingTimeInterval(86400)
+            try await repo.acceptHazardForecast(bundle(at: next, empty: true, source: .cacheRevalidated304),
+                                               day: .day2, now: next)
+        }
+        let container = try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            configurations: ModelConfiguration(schema: schema, url: url))
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        #expect(try await repo.hazardForecast(for: .day2)?.isAcceptedEmpty == true)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<SPCHazardForecast>()) == 1)
+    }
+
+    @Test("Provider retries failed Day 2 hazards independently of current and categorical cooldowns")
+    func providerRetry() async throws {
+        let container = try TestStore.container(for: SkyAwarePersistenceSchema.models)
+        let client = FutureHazardClient(responses: bundle(at: Date().addingTimeInterval(-120)))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client, feedStateStore: store)
+        _ = await provider.syncMapProductsOutcome()
+        let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+        #expect(try await repo.hazardForecast(for: .day2) == nil)
+        #expect(try await store.record(for: "spc.map.hazards.day2")?.generation == 0)
+        #expect(await provider.syncMapProductsOutcome() == .skipped)
+        #expect(try await repo.hazardForecast(for: .day2)?.shapes.count == 3)
+        #expect(try await store.record(for: "spc.map.hazards.day2")?.generation == 1)
+        #expect(await client.hazardCalls == 4)
+        #expect(await provider.syncMapProductsOutcome() == .skipped)
+        #expect(await client.hazardCalls == 4)
+        #expect(await client.currentCalls == 5)
+    }
+}
+
+private extension Date {
+    var startOfUTCDay: Date {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = .gmt
+        return utc.startOfDay(for: self)
+    }
+}
+
+private actor FutureHazardClient: SpcClient {
+    let responses: [GeoJSONProduct: HTTPResponse]
+    private(set) var hazardCalls = 0
+    private(set) var currentCalls = 0
+    init(responses: [GeoJSONProduct: HTTPResponse]) { self.responses = responses }
+    func fetchRssData(for product: RssProduct) async throws -> Data { throw SpcError.missingData }
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        currentCalls += 1
+        return product == .categorical ? makeCategoricalData() : emptyGeoJSONData()
+    }
+    func fetchGeoJsonResponse(for product: GeoJSONProduct, day: SPCForecastDay) async throws -> HTTPResponse {
+        guard day == .day2, product != .categorical else { throw SpcError.missingData }
+        hazardCalls += 1
+        if hazardCalls == 1 { throw SpcError.missingData }
+        return try #require(responses[product])
     }
 }
