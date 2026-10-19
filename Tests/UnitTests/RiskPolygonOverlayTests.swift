@@ -346,6 +346,44 @@ struct RiskPolygonOverlayTests {
         #expect(abs(rgba(polygonRenderer.fillColor ?? .clear).alpha - 0.22) < 0.001)
     }
 
+    @MainActor
+    @Test("Warning renderer path leaves interior rings unfilled")
+    func mapCoordinator_warningRendererPathExcludesInteriorRing() throws {
+        var exterior = [
+            CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.4, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.0, longitude: -96.6)
+        ]
+        var hole = [
+            CLLocationCoordinate2D(latitude: 35.08, longitude: -96.92),
+            CLLocationCoordinate2D(latitude: 35.08, longitude: -96.80),
+            CLLocationCoordinate2D(latitude: 35.20, longitude: -96.92)
+        ]
+        let interior = MKPolygon(coordinates: &hole, count: hole.count)
+        let polygon = MKPolygon(
+            coordinates: &exterior,
+            count: exterior.count,
+            interiorPolygons: [interior]
+        )
+        polygon.title = "Severe Thunderstorm Warning"
+
+        let coordinator = MapCoordinator()
+        let renderer = coordinator.mapView(MKMapView(), rendererFor: polygon)
+        let warningRenderer = try #require(renderer as? MKPolygonRenderer)
+        warningRenderer.createPath()
+        let path = try #require(warningRenderer.path)
+
+        let holePoint = warningRenderer.point(
+            for: MKMapPoint(CLLocationCoordinate2D(latitude: 35.11, longitude: -96.88))
+        )
+        let shellPoint = warningRenderer.point(
+            for: MKMapPoint(CLLocationCoordinate2D(latitude: 35.02, longitude: -96.95))
+        )
+
+        #expect(path.contains(holePoint, using: .evenOdd) == false)
+        #expect(path.contains(shellPoint, using: .evenOdd))
+    }
+
     private func makePolygon() -> MKPolygon {
         var coordinates = [
             CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
