@@ -414,8 +414,8 @@ struct MapPolygonMapperTests {
         #expect(abs(alpha(of: legendStyle.0) - 0.3) < 0.0001)
     }
 
-    @Test("Warning polygon mapping uses only exterior ring for v1")
-    func warningPolygonMapping_usesExteriorRingOnly() throws {
+    @Test("Warning polygon mapping preserves exterior and interior rings")
+    func warningPolygonMapping_preservesInteriorRings() throws {
         let warning = makeActiveWarningGeometry(
             id: "warning-1",
             event: "Tornado Warning",
@@ -445,9 +445,14 @@ struct MapPolygonMapperTests {
         #expect(entry.coordinates[0] == Coordinate2D(latitude: 35.00, longitude: -97.00))
         #expect(entry.coordinates[1] == Coordinate2D(latitude: 35.10, longitude: -96.90))
         #expect(entry.coordinates[2] == Coordinate2D(latitude: 35.20, longitude: -97.10))
+        #expect(entry.interiorCoordinates.count == 1)
+        #expect(entry.interiorCoordinates[0][0] == Coordinate2D(latitude: 35.02, longitude: -97.02))
+        let polygon = try #require(result.polygons.first)
+        #expect(polygon.interiorPolygons?.count == 1)
+        #expect(polygon.interiorPolygons?.first?.pointCount == 3)
     }
 
-    @Test("Warning multipolygon mapping creates one stable entry per polygon exterior ring")
+    @Test("Warning multipolygon mapping preserves each polygon and its valid interior rings")
     func warningMultipolygonMapping_createsStableEntries() {
         let warning = makeActiveWarningGeometry(
             id: "warning-2",
@@ -484,6 +489,74 @@ struct MapPolygonMapperTests {
         #expect(result.keyedPolygons[1].key.contains("|1|"))
         #expect(result.keyedPolygons[0].coordinates[0] == Coordinate2D(latitude: 36.00, longitude: -98.00))
         #expect(result.keyedPolygons[1].coordinates[0] == Coordinate2D(latitude: 37.00, longitude: -99.00))
+        #expect(result.keyedPolygons[0].interiorCoordinates.isEmpty)
+        #expect(result.keyedPolygons[1].interiorCoordinates.count == 1)
+        #expect(result.polygons[1].interiorPolygons?.count == 1)
+    }
+
+    @Test("Warning geometry keys change when only an interior ring changes")
+    func warningInteriorRing_invalidatesStableKey() {
+        let exterior = [
+            DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+            DeviceAlertCoordinate(longitude: -96.9, latitude: 35.1),
+            DeviceAlertCoordinate(longitude: -97.1, latitude: 35.2)
+        ]
+        let firstHole = [
+            DeviceAlertCoordinate(longitude: -97.02, latitude: 35.02),
+            DeviceAlertCoordinate(longitude: -97.01, latitude: 35.03),
+            DeviceAlertCoordinate(longitude: -97.03, latitude: 35.01)
+        ]
+        let changedHole = [
+            DeviceAlertCoordinate(longitude: -97.04, latitude: 35.02),
+            DeviceAlertCoordinate(longitude: -97.01, latitude: 35.03),
+            DeviceAlertCoordinate(longitude: -97.03, latitude: 35.01)
+        ]
+        let baseline = makeActiveWarningGeometry(
+            id: "warning-hole-key", event: "Tornado Warning", messageId: "same-revision",
+            geometry: .polygon(rings: [exterior, firstHole])
+        )
+        let revised = makeActiveWarningGeometry(
+            id: "warning-hole-key", event: "Tornado Warning", messageId: "same-revision",
+            geometry: .polygon(rings: [exterior, changedHole])
+        )
+
+        let firstKey = mapper.warningPolygons(from: [baseline]).keyedPolygons.first?.key
+        let repeatedKey = mapper.warningPolygons(from: [baseline]).keyedPolygons.first?.key
+        let revisedKey = mapper.warningPolygons(from: [revised]).keyedPolygons.first?.key
+        #expect(firstKey == repeatedKey)
+        #expect(firstKey != revisedKey)
+    }
+
+    @Test("Malformed warning rings are skipped without discarding a valid exterior")
+    func warningPolygonMapping_skipsMalformedRings() throws {
+        let validExterior = [
+            DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+            DeviceAlertCoordinate(longitude: -96.9, latitude: 35.1),
+            DeviceAlertCoordinate(longitude: -97.1, latitude: 35.2)
+        ]
+        let shortHole = [DeviceAlertCoordinate(longitude: -97.02, latitude: 35.02)]
+        let invalidHole = [
+            DeviceAlertCoordinate(longitude: -97.02, latitude: 35.02),
+            DeviceAlertCoordinate(longitude: -97.01, latitude: 35.03),
+            DeviceAlertCoordinate(longitude: 181, latitude: 35.01)
+        ]
+        let invalidExterior = [
+            DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+            DeviceAlertCoordinate(longitude: -96.9, latitude: 35.1)
+        ]
+        let warning = makeActiveWarningGeometry(
+            id: "warning-malformed", event: "Tornado Warning", messageId: "revision",
+            geometry: .multiPolygon(polygons: [
+                [validExterior, shortHole, invalidHole],
+                [invalidExterior]
+            ])
+        )
+
+        let result = mapper.warningPolygons(from: [warning])
+        let entry = try #require(result.keyedPolygons.first)
+        #expect(result.keyedPolygons.count == 1)
+        #expect(entry.coordinates.count == 3)
+        #expect(entry.interiorCoordinates.isEmpty)
     }
 
     @Test("Warning overlay keys are deterministic across repeated mapping")
