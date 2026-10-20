@@ -62,6 +62,7 @@ enum WeatherAwarenessResponseFormatter {
                 ($0.title.localizedCaseInsensitiveContains("warning") ||
                  $0.title.localizedCaseInsensitiveContains("watch"))
         }
+        let featuredEvent = warningOrWatch ?? assessment.events.first
 
         switch assessment.alertFreshness {
         case .current:
@@ -94,18 +95,47 @@ enum WeatherAwarenessResponseFormatter {
             sentences.append("Risk information is unavailable.")
         }
 
-        let secondaryEvent = assessment.events.first { $0.id != warningOrWatch?.id }
-        if let secondaryEvent {
-            let event = secondaryEvent
-            let label = event.source == .nationalWeatherService ? "NWS alert" : "SPC mesoscale discussion"
-            let state = assessment.alertFreshness == .current ? "Local \(label)" : "Last accepted \(label)"
-            sentences.append("\(state): \(event.title).")
-        }
-        if let warningOrWatch, assessment.alertFreshness == .stale {
-            sentences.append("The last accepted alert check included \(warningOrWatch.title).")
+        switch assessment.alertFreshness {
+        case .current:
+            if let featuredEvent, warningOrWatch == nil {
+                sentences.append("Local \(eventLabel(for: featuredEvent)): \(featuredEvent.title).")
+            }
+            let remainingEvents = assessment.events.filter { $0.id != featuredEvent?.id }
+            if let summary = eventCountSummary(remainingEvents) {
+                sentences.append("Also, \(summary).")
+            }
+        case .stale:
+            if let featuredEvent {
+                sentences.append("The last accepted alert check included \(featuredEvent.title).")
+            }
+            if let summary = eventCountSummary(assessment.events) {
+                sentences.append(
+                    "The time-valid subset of the last accepted assessment is \(summary); " +
+                        "current alert status is unverified."
+                )
+            }
+        case .unavailable:
+            break
         }
 
         return sentences.joined(separator: " ")
+    }
+
+    private static func eventLabel(for event: WeatherAwarenessSnapshot.Event) -> String {
+        event.source == .nationalWeatherService ? "NWS alert" : "SPC mesoscale discussion"
+    }
+
+    private static func eventCountSummary(
+        _ events: [WeatherAwarenessSnapshot.Event]
+    ) -> String? {
+        guard !events.isEmpty else { return nil }
+        let nwsCount = events.filter { $0.source == .nationalWeatherService }.count
+        let mesoCount = events.count - nwsCount
+        let details = [
+            nwsCount > 0 ? "\(nwsCount) NWS \(nwsCount == 1 ? "alert" : "alerts")" : nil,
+            mesoCount > 0 ? "\(mesoCount) SPC mesoscale \(mesoCount == 1 ? "discussion" : "discussions")" : nil
+        ].compactMap { $0 }.joined(separator: " and ")
+        return "\(events.count) \(events.count == 1 ? "event" : "events") (\(details))"
     }
 
     private static func riskSummary(_ risks: WeatherAwarenessSnapshot.Risks) -> String {

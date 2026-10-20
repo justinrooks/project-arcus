@@ -579,6 +579,24 @@ struct WeatherAwarenessResultTests {
         #expect(!result.hasCurrentQuietAlerts)
     }
 
+    @Test("Stale spoken counts describe only the time-valid subset of accepted events")
+    func staleResponseCountsSelectedTimeValidSubset() throws {
+        let snapshot = WeatherAwarenessSnapshot(accepted: record(alertAge: 3_600, alerts: [
+            alert("expired", title: "Winter Weather Advisory", endOffset: -1, expiresOffset: -1),
+            alert("valid", title: "Tornado Warning")
+        ]))
+        let selected = try #require(assessment(WeatherAwarenessResult.select(snapshot, now: now)))
+
+        let response = WeatherAwarenessResponseFormatter.make(from: .assessment(selected))
+
+        #expect(selected.alertFreshness == .stale)
+        #expect(selected.events.map(\.id) == ["valid"])
+        #expect(response.contains("time-valid subset of the last accepted assessment is 1 event (1 NWS alert)"))
+        #expect(response.contains("current alert status is unverified."))
+        #expect(!response.contains("2 events"))
+        #expect(!response.contains("Active official alert"))
+    }
+
     @Test("NWS activity ends at the earlier CAP expiration or event end; quiet requires current coverage",
           arguments: [true, false], [Optional(0.0), Optional(1_800.0), nil])
     func nwsTerminalBoundary(expiresFirst: Bool, alertAge: Double?) throws {
