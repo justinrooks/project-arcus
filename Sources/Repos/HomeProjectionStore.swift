@@ -309,6 +309,38 @@ actor HomeProjectionStore {
     private static let pendingRetentionIDsDefaultsKey = "homeProjection.pendingRetentionIDs.v1"
 
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
+    private var awarenessPublisher: WeatherAwarenessSnapshotPublisher?
+    private var awarenessRevision: UInt64 = 0
+    private var awarenessProjectionKey: String?
+
+    /// Startup also repairs a missing/failed derived write from the last committed Home state.
+    func configureAwarenessSnapshots(_ store: WeatherAwarenessSnapshotStore) async {
+        guard awarenessPublisher == nil else { return }
+        awarenessPublisher = WeatherAwarenessSnapshotPublisher(store: store)
+        await publishAcceptedAwareness()
+    }
+
+    /// Select canonical state and reserve its ordering before yielding to the independent file actor.
+    func publishAcceptedAwareness() async {
+        guard let awarenessPublisher else { return }
+        do {
+            let record = try retentionCoordinator.withActiveProjectionKey { activeKey in
+                if let key = activeKey ?? awarenessProjectionKey { return try fetchProjection(withKey: key)?.record }
+                return try fetchLatestProjection()?.record
+            }
+            guard let record else { return }
+            awarenessProjectionKey = record.projectionKey
+            awarenessRevision += 1
+            let revision = awarenessRevision
+            let snapshot = WeatherAwarenessSnapshot(accepted: record)
+#if DEBUG
+            await awarenessPublicationCheckpointForTesting?(revision)
+#endif
+            await awarenessPublisher.publish(snapshot, revision: revision)
+        } catch {
+            Logger.appHomeRefresh.error("Accepted awareness snapshot selection failed")
+        }
+    }
 
     private var retentionCoordinator: HomeProjectionRetentionCoordinator {
         HomeProjectionRetentionCoordinator.forStore(modelContainer)
@@ -323,6 +355,12 @@ actor HomeProjectionStore {
     }
 
 #if DEBUG
+    private var awarenessPublicationCheckpointForTesting: (@Sendable (UInt64) async -> Void)?
+
+    func setAwarenessPublicationCheckpointForTesting(_ checkpoint: (@Sendable (UInt64) async -> Void)?) {
+        awarenessPublicationCheckpointForTesting = checkpoint
+    }
+
     private var failsNextSaveForTesting = false
     private var operationMetrics = HomeProjectionStoreOperationMetrics()
     private var retentionCheckpointForTesting: (@Sendable () async -> Void)?
@@ -561,8 +599,8 @@ actor HomeProjectionStore {
         fireSource: SpcMapSourceIdentity? = nil,
         for context: LocationContext,
         loadedAt: Date = .now
-    ) throws -> RiskProfileChange? {
-        try commitCore(
+    ) async throws -> RiskProfileChange? {
+        try await commitCore(
             .init(
                 slowProducts: (stormRisk, severeRisk, fireRisk),
                 convectiveSource: convectiveSource,
@@ -578,21 +616,24 @@ actor HomeProjectionStore {
         mesos: [MdDTO],
         for context: LocationContext,
         loadedAt: Date = .now
-    ) throws -> HomeProjectionRecord {
+    ) async throws -> HomeProjectionRecord {
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
         projection.activeAlerts = alerts
         projection.activeMesos = mesos
         projection.lastHotAlertsLoadAt = loadedAt
         projection.updatedAt = loadedAt
         try saveProjection(named: "Projection Hot Alerts Save")
-        return projection.record
+        let record = projection.record
+        awarenessProjectionKey = record.projectionKey
+        await publishAcceptedAwareness()
+        return record
     }
 
     func commitCore(
         _ commit: HomeProjectionCoreCommit,
         for context: LocationContext,
         loadedAt: Date = .now
-    ) throws -> HomeProjectionCommitAcknowledgement {
+    ) async throws -> HomeProjectionCommitAcknowledgement {
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
         let persistedProfile = RiskProfile(
             stormRisk: projection.stormRisk,
@@ -664,7 +705,7 @@ actor HomeProjectionStore {
 
         projection.updatedAt = loadedAt
         try saveProjection(named: "Projection Core Save")
-        return .init(
+        let acknowledgement = HomeProjectionCommitAcknowledgement(
             record: projection.record,
             riskProfileChange: .init(
                 previous: commit.slowProducts.map { _ in
@@ -687,6 +728,9 @@ actor HomeProjectionStore {
                 eligibleDimensions: eligibleDimensions
             )
         )
+        awarenessProjectionKey = acknowledgement.record.projectionKey
+        await publishAcceptedAwareness()
+        return acknowledgement
     }
 
     private enum RiskComparisonDomain {

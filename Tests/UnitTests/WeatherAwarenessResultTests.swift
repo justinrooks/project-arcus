@@ -1,10 +1,265 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import SkyAware
 
 @Suite("Accepted weather awareness contract")
 struct WeatherAwarenessResultTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test("Cold file reads preserve last-assessed location, source age and event expiry")
+    func persistedRead() async throws {
+        let store = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        try store.write(.init(accepted: record(alerts: [alert("warning")])))
+        let reopened = WeatherAwarenessSnapshotStore(directoryURL: store.directoryURL)
+        let current = try #require(assessment(await reopened.read(now: now)))
+        #expect(current.events.map(\.id) == ["warning"])
+        #expect(current.location.assessedAt == now.addingTimeInterval(-600))
+        let expired = try #require(assessment(await reopened.read(now: now.addingTimeInterval(30))))
+        #expect(expired.hasCurrentQuietAlerts)
+        let stale = try #require(assessment(await reopened.read(now: now.addingTimeInterval(30_000))))
+        #expect(stale.riskFreshness == .stale)
+        #expect(stale.alertFreshness == .stale)
+        #expect(!stale.hasCurrentQuietAlerts)
+        #expect(await reopened.read(expectedProjectionKey: "new-location", now: now) == .unavailable(.locationMismatch))
+    }
+
+    @Test("Missing, corrupt, oversized and unreadable files have explicit results")
+    func fileFailures() async throws {
+        let store = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        #expect(await store.read(now: now) == .unavailable(.noCache))
+        try FileManager.default.createDirectory(at: store.directoryURL, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: store.fileURL)
+        #expect(await store.read(now: now) == .unavailable(.corruptCache))
+        try Data(repeating: 0, count: WeatherAwarenessSnapshotStore.maximumBytes + 1).write(to: store.fileURL)
+        #expect(await store.read(now: now) == .unavailable(.corruptCache))
+        try FileManager.default.removeItem(at: store.fileURL)
+        try FileManager.default.createDirectory(at: store.fileURL, withIntermediateDirectories: true)
+        #expect(await store.read(now: now) == .unavailable(.readFailure))
+    }
+
+    @Test("Only saved slices publish; failed commits retain the prior accepted file")
+    @MainActor
+    func acceptedCommitPublication() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let home = HomeProjectionStore(modelContainer: container)
+        let context = awarenessContext()
+        await home.configureAwarenessSnapshots(file)
+        #expect(await file.read(now: now) == .unavailable(.noCache))
+        _ = try await home.commitCore(.init(slowProducts: (.slight, .allClear, .clear)),
+                                      for: context, loadedAt: now)
+        let initial = try #require(assessment(await file.read(now: now)))
+        #expect(initial.risks.storm == .slight)
+        #expect(initial.alertFreshness == .unavailable)
+        await home.failNextSaveForTesting()
+        await #expect(throws: (any Error).self) {
+            try await home.commitCore(.init(slowProducts: (.high, .allClear, .critical),
+                                            hotAlerts: ([], [])), for: context, loadedAt: now)
+        }
+        #expect(assessment(await file.read(now: now)) == initial)
+        _ = try await home.updateHotAlerts(alerts: [alert("live")], mesos: [meso(1)],
+                                          for: context, loadedAt: now.addingTimeInterval(1))
+        let hot = try #require(assessment(await file.read(now: now.addingTimeInterval(1))))
+        #expect(hot.events.map(\.id) == ["live", "1"])
+        #expect(hot.risks.assessedAt == initial.risks.assessedAt)
+        _ = try await home.commitCore(.init(slowProducts: (.enhanced, .allClear, .elevated)),
+                                      for: context, loadedAt: now.addingTimeInterval(2))
+        let risk = try #require(assessment(await file.read(now: now.addingTimeInterval(2))))
+        #expect(risk.risks.storm == .enhanced)
+        #expect(risk.alertsAssessedAt == hot.alertsAssessedAt)
+        _ = try await home.updateHotAlerts(alerts: [], mesos: [], for: context, loadedAt: now)
+        #expect(assessment(await file.read(now: now))?.hasCurrentQuietAlerts == true)
+    }
+
+    @Test("Changed location never inherits the previous location's risks or alerts")
+    @MainActor
+    func locationPublication() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        try FileManager.default.createDirectory(at: file.directoryURL, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let config = ModelConfiguration(schema: schema, url: file.directoryURL.appending(path: "Home.sqlite"))
+        let container = try ModelContainer(for: schema, configurations: config)
+        let retention = HomeProjectionRetentionCoordinator.forStore(container)
+        defer { retention.setActiveProjectionKey(nil) }
+        let home = HomeProjectionStore(modelContainer: container)
+        await home.configureAwarenessSnapshots(file)
+        _ = try await home.commitCore(.init(slowProducts: (.high, .allClear, .critical),
+                                            hotAlerts: ([alert("old")], [])),
+                                      for: awarenessContext(), loadedAt: now)
+        let first = awarenessContext()
+        let second = awarenessContext(cell: 2)
+        retention.setActiveProjectionKey(HomeProjection.projectionKey(for: first))
+        _ = try await home.commitCore(.init(slowProducts: (.slight, .allClear, .clear), hotAlerts: ([], [])),
+                                      for: second, loadedAt: now.addingTimeInterval(-600))
+        #expect(assessment(await file.read(now: now))?.location.projectionKey == HomeProjection.projectionKey(for: first))
+        let session = LocationSession(
+            locationClient: .init(snapshot: { nil }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(onUpdate: { _ in }),
+            locationContextResolver: AwarenessLocationResolver(context: second),
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(), retentionCoordinator: retention,
+            onContextPublished: { await home.publishAcceptedAwareness() }
+        )
+        await session.publishCurrentContext(second)
+        let changed = try #require(assessment(await file.read(now: now)))
+        #expect(changed.location.projectionKey == HomeProjection.projectionKey(for: second))
+        #expect(changed.risks.storm == .slight)
+        #expect(changed.risks.assessedAt == now.addingTimeInterval(-600))
+        #expect(changed.events.isEmpty)
+        // A refresh failure after switching must retain B's accepted assessment.
+        await home.failNextSaveForTesting()
+        await #expect(throws: (any Error).self) {
+            try await home.commitCore(.init(slowProducts: (.high, .allClear, .critical)),
+                                      for: second, loadedAt: now)
+        }
+        #expect(assessment(await file.read(now: now)) == changed)
+        // A late accepted update for the previous context cannot switch publication back to it.
+        _ = try await home.updateHotAlerts(alerts: [alert("late")], mesos: [],
+                                          for: awarenessContext(), loadedAt: now.addingTimeInterval(1))
+        #expect(assessment(await file.read(now: now)) == changed)
+        let third = awarenessContext(cell: 3)
+        await session.publishCurrentContext(third)
+        // Until C has accepted data, retain the explicitly last-assessed B rather than invent a C assessment.
+        #expect(assessment(await file.read(now: now))?.location.projectionKey == HomeProjection.projectionKey(for: second))
+        _ = try await home.commitCore(.init(hotAlerts: ([], [])), for: third, loadedAt: now)
+        let partial = try #require(assessment(await file.read(now: now)))
+        #expect(partial.location.projectionKey == HomeProjection.projectionKey(for: third))
+        #expect(partial.riskFreshness == .unavailable)
+        #expect(partial.hasCurrentQuietAlerts)
+    }
+
+    @Test("Startup restores committed state and file-write failures cannot roll back Home")
+    @MainActor
+    func restoreAndWriteFailure() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        try FileManager.default.createDirectory(at: file.directoryURL, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let config = ModelConfiguration(schema: schema, url: file.directoryURL.appending(path: "Home.sqlite"))
+        do {
+            let home = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+            // A directory at the file path forces atomic replacement to fail.
+            try FileManager.default.createDirectory(at: file.fileURL, withIntermediateDirectories: true)
+            await home.configureAwarenessSnapshots(file)
+            let accepted = try await home.commitCore(.init(slowProducts: (.enhanced, .allClear, .clear),
+                                                          hotAlerts: ([], [])),
+                                                    for: awarenessContext(), loadedAt: now)
+            #expect(accepted.record.stormRisk == .enhanced)
+            #expect(try await home.projection(for: awarenessContext())?.lastHotAlertsLoadAt == now)
+        }
+        try FileManager.default.removeItem(at: file.fileURL)
+        let reopened = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+        await reopened.configureAwarenessSnapshots(file)
+        let restored = try #require(assessment(await file.read(now: now.addingTimeInterval(30_000))))
+        #expect(restored.risks.storm == .enhanced)
+        #expect(restored.risks.assessedAt == now)
+        #expect(restored.alertFreshness == .stale)
+    }
+
+    @Test("A gated old publisher cannot replace a newer location or revision")
+    func outOfOrderPublication() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        let publisher = WeatherAwarenessSnapshotPublisher(store: file)
+        let gate = AwarenessPublicationGate()
+        let old = WeatherAwarenessSnapshot(accepted: record(key: "old", storm: .high))
+        let delayed = Task {
+            await gate.wait()
+            await publisher.publish(old, revision: 1)
+        }
+        let newer = WeatherAwarenessSnapshot(accepted: record(key: "new", storm: .slight, alertAge: nil))
+        await publisher.publish(newer, revision: 2)
+        await gate.open()
+        await delayed.value
+        let result = try #require(assessment(await file.read(now: now)))
+        #expect(result.location.projectionKey == "new")
+        #expect(result.risks.storm == .slight)
+        #expect(result.alertFreshness == .unavailable)
+        await publisher.publish(old, revision: 2)
+        #expect(assessment(await file.read(now: now)) == result)
+        try FileManager.default.removeItem(at: file.fileURL)
+        try FileManager.default.createDirectory(at: file.fileURL, withIntermediateDirectories: true)
+        await publisher.publish(old, revision: 4) // forced write failure still fences revision 3
+        try FileManager.default.removeItem(at: file.fileURL)
+        try file.write(newer)
+        await publisher.publish(old, revision: 3)
+        #expect(assessment(await file.read(now: now)) == result)
+        await publisher.publish(old, revision: 5)
+        #expect(assessment(await file.read(now: now))?.location.projectionKey == "old")
+    }
+
+    @Test("Overlapping Home commits reserve revisions before suspension and preserve acknowledgement identity")
+    @MainActor
+    func overlappingHomePublication() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        let home = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        await home.configureAwarenessSnapshots(file)
+        let gate = AwarenessPublicationGate()
+        await home.setAwarenessPublicationCheckpointForTesting { revision in
+            if revision == 1 { await gate.wait() }
+        }
+        let older = Task {
+            try await home.commitCore(.init(slowProducts: (.high, .allClear, .critical),
+                                            hotAlerts: ([alert("old")], [])),
+                                      for: awarenessContext(), loadedAt: now)
+        }
+        await gate.waitUntilWaiting()
+        let second = awarenessContext(cell: 2)
+        let newer = try await home.commitCore(.init(slowProducts: (.slight, .allClear, .clear), hotAlerts: ([], [])),
+                                              for: second, loadedAt: now)
+        await gate.open()
+        let oldAcknowledgement = try await older.value
+        let result = try #require(assessment(await file.read(now: now)))
+        #expect(oldAcknowledgement.record.stormRisk == .high)
+        #expect(newer.record.stormRisk == .slight)
+        #expect(result.location.projectionKey == newer.record.projectionKey)
+        #expect(result.risks.storm == .slight)
+        #expect(result.hasCurrentQuietAlerts)
+        await home.setAwarenessPublicationCheckpointForTesting(nil)
+    }
+
+    private func temporarySnapshotStore() -> WeatherAwarenessSnapshotStore {
+        .init(directoryURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+    }
+
+    @Test("Remote hot-alert completion publishes only the converged accepted Home collection")
+    @MainActor
+    func remoteCompletion() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        let home = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        await home.configureAwarenessSnapshots(file)
+        let gate = AwarenessPublicationGate()
+        let coordinator = AwarenessRemoteCoordinator(home: home, context: awarenessContext(),
+                                                     alert: alert("remote"), now: now, gate: gate)
+        let handler = RemoteHotAlertHandler(coordinator: coordinator, arcusAlerts: AwarenessRemoteAlerts(),
+                                            presentationState: RemoteAlertPresentationState())
+        let receipt = Task { await handler.handleRemoteNotification(HomeRemoteAlertContext(alertID: "remote")) }
+        #expect(await file.read(now: now) == .unavailable(.noCache))
+        await gate.open()
+        _ = await receipt.value
+        let accepted = try #require(assessment(await file.read(now: now)))
+        #expect(accepted.events.map(\.id) == ["remote"])
+        #expect(accepted.riskFreshness == .unavailable)
+        #expect(accepted.alertsAssessedAt == now)
+    }
+
+    private func awarenessContext(cell: Int64 = 1) -> LocationContext {
+        let snapshot = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                        timestamp: now, accuracy: 25, placemarkSummary: "Bennett, CO", h3Cell: cell)
+        let grid = GridPointSnapshot(
+            nwsId: "BOU/10,20", latitude: 39, longitude: -104, gridId: "BOU", gridX: 10, gridY: 20,
+            forecastURL: nil, forecastHourlyURL: nil, forecastGridDataURL: nil, observationStationsURL: nil,
+            city: "Bennett", state: "CO", timeZoneId: "America/Denver", radarStationId: nil,
+            forecastZone: "COZ038", countyCode: "COC005", fireZone: "COZ214", countyLabel: nil, fireZoneLabel: nil
+        )
+        return LocationContext(snapshot: snapshot, h3Cell: cell, grid: grid)
+    }
 
     @Test("Accepted quiet risks and alerts differ from missing values")
     func quietAndUnavailable() throws {
@@ -183,5 +438,76 @@ struct WeatherAwarenessResultTests {
             validEnd: now.addingTimeInterval(endOffset), areasAffected: "", summary: "",
             watchProbability: "Unknown", threats: nil, coordinates: []
         )
+    }
+}
+
+private actor AwarenessPublicationGate {
+    private var isOpen = false
+    private var hasArrived = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var arrivalWaiter: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        hasArrived = true
+        arrivalWaiter?.resume()
+        arrivalWaiter = nil
+        if !isOpen { await withCheckedContinuation { waiter = $0 } }
+    }
+
+    func waitUntilWaiting() async {
+        if !hasArrived { await withCheckedContinuation { arrivalWaiter = $0 } }
+    }
+
+    func open() {
+        isOpen = true
+        waiter?.resume()
+        waiter = nil
+    }
+}
+
+private actor AwarenessRemoteCoordinator: HomeIngestionCoordinating {
+    let home: HomeProjectionStore
+    let context: LocationContext
+    let alert: AlertDTO
+    let now: Date
+    let gate: AwarenessPublicationGate
+
+    init(home: HomeProjectionStore, context: LocationContext, alert: AlertDTO, now: Date,
+         gate: AwarenessPublicationGate) {
+        self.home = home
+        self.context = context
+        self.alert = alert
+        self.now = now
+        self.gate = gate
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest, progress: HomeIngestionProgressHandler?,
+                        publication: HomeIngestionPublicationHandler?) async throws -> HomeSnapshot {
+        #expect(request.trigger == .remoteHotAlertReceived)
+        await gate.wait()
+        _ = try await home.commitCore(.init(hotAlerts: ([alert], [])), for: context, loadedAt: now)
+        return .empty
+    }
+}
+
+private struct AwarenessRemoteAlerts: RemoteAlertResolving {
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] { [] }
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] { [] }
+    func getAlert(id: String) async throws -> AlertDTO? { nil }
+    func resolveNotificationAlert(_ context: HomeRemoteAlertContext) async throws -> AlertDTO? { nil }
+}
+
+private struct AwarenessLocationResolver: LocationContextResolving {
+    let context: LocationContext
+
+    func prepareCurrentContext(requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
+                               authorizationTimeout: Double, locationTimeout: Double,
+                               maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double) async throws -> LocationContext {
+        context
+    }
+
+    func resolveContext(from snapshot: LocationSnapshot, maximumAcceptedLocationAge: TimeInterval?,
+                        placemarkTimeout: Double) async throws -> LocationContext {
+        context
     }
 }
