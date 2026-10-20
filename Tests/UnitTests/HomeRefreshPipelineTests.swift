@@ -1748,7 +1748,96 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.isManualRefreshInFlight == false)
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Conditions refreshed.")
+        #expect(pipeline.manualRefreshSuccessEvent != nil)
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == "Conditions up to date")
+    }
+
+    @Test("successful Alerts refresh does not emit a Today review eligibility event")
+    func manualRefresh_fromAlertsDoesNotEmitReviewEligibleEvent() async {
+        let context = makeContext()
+        let acceptedAt = Date()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationContext: context,
+                refreshKey: context.refreshKey,
+                weatherRefreshResult: .success(nil),
+                freshness: HomeFreshnessState(
+                    lastHotFeedSyncAt: acceptedAt,
+                    lastMapProductSyncAt: acceptedAt,
+                    lastOutlookSyncAt: acceptedAt,
+                    lastWeatherSyncAt: acceptedAt
+                )
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession),
+            source: .alerts
+        )
+
+        #expect(pipeline.didManualRefreshFail == false)
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
+    }
+
+    @Test("an older Alerts completion does not invalidate a successful Today refresh")
+    func manualRefresh_overlappingAlertsCompletionPreservesTodaySuccess() async {
+        let context = makeContext()
+        let acceptedAt = Date()
+        let snapshot = HomeSnapshot(
+            locationContext: context,
+            refreshKey: context.refreshKey,
+            weatherRefreshResult: .success(nil),
+            freshness: HomeFreshnessState(
+                lastHotFeedSyncAt: acceptedAt,
+                lastMapProductSyncAt: acceptedAt,
+                lastOutlookSyncAt: acceptedAt,
+                lastWeatherSyncAt: acceptedAt
+            )
+        )
+        let alertsGate = AsyncGate()
+        let todayGate = AsyncGate()
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: [snapshot, snapshot],
+            gates: [alertsGate, todayGate]
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+
+        let alertsRefresh = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: environment,
+                source: .alerts
+            )
+        }
+        let alertsStarted = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.requestCount() == 1
+        }
+        #expect(alertsStarted)
+
+        let todayRefresh = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: environment,
+                source: .today
+            )
+        }
+        let todayStarted = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.requestCount() == 2
+        }
+        #expect(todayStarted)
+
+        await alertsGate.open()
+        await alertsRefresh.value
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
+
+        await todayGate.open()
+        await todayRefresh.value
+        #expect(pipeline.manualRefreshSuccessEvent != nil)
     }
 
     @Test("manual refresh keeps initial resolution active when fresh location changes")
@@ -1818,6 +1907,7 @@ struct HomeRefreshPipelineTests {
 
         #expect(pipeline.didManualRefreshFail)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refresh couldn't complete.")
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
     }
 
@@ -1853,6 +1943,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.isManualRefreshInFlight == false)
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refreshing conditions.")
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
         #expect(
             pipeline.isInitialCoreResolutionInFlight(
