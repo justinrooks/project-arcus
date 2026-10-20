@@ -61,6 +61,7 @@ struct SkyAwareApp: App {
     
     @MainActor
     init() {
+        SkyAwareAppShortcuts.updateAppShortcutParameters()
         Self.applyUITestDefaultsOverridesIfNeeded()
 
         let runtimeConnectivityState = RuntimeConnectivityState()
