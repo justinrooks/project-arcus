@@ -34,6 +34,7 @@ final class LocationSession {
     private let locationUploadCoordinator: any LocationUploadCoordinating
     private let durableContextCache: any DurableLocationContextCaching
     private let retentionCoordinator: HomeProjectionRetentionCoordinator
+    private let onContextPublished: @Sendable () async -> Void
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
@@ -62,7 +63,8 @@ final class LocationSession {
         locationContextResolver: any LocationContextResolving,
         locationUploadCoordinator: any LocationUploadCoordinating,
         durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache(),
-        retentionCoordinator: HomeProjectionRetentionCoordinator = HomeProjectionRetentionCoordinator()
+        retentionCoordinator: HomeProjectionRetentionCoordinator = HomeProjectionRetentionCoordinator(),
+        onContextPublished: @escaping @Sendable () async -> Void = {}
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
@@ -70,6 +72,7 @@ final class LocationSession {
         self.locationUploadCoordinator = locationUploadCoordinator
         self.durableContextCache = durableContextCache
         self.retentionCoordinator = retentionCoordinator
+        self.onContextPublished = onContextPublished
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -441,6 +444,7 @@ final class LocationSession {
         await retentionCoordinator.publish(context) {
             currentContext = context
         }
+        await onContextPublished()
     }
 
     private func invalidateDurableContextIfMoved(by snapshot: LocationSnapshot?) {

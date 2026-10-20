@@ -5,6 +5,7 @@ enum WeatherAwarenessResult: Sendable, Equatable {
     enum UnavailableReason: String, Codable, Sendable {
         case noCache
         case corruptCache
+        case readFailure
         case missingAssessedLocation
         case locationMismatch
     }

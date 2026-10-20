@@ -416,6 +416,9 @@ final class Dependencies: Sendable {
         let spcMapBatchPersistenceRepo = SpcMapBatchPersistenceRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
         let homeProjectionStore = HomeProjectionStore(modelContainer: container)
+        Task {
+            await homeProjectionStore.configureAwarenessSnapshots(.live)
+        }
         let feedStateStore = FeedStateStore()
         
         logger.debug("Repositories initialized")
@@ -460,7 +463,8 @@ final class Dependencies: Sendable {
             locationContextResolver: locationContextResolver,
             locationUploadCoordinator: locationUploadCoordinator,
             durableContextCache: DurableLocationContextCache(),
-            retentionCoordinator: HomeProjectionRetentionCoordinator.forStore(container)
+            retentionCoordinator: HomeProjectionRetentionCoordinator.forStore(container),
+            onContextPublished: { await homeProjectionStore.publishAcceptedAwareness() }
         )
         logger.info("Location session initialized")
         Task { @MainActor in
