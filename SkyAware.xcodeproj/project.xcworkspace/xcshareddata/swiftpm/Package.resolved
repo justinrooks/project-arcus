@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pawelmajcher/SwiftyH3.git",
       "state" : {
-        "revision" : "6d9b5774cc7cc198597b14aaccf213587947678c",
-        "version" : "0.5.0"
+        "revision" : "d5091720769598f3747f0b86c597f3ff73c18e65",
+        "version" : "0.6.0"
       }
     }
   ],
