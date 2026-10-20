@@ -1782,6 +1782,64 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.manualRefreshSuccessEvent == nil)
     }
 
+    @Test("an older Alerts completion does not invalidate a successful Today refresh")
+    func manualRefresh_overlappingAlertsCompletionPreservesTodaySuccess() async {
+        let context = makeContext()
+        let acceptedAt = Date()
+        let snapshot = HomeSnapshot(
+            locationContext: context,
+            refreshKey: context.refreshKey,
+            weatherRefreshResult: .success(nil),
+            freshness: HomeFreshnessState(
+                lastHotFeedSyncAt: acceptedAt,
+                lastMapProductSyncAt: acceptedAt,
+                lastOutlookSyncAt: acceptedAt,
+                lastWeatherSyncAt: acceptedAt
+            )
+        )
+        let alertsGate = AsyncGate()
+        let todayGate = AsyncGate()
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: [snapshot, snapshot],
+            gates: [alertsGate, todayGate]
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+
+        let alertsRefresh = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: environment,
+                source: .alerts
+            )
+        }
+        let alertsStarted = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.requestCount() == 1
+        }
+        #expect(alertsStarted)
+
+        let todayRefresh = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: environment,
+                source: .today
+            )
+        }
+        let todayStarted = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.requestCount() == 2
+        }
+        #expect(todayStarted)
+
+        await alertsGate.open()
+        await alertsRefresh.value
+        #expect(pipeline.manualRefreshSuccessEvent == nil)
+
+        await todayGate.open()
+        await todayRefresh.value
+        #expect(pipeline.manualRefreshSuccessEvent != nil)
+    }
+
     @Test("manual refresh keeps initial resolution active when fresh location changes")
     func manualRefresh_locationChangeKeepsInitialResolutionActive() async {
         let context = makeContext()
