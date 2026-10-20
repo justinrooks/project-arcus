@@ -753,8 +753,11 @@ actor HomeProjectionStore {
                 eligibleDimensions: eligibleDimensions
             )
         )
-        awarenessProjectionKey = acknowledgement.record.projectionKey
-        await publishAcceptedAwareness()
+        let acceptsRisk = commit.slowProducts != nil && (commit.updatesConvectiveRisk || commit.updatesFireRisk)
+        if acceptsRisk || commit.hotAlerts != nil {
+            awarenessProjectionKey = acknowledgement.record.projectionKey
+            await publishAcceptedAwareness()
+        }
         return acknowledgement
     }
 

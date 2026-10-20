@@ -78,6 +78,64 @@ struct WeatherAwarenessResultTests {
         #expect(assessment(await file.read(now: now))?.hasCurrentQuietAlerts == true)
     }
 
+    @Test("Weather-only core commits preserve published awareness while genuine domains can still replace it",
+          arguments: [false, true])
+    @MainActor
+    func weatherOnlyCoreCommitPreservesAwareness(includesIgnoredRiskValues: Bool) async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let home = HomeProjectionStore(modelContainer: container)
+        #expect(HomeProjectionRetentionCoordinator.forStore(container).currentActiveProjectionKey() == nil)
+        await home.configureAwarenessSnapshots(file)
+        let first = awarenessContext()
+        let second = awarenessContext(cell: 2)
+        _ = try await home.commitCore(.init(slowProducts: (.allClear, .allClear, .clear), hotAlerts: ([], [])),
+                                      for: first, loadedAt: now)
+        _ = try await home.commitCore(.init(slowProducts: (.slight, .allClear, .elevated),
+                                            hotAlerts: ([alert("B-warning")], [])),
+                                      for: second, loadedAt: now.addingTimeInterval(1))
+        let before = try #require(assessment(await file.read(now: now.addingTimeInterval(2))))
+        #expect(before.location.projectionKey == HomeProjection.projectionKey(for: second))
+        let weather = SummaryWeather(
+            temperature: .init(value: 72, unit: .fahrenheit), symbolName: "sun.max.fill",
+            conditionText: "Clear", asOf: now, dewPoint: .init(value: 54, unit: .fahrenheit),
+            humidity: 0.45, windSpeed: .init(value: 15, unit: .milesPerHour), windGust: nil,
+            windDirection: "NW", pressure: .init(value: 29.92, unit: .inchesOfMercury),
+            pressureTrend: "steady", visibility: nil
+        )
+        let weatherCommit = HomeProjectionCoreCommit(
+            weather: .some(weather),
+            slowProducts: includesIgnoredRiskValues ? (.high, .allClear, .critical) : nil,
+            updatesConvectiveRisk: false, updatesFireRisk: false
+        )
+        let saved = try await home.commitCore(weatherCommit, for: first, loadedAt: now.addingTimeInterval(2))
+        let persisted = try #require(await home.projection(for: first))
+        #expect(saved.record == persisted)
+        #expect(persisted.weather == weather)
+        #expect(persisted.lastWeatherLoadAt == now.addingTimeInterval(2))
+        #expect(persisted.stormRisk == .allClear)
+        #expect(persisted.fireRisk == .clear)
+        #expect(assessment(await file.read(now: now.addingTimeInterval(2))) == before)
+        _ = try await home.commitCore(.init(slowProducts: (.enhanced, .allClear, .critical), updatesFireRisk: false),
+                                      for: first, loadedAt: now.addingTimeInterval(3))
+        let risk = try #require(assessment(await file.read(now: now.addingTimeInterval(3))))
+        #expect(risk.location.projectionKey == HomeProjection.projectionKey(for: first))
+        #expect(risk.risks.storm == .enhanced)
+        #expect(risk.risks.fire == .clear)
+        _ = try await home.commitCore(.init(slowProducts: (.high, .allClear, .critical), updatesConvectiveRisk: false),
+                                      for: second, loadedAt: now.addingTimeInterval(4))
+        let fire = try #require(assessment(await file.read(now: now.addingTimeInterval(4))))
+        #expect(fire.location.projectionKey == HomeProjection.projectionKey(for: second))
+        #expect(fire.risks.storm == .slight)
+        #expect(fire.risks.fire == .critical)
+        _ = try await home.commitCore(.init(hotAlerts: ([], [])), for: first, loadedAt: now.addingTimeInterval(5))
+        let quiet = try #require(assessment(await file.read(now: now.addingTimeInterval(5))))
+        #expect(quiet.location.projectionKey == HomeProjection.projectionKey(for: first))
+        #expect(quiet.hasCurrentQuietAlerts)
+        #expect(quiet.alertsAssessedAt == now.addingTimeInterval(5))
+    }
+
     @Test("Changed location never inherits the previous location's risks or alerts")
     @MainActor
     func locationPublication() async throws {
