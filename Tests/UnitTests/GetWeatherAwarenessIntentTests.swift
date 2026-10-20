@@ -22,7 +22,47 @@ struct GetWeatherAwarenessIntentTests {
         let alertPosition = try #require(response.range(of: "Active official alert: \(title).")?.lowerBound)
         let riskPosition = try #require(response.range(of: "Current risk assessment")?.lowerBound)
         #expect(alertPosition < riskPosition)
-        #expect(response.contains("SPC mesoscale discussion: Mesoscale Discussion."))
+        #expect(response.contains("Also 1 event: 1 SPC mesoscale discussion"))
+    }
+
+    @Test("Current warning summaries count every additional active alert by source")
+    func currentWarningsCountAdditionalEvents() {
+        let response = WeatherAwarenessResponseFormatter.make(from: assessment(
+            alertsAssessedAt: now,
+            events: [event("Tornado Warning"), event("Severe Thunderstorm Warning"), event("Flash Flood Warning")]
+        ))
+
+        #expect(response.contains("Active official alert: Tornado Warning."))
+        #expect(response.contains("Also 2 events: 2 NWS alerts"))
+    }
+
+    @Test("Current mixed and mesoscale-only summaries count omitted events")
+    func currentMixedAndMesoOnlyCounts() {
+        let mixed = WeatherAwarenessResponseFormatter.make(from: assessment(
+            alertsAssessedAt: now,
+            events: [event("Tornado Warning"), event("Mesoscale Discussion", source: .stormPredictionCenter),
+                     event("Winter Weather Advisory")]
+        ))
+        let mesoscaleOnly = WeatherAwarenessResponseFormatter.make(from: assessment(
+            alertsAssessedAt: now,
+            events: [event("Mesoscale Discussion 1", source: .stormPredictionCenter),
+                     event("Mesoscale Discussion 2", source: .stormPredictionCenter)]
+        ))
+
+        #expect(mixed.contains("Also 2 events: 1 NWS alert and 1 SPC mesoscale discussion"))
+        #expect(mesoscaleOnly.contains("Local SPC mesoscale discussion: Mesoscale Discussion 1."))
+        #expect(mesoscaleOnly.contains("Also 1 event: 1 SPC mesoscale discussion"))
+    }
+
+    @Test("Current non-warning NWS event is identified and single events need no overflow count")
+    func currentNonWarningAndSingleEvent() {
+        let response = WeatherAwarenessResponseFormatter.make(from: assessment(
+            alertsAssessedAt: now,
+            events: [event("Winter Weather Advisory")]
+        ))
+
+        #expect(response.contains("Local NWS alert: Winter Weather Advisory."))
+        #expect(!response.contains("Also"))
     }
 
     @Test("Only a current accepted empty alert assessment supports a quiet statement")
@@ -47,7 +87,22 @@ struct GetWeatherAwarenessIntentTests {
 
         #expect(response.contains("alert check") && response.contains("is stale"))
         #expect(response.contains("included Tornado Warning"))
+        #expect(response.contains("Last accepted snapshot included 1 event: 1 NWS alert; current alert status is unverified."))
         #expect(!response.contains("Active official alert"))
+    }
+
+    @Test("Unavailable alert coverage does not report accepted event counts")
+    func unavailableAlertsDoNotReportCounts() {
+        let result = assessment(
+            alertsAssessedAt: nil,
+            events: [event("Tornado Warning"), event("Mesoscale Discussion", source: .stormPredictionCenter)]
+        )
+
+        let response = WeatherAwarenessResponseFormatter.make(from: result)
+
+        #expect(response.contains("Local alert information is unavailable."))
+        #expect(!response.contains("snapshot"))
+        #expect(!response.contains("2 events"))
     }
 
     @Test("Risk-only data never claims alerts are quiet and stale risk stays marked stale")
