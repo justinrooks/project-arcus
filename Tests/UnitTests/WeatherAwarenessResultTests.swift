@@ -122,8 +122,9 @@ struct WeatherAwarenessResultTests {
                                           for: awarenessContext(), loadedAt: now.addingTimeInterval(1))
         #expect(assessment(await file.read(now: now)) == changed)
         let third = awarenessContext(cell: 3)
+        _ = try await home.fetchOrCreateProjection(for: third, viewedAt: now.addingTimeInterval(60))
         await session.publishCurrentContext(third)
-        // Until C has accepted data, retain the explicitly last-assessed B rather than invent a C assessment.
+        // An existing location-only row is still unassessed; retain explicitly last-assessed B.
         #expect(assessment(await file.read(now: now))?.location.projectionKey == HomeProjection.projectionKey(for: second))
         _ = try await home.commitCore(.init(hotAlerts: ([], [])), for: third, loadedAt: now)
         let partial = try #require(assessment(await file.read(now: now)))
@@ -158,6 +159,70 @@ struct WeatherAwarenessResultTests {
         #expect(restored.risks.storm == .enhanced)
         #expect(restored.risks.assessedAt == now)
         #expect(restored.alertFreshness == .stale)
+    }
+
+    @Test("Newer unassessed rows preserve last-assessed awareness across restart until first domain acceptance",
+          arguments: [true, false], [true, false])
+    @MainActor
+    func unassessedRowsPreserveAcceptedAwareness(acceptsRiskFirst: Bool, hasWeatherUpdate: Bool) async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        try FileManager.default.createDirectory(at: file.directoryURL, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let config = ModelConfiguration(schema: schema, url: file.directoryURL.appending(path: "Home.sqlite"))
+        let first = awarenessContext()
+        let second = awarenessContext(cell: 2)
+        do {
+            let home = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+            await home.configureAwarenessSnapshots(file)
+            _ = try await home.commitCore(.init(slowProducts: (.enhanced, .allClear, .clear), hotAlerts: ([], [])),
+                                          for: first, loadedAt: now)
+            _ = try await home.fetchOrCreateProjection(for: second, viewedAt: now.addingTimeInterval(60))
+            if hasWeatherUpdate {
+                let weather = SummaryWeather(
+                    temperature: .init(value: 72, unit: .fahrenheit), symbolName: "sun.max.fill",
+                    conditionText: "Clear", asOf: now, dewPoint: .init(value: 54, unit: .fahrenheit),
+                    humidity: 0.45, windSpeed: .init(value: 15, unit: .milesPerHour), windGust: nil,
+                    windDirection: "NW", pressure: .init(value: 29.92, unit: .inchesOfMercury),
+                    pressureTrend: "steady", visibility: nil
+                )
+                let weatherOnly = try await home.updateWeather(weather, for: second,
+                                                               loadedAt: now.addingTimeInterval(120))
+                #expect(weatherOnly.isDisplayReady) // Generic Home readiness is deliberately insufficient.
+            }
+        }
+        let container = try ModelContainer(for: schema, configurations: config)
+        let reopened = HomeProjectionStore(modelContainer: container)
+        let retention = HomeProjectionRetentionCoordinator.forStore(container)
+        defer { retention.setActiveProjectionKey(nil) }
+        await reopened.configureAwarenessSnapshots(file)
+        let retained = try #require(assessment(await file.read(now: now.addingTimeInterval(120))))
+        #expect(retained.location.projectionKey == HomeProjection.projectionKey(for: first))
+        #expect(retained.risks.assessedAt == now)
+        #expect(retained.risks.storm == .enhanced)
+        // Also prove startup rebuilds A, rather than merely leaving an existing file alone.
+        try FileManager.default.removeItem(at: file.fileURL)
+        let recovery = HomeProjectionStore(modelContainer: container)
+        await recovery.configureAwarenessSnapshots(file)
+        #expect(assessment(await file.read(now: now.addingTimeInterval(120))) == retained)
+        // The same existing B row must not replace A during a location transition.
+        retention.setActiveProjectionKey(HomeProjection.projectionKey(for: second))
+        await reopened.publishAcceptedAwareness()
+        #expect(assessment(await file.read(now: now.addingTimeInterval(120))) == retained)
+        #expect(await file.read(expectedProjectionKey: HomeProjection.projectionKey(for: second), now: now)
+                == .unavailable(.locationMismatch))
+        let acceptedAt = now.addingTimeInterval(180)
+        let commit = acceptsRiskFirst
+            ? HomeProjectionCoreCommit(slowProducts: (.slight, .allClear, .clear))
+            : HomeProjectionCoreCommit(hotAlerts: ([], []))
+        _ = try await reopened.commitCore(commit, for: second, loadedAt: acceptedAt)
+        let replacement = try #require(assessment(await file.read(now: acceptedAt)))
+        #expect(replacement.location.projectionKey == HomeProjection.projectionKey(for: second))
+        #expect(replacement.riskFreshness == (acceptsRiskFirst ? .current : .unavailable))
+        #expect(replacement.alertFreshness == (acceptsRiskFirst ? .unavailable : .current))
+        #expect(replacement.hasCurrentQuietAlerts == !acceptsRiskFirst)
+        #expect(replacement.risks.assessedAt == (acceptsRiskFirst ? acceptedAt : nil))
+        #expect(replacement.alertsAssessedAt == (acceptsRiskFirst ? nil : acceptedAt))
     }
 
     @Test("A gated old publisher cannot replace a newer location or revision")

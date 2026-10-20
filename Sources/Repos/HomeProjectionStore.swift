@@ -326,9 +326,12 @@ actor HomeProjectionStore {
         do {
             let record = try retentionCoordinator.withActiveProjectionKey { activeKey in
                 if let key = activeKey ?? awarenessProjectionKey { return try fetchProjection(withKey: key)?.record }
-                return try fetchLatestProjection()?.record
+                return try fetchLatestAwarenessProjection()?.record
             }
-            guard let record else { return }
+            // Location, weather and enrichment saves do not establish an awareness assessment.
+            // Keep the prior explicitly last-assessed snapshot until this scope accepts either domain.
+            guard let record,
+                  record.lastSlowProductsLoadAt != nil || record.lastHotAlertsLoadAt != nil else { return }
             awarenessProjectionKey = record.projectionKey
             awarenessRevision += 1
             let revision = awarenessRevision
@@ -1012,6 +1015,23 @@ actor HomeProjectionStore {
 
     private func fetchLatestProjection() throws -> HomeProjection? {
         var descriptor = FetchDescriptor<HomeProjection>(
+            sortBy: [
+                SortDescriptor(\.updatedAt, order: .reverse),
+                SortDescriptor(\.createdAt, order: .reverse),
+                SortDescriptor(\.projectionKey, order: .forward)
+            ]
+        )
+        descriptor.fetchLimit = 1
+        let projections = try modelContext.fetch(descriptor)
+        recordFetchedRows(projections.count)
+        return projections.first
+    }
+
+    private func fetchLatestAwarenessProjection() throws -> HomeProjection? {
+        var descriptor = FetchDescriptor<HomeProjection>(
+            predicate: #Predicate<HomeProjection> {
+                $0.lastSlowProductsLoadAt != nil || $0.lastHotAlertsLoadAt != nil
+            },
             sortBy: [
                 SortDescriptor(\.updatedAt, order: .reverse),
                 SortDescriptor(\.createdAt, order: .reverse),
