@@ -317,6 +317,22 @@ actor HomeProjectionStore {
     func configureAwarenessSnapshots(_ store: WeatherAwarenessSnapshotStore) async {
         guard awarenessPublisher == nil else { return }
         awarenessPublisher = WeatherAwarenessSnapshotPublisher(store: store)
+        let persisted = await store.read()
+#if DEBUG
+        await awarenessRestoreCheckpointForTesting?()
+#endif
+        do {
+            // Restore identity only; values always come from canonical accepted state. A commit that
+            // completed during the file read already owns selection and must not be replaced by this hint.
+            if awarenessRevision == 0, awarenessProjectionKey == nil,
+               case .assessment(let assessment) = persisted,
+               let record = try fetchProjection(withKey: assessment.location.projectionKey)?.record,
+               record.lastSlowProductsLoadAt != nil || record.lastHotAlertsLoadAt != nil {
+                awarenessProjectionKey = record.projectionKey
+            }
+        } catch {
+            Logger.appHomeRefresh.error("Accepted awareness snapshot identity restoration failed")
+        }
         await publishAcceptedAwareness()
     }
 
@@ -358,6 +374,12 @@ actor HomeProjectionStore {
     }
 
 #if DEBUG
+    private var awarenessRestoreCheckpointForTesting: (@Sendable () async -> Void)?
+
+    func setAwarenessRestoreCheckpointForTesting(_ checkpoint: (@Sendable () async -> Void)?) {
+        awarenessRestoreCheckpointForTesting = checkpoint
+    }
+
     private var awarenessPublicationCheckpointForTesting: (@Sendable (UInt64) async -> Void)?
 
     func setAwarenessPublicationCheckpointForTesting(_ checkpoint: (@Sendable (UInt64) async -> Void)?) {
@@ -1028,20 +1050,34 @@ actor HomeProjectionStore {
     }
 
     private func fetchLatestAwarenessProjection() throws -> HomeProjection? {
-        var descriptor = FetchDescriptor<HomeProjection>(
-            predicate: #Predicate<HomeProjection> {
-                $0.lastSlowProductsLoadAt != nil || $0.lastHotAlertsLoadAt != nil
-            },
+        // Take one candidate per independently accepted domain, then compare their acceptance times.
+        // This bounds hydration to two rows without sorting by unrelated Home modification time.
+        var riskDescriptor = FetchDescriptor<HomeProjection>(
+            predicate: #Predicate<HomeProjection> { $0.lastSlowProductsLoadAt != nil },
             sortBy: [
-                SortDescriptor(\.updatedAt, order: .reverse),
-                SortDescriptor(\.createdAt, order: .reverse),
+                SortDescriptor(\.lastSlowProductsLoadAt, order: .reverse),
                 SortDescriptor(\.projectionKey, order: .forward)
             ]
         )
-        descriptor.fetchLimit = 1
-        let projections = try modelContext.fetch(descriptor)
-        recordFetchedRows(projections.count)
-        return projections.first
+        var alertDescriptor = FetchDescriptor<HomeProjection>(
+            predicate: #Predicate<HomeProjection> { $0.lastHotAlertsLoadAt != nil },
+            sortBy: [
+                SortDescriptor(\.lastHotAlertsLoadAt, order: .reverse),
+                SortDescriptor(\.projectionKey, order: .forward)
+            ]
+        )
+        riskDescriptor.fetchLimit = 1
+        alertDescriptor.fetchLimit = 1
+        let risks = try modelContext.fetch(riskDescriptor)
+        let alerts = try modelContext.fetch(alertDescriptor)
+        recordFetchedRows(risks.count)
+        recordFetchedRows(alerts.count)
+        return (risks + alerts).sorted { lhs, rhs in
+            let lhsAccepted = max(lhs.lastSlowProductsLoadAt ?? .distantPast, lhs.lastHotAlertsLoadAt ?? .distantPast)
+            let rhsAccepted = max(rhs.lastSlowProductsLoadAt ?? .distantPast, rhs.lastHotAlertsLoadAt ?? .distantPast)
+            if lhsAccepted != rhsAccepted { return lhsAccepted > rhsAccepted }
+            return lhs.projectionKey < rhs.projectionKey
+        }.first
     }
 
     private func recordFetchedRows(_ count: Int) {

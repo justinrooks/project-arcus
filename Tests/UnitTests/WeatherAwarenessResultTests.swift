@@ -36,8 +36,11 @@ struct WeatherAwarenessResultTests {
         try Data(repeating: 0, count: WeatherAwarenessSnapshotStore.maximumBytes + 1).write(to: store.fileURL)
         #expect(await store.read(now: now) == .unavailable(.corruptCache))
         try FileManager.default.removeItem(at: store.fileURL)
-        try FileManager.default.createDirectory(at: store.fileURL, withIntermediateDirectories: true)
-        #expect(await store.read(now: now) == .unavailable(.readFailure))
+        try Data("unreadable".utf8).write(to: store.fileURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: store.fileURL.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: store.fileURL.path) }
+        let unreadable = await store.read(now: now)
+        #expect(unreadable == .unavailable(.readFailure))
     }
 
     @Test("Only saved slices publish; failed commits retain the prior accepted file")
@@ -223,6 +226,99 @@ struct WeatherAwarenessResultTests {
         #expect(replacement.hasCurrentQuietAlerts == !acceptsRiskFirst)
         #expect(replacement.risks.assessedAt == (acceptsRiskFirst ? acceptedAt : nil))
         #expect(replacement.alertsAssessedAt == (acceptsRiskFirst ? nil : acceptedAt))
+    }
+
+    @Test("Restart preserves the published location and reconstructs from independent awareness timestamps",
+          arguments: [true, false], [true, false])
+    @MainActor
+    func startupAwarenessOrdering(keepsFile: Bool, latestDomainIsRisk: Bool) async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        try FileManager.default.createDirectory(at: file.directoryURL, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let config = ModelConfiguration(schema: schema, url: file.directoryURL.appending(path: "Home.sqlite"))
+        let first = awarenessContext()
+        let second = awarenessContext(cell: 2)
+        do {
+            let home = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+            await home.configureAwarenessSnapshots(file)
+            _ = try await home.commitCore(.init(slowProducts: (.enhanced, .allClear, .clear), hotAlerts: ([], [])),
+                                          for: first, loadedAt: now)
+            let oppositeDomain = latestDomainIsRisk ? HomeProjectionCoreCommit(hotAlerts: ([], []))
+                : HomeProjectionCoreCommit(slowProducts: (.enhanced, .allClear, .clear))
+            _ = try await home.commitCore(oppositeDomain, for: first, loadedAt: now.addingTimeInterval(90))
+            _ = try await home.commitCore(.init(slowProducts: (.slight, .allClear, .clear), hotAlerts: ([], [])),
+                                          for: second, loadedAt: now.addingTimeInterval(60))
+            let latestDomain = latestDomainIsRisk ? HomeProjectionCoreCommit(slowProducts: (.slight, .allClear, .clear))
+                : HomeProjectionCoreCommit(hotAlerts: ([], []))
+            _ = try await home.commitCore(latestDomain, for: second, loadedAt: now.addingTimeInterval(120))
+            _ = try await home.updateWeather(nil, for: first, loadedAt: now.addingTimeInterval(180))
+        }
+        if !keepsFile { try FileManager.default.removeItem(at: file.fileURL) }
+        let reopened = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+        await reopened.configureAwarenessSnapshots(file)
+        let result = try #require(assessment(await file.read(now: now.addingTimeInterval(180))))
+        #expect(result.location.projectionKey == HomeProjection.projectionKey(for: second))
+        #expect(result.risks.storm == .slight)
+        #expect(result.risks.assessedAt == now.addingTimeInterval(latestDomainIsRisk ? 120 : 60))
+        #expect(result.alertsAssessedAt == now.addingTimeInterval(latestDomainIsRisk ? 60 : 120))
+    }
+
+    @Test("Startup validates the saved location against canonical state before preferring its identity",
+          arguments: [true, false])
+    @MainActor
+    func startupValidatesPublishedIdentity(cachedKeyIsValid: Bool) async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        try FileManager.default.createDirectory(at: file.directoryURL, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let config = ModelConfiguration(schema: schema, url: file.directoryURL.appending(path: "Home.sqlite"))
+        let container = try ModelContainer(for: schema, configurations: config)
+        let retention = HomeProjectionRetentionCoordinator.forStore(container)
+        defer { retention.setActiveProjectionKey(nil) }
+        let first = awarenessContext()
+        let second = awarenessContext(cell: 2)
+        let home = HomeProjectionStore(modelContainer: container)
+        await home.configureAwarenessSnapshots(file)
+        _ = try await home.commitCore(.init(slowProducts: (.enhanced, .allClear, .clear)), for: first, loadedAt: now)
+        _ = try await home.commitCore(.init(slowProducts: (.slight, .allClear, .clear)),
+                                      for: second, loadedAt: now.addingTimeInterval(60))
+        retention.setActiveProjectionKey(HomeProjection.projectionKey(for: second))
+        _ = try await home.commitCore(.init(slowProducts: (.high, .allClear, .clear)),
+                                      for: first, loadedAt: now.addingTimeInterval(120))
+        retention.setActiveProjectionKey(nil)
+        if !cachedKeyIsValid { try file.write(.init(accepted: record(key: "missing-canonical-location"))) }
+        let reopened = HomeProjectionStore(modelContainer: container)
+        await reopened.configureAwarenessSnapshots(file)
+        let result = try #require(assessment(await file.read(now: now.addingTimeInterval(120))))
+        #expect(result.location.projectionKey == HomeProjection.projectionKey(for: cachedKeyIsValid ? second : first))
+        #expect(result.risks.storm == (cachedKeyIsValid ? .slight : .high))
+    }
+
+    @Test("A startup cache read cannot override a Home commit completed while restoration was suspended")
+    @MainActor
+    func startupCannotOverrideConcurrentCommit() async throws {
+        let file = temporarySnapshotStore()
+        defer { try? FileManager.default.removeItem(at: file.directoryURL) }
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let original = HomeProjectionStore(modelContainer: container)
+        await original.configureAwarenessSnapshots(file)
+        _ = try await original.commitCore(.init(slowProducts: (.enhanced, .allClear, .clear)),
+                                          for: awarenessContext(), loadedAt: now)
+        let reopened = HomeProjectionStore(modelContainer: container)
+        let gate = AwarenessPublicationGate()
+        await reopened.setAwarenessRestoreCheckpointForTesting { await gate.wait() }
+        let restoration = Task { await reopened.configureAwarenessSnapshots(file) }
+        await gate.waitUntilWaiting()
+        let second = awarenessContext(cell: 2)
+        _ = try await reopened.commitCore(.init(slowProducts: (.slight, .allClear, .clear)),
+                                          for: second, loadedAt: now.addingTimeInterval(60))
+        await gate.open()
+        await restoration.value
+        let result = try #require(assessment(await file.read(now: now.addingTimeInterval(60))))
+        #expect(result.location.projectionKey == HomeProjection.projectionKey(for: second))
+        #expect(result.risks.storm == .slight)
+        await reopened.setAwarenessRestoreCheckpointForTesting(nil)
     }
 
     @Test("A gated old publisher cannot replace a newer location or revision")
