@@ -25,6 +25,26 @@ struct WeatherAwarenessResultTests {
         #expect(await reopened.read(expectedProjectionKey: "new-location", now: now) == .unavailable(.locationMismatch))
     }
 
+    @Test("Quiet response separates accepted check time from invocation-time event validity")
+    func expiredWarningQuietResponse() throws {
+        let acceptedSnapshot = WeatherAwarenessSnapshot(accepted: record(
+            alerts: [alert("warning", title: "Tornado Warning", endOffset: 600, expiresOffset: 600)]
+        ))
+        let accepted = try #require(assessment(WeatherAwarenessResult.select(acceptedSnapshot, now: now)))
+        let invocationTime = now.addingTimeInterval(15 * 60)
+        let result = try #require(assessment(WeatherAwarenessResult.select(acceptedSnapshot, now: invocationTime)))
+        let response = WeatherAwarenessResponseFormatter.make(from: .assessment(result))
+
+        #expect(accepted.events.map(\.title) == ["Tornado Warning"])
+        #expect(result.alertsAssessedAt == now)
+        #expect(result.alertFreshness == .current)
+        #expect(result.events.isEmpty)
+        #expect(response.contains("latest accepted alert check was at"))
+        #expect(response.contains("none of its alerts are still valid now"))
+        #expect(!response.contains("No active local alerts as of"))
+        #expect(!response.contains("Active official alert"))
+    }
+
     @Test("Missing, corrupt, oversized and unreadable files have explicit results")
     func fileFailures() async throws {
         let store = temporarySnapshotStore()

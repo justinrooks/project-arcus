@@ -31,9 +31,9 @@ struct GetWeatherAwarenessIntentTests {
         let unavailableAlerts = assessment(alertsAssessedAt: nil, events: [])
         let staleAlerts = assessment(alertsAssessedAt: now.addingTimeInterval(-3_600), events: [])
 
-        #expect(WeatherAwarenessResponseFormatter.make(from: currentQuiet).contains("No active local alerts"))
-        #expect(!WeatherAwarenessResponseFormatter.make(from: unavailableAlerts).contains("No active local alerts"))
-        #expect(!WeatherAwarenessResponseFormatter.make(from: staleAlerts).contains("No active local alerts"))
+        #expect(WeatherAwarenessResponseFormatter.make(from: currentQuiet).contains("none of its alerts are still valid now"))
+        #expect(!WeatherAwarenessResponseFormatter.make(from: unavailableAlerts).contains("still valid now"))
+        #expect(!WeatherAwarenessResponseFormatter.make(from: staleAlerts).contains("still valid now"))
     }
 
     @Test("Stale alert assessments do not present retained warnings as active")

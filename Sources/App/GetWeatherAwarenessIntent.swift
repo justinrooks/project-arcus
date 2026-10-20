@@ -68,7 +68,10 @@ enum WeatherAwarenessResponseFormatter {
             if let warningOrWatch {
                 sentences.append("Active official alert: \(warningOrWatch.title).")
             } else if assessment.hasCurrentQuietAlerts {
-                sentences.append("No active local alerts as of \(timestamp(assessment.alertsAssessedAt)).")
+                sentences.append(
+                    "The latest accepted alert check was at \(timestamp(assessment.alertsAssessedAt)); " +
+                        "none of its alerts are still valid now."
+                )
             }
         case .stale:
             sentences.append("The last accepted alert check at \(timestamp(assessment.alertsAssessedAt)) is stale.")
