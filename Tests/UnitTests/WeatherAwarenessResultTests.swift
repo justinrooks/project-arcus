@@ -85,6 +85,22 @@ struct WeatherAwarenessResultTests {
         #expect(!result.hasCurrentQuietAlerts)
     }
 
+    @Test("NWS activity ends at the earlier CAP expiration or event end; quiet requires current coverage",
+          arguments: [true, false], [Optional(0.0), Optional(1_800.0), nil])
+    func nwsTerminalBoundary(expiresFirst: Bool, alertAge: Double?) throws {
+        let snapshot = WeatherAwarenessSnapshot(accepted: record(
+            alertAge: alertAge,
+            alerts: [alert("warning", endOffset: expiresFirst ? 600 : 30,
+                           expiresOffset: expiresFirst ? 30 : 600)]
+        ))
+        for offset in [29.0, 30.0, 31.0] {
+            let result = try #require(assessment(.select(snapshot, now: now.addingTimeInterval(offset))))
+            let isActive = alertAge != nil && offset < 30
+            #expect(result.events.map(\.id) == (isActive ? ["warning"] : []))
+            #expect(result.hasCurrentQuietAlerts == (alertAge == 0 && offset >= 30))
+        }
+    }
+
     @Test("Missing cache, corrupt cache, missing location and scope mismatch are explicit")
     func unavailableResults() {
         #expect(WeatherAwarenessResult.select(nil, now: now) == .unavailable(.noCache))
@@ -147,11 +163,11 @@ struct WeatherAwarenessResultTests {
 
     private func alert(
         _ id: String, title: String = "Severe Thunderstorm Warning",
-        startOffset: Double = -60, endOffset: Double = 600
+        startOffset: Double = -60, endOffset: Double = 600, expiresOffset: Double = 30
     ) -> AlertDTO {
         .init(
             id: id, messageId: nil, title: title, headline: title,
-            issued: now.addingTimeInterval(startOffset), expires: now.addingTimeInterval(30),
+            issued: now.addingTimeInterval(startOffset), expires: now.addingTimeInterval(expiresOffset),
             ends: now.addingTimeInterval(endOffset), messageType: "Alert", sender: nil,
             severity: "Severe", urgency: "Immediate", certainty: "Observed", description: "",
             instruction: nil, response: nil, areaSummary: "", tornadoDetection: nil,

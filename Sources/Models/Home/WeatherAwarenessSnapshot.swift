@@ -31,6 +31,7 @@ struct WeatherAwarenessSnapshot: Codable, Sendable, Equatable {
         let title: String
         let issuedAt: Date
         let validStart: Date
+        /// NWS terminal time is min(CAP expiration, event end); discussions use SPC validEnd.
         let validEnd: Date
     }
 
@@ -58,7 +59,7 @@ struct WeatherAwarenessSnapshot: Codable, Sendable, Equatable {
         alertsAssessedAt = record.lastHotAlertsLoadAt
         events = AlertPresentationOrdering.ordered(record.activeAlerts).map {
             .init(source: .nationalWeatherService, id: $0.id, title: $0.title,
-                  issuedAt: $0.issued, validStart: $0.validStart, validEnd: $0.validEnd)
+                  issuedAt: $0.issued, validStart: $0.validStart, validEnd: min($0.expires, $0.ends))
         } + AlertPresentationOrdering.ordered(record.activeMesos).map {
             .init(source: .stormPredictionCenter, id: String($0.number), title: $0.title,
                   issuedAt: $0.issued, validStart: $0.validStart, validEnd: $0.validEnd)
