@@ -22,7 +22,7 @@ struct GetWeatherAwarenessIntentTests {
         let alertPosition = try #require(response.range(of: "Active official alert: \(title).")?.lowerBound)
         let riskPosition = try #require(response.range(of: "Current risk assessment")?.lowerBound)
         #expect(alertPosition < riskPosition)
-        #expect(response.contains("Also 1 event: 1 SPC mesoscale discussion"))
+        #expect(response.contains("Also, 1 event (1 SPC mesoscale discussion)."))
     }
 
     @Test("Current warning summaries count every additional active alert by source")
@@ -33,7 +33,7 @@ struct GetWeatherAwarenessIntentTests {
         ))
 
         #expect(response.contains("Active official alert: Tornado Warning."))
-        #expect(response.contains("Also 2 events: 2 NWS alerts"))
+        #expect(response.contains("Also, 2 events (2 NWS alerts)."))
     }
 
     @Test("Current mixed and mesoscale-only summaries count omitted events")
@@ -49,9 +49,9 @@ struct GetWeatherAwarenessIntentTests {
                      event("Mesoscale Discussion 2", source: .stormPredictionCenter)]
         ))
 
-        #expect(mixed.contains("Also 2 events: 1 NWS alert and 1 SPC mesoscale discussion"))
+        #expect(mixed.contains("Also, 2 events (1 NWS alert and 1 SPC mesoscale discussion)."))
         #expect(mesoscaleOnly.contains("Local SPC mesoscale discussion: Mesoscale Discussion 1."))
-        #expect(mesoscaleOnly.contains("Also 1 event: 1 SPC mesoscale discussion"))
+        #expect(mesoscaleOnly.contains("Also, 1 event (1 SPC mesoscale discussion)."))
     }
 
     @Test("Current non-warning NWS event is identified and single events need no overflow count")
@@ -87,7 +87,8 @@ struct GetWeatherAwarenessIntentTests {
 
         #expect(response.contains("alert check") && response.contains("is stale"))
         #expect(response.contains("included Tornado Warning"))
-        #expect(response.contains("Last accepted snapshot included 1 event: 1 NWS alert; current alert status is unverified."))
+        #expect(response.contains("time-valid subset of the last accepted assessment is 1 event (1 NWS alert)"))
+        #expect(response.contains("current alert status is unverified."))
         #expect(!response.contains("Active official alert"))
     }
 

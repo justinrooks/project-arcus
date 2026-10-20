@@ -101,15 +101,18 @@ enum WeatherAwarenessResponseFormatter {
                 sentences.append("Local \(eventLabel(for: featuredEvent)): \(featuredEvent.title).")
             }
             let remainingEvents = assessment.events.filter { $0.id != featuredEvent?.id }
-            if let summary = eventCountSummary(remainingEvents, prefix: "Also") {
-                sentences.append(summary)
+            if let summary = eventCountSummary(remainingEvents) {
+                sentences.append("Also, \(summary).")
             }
         case .stale:
             if let featuredEvent {
                 sentences.append("The last accepted alert check included \(featuredEvent.title).")
             }
-            if let summary = eventCountSummary(assessment.events, prefix: "Last accepted snapshot included") {
-                sentences.append("\(summary); current alert status is unverified.")
+            if let summary = eventCountSummary(assessment.events) {
+                sentences.append(
+                    "The time-valid subset of the last accepted assessment is \(summary); " +
+                        "current alert status is unverified."
+                )
             }
         case .unavailable:
             break
@@ -123,8 +126,7 @@ enum WeatherAwarenessResponseFormatter {
     }
 
     private static func eventCountSummary(
-        _ events: [WeatherAwarenessSnapshot.Event],
-        prefix: String
+        _ events: [WeatherAwarenessSnapshot.Event]
     ) -> String? {
         guard !events.isEmpty else { return nil }
         let nwsCount = events.filter { $0.source == .nationalWeatherService }.count
@@ -133,7 +135,7 @@ enum WeatherAwarenessResponseFormatter {
             nwsCount > 0 ? "\(nwsCount) NWS \(nwsCount == 1 ? "alert" : "alerts")" : nil,
             mesoCount > 0 ? "\(mesoCount) SPC mesoscale \(mesoCount == 1 ? "discussion" : "discussions")" : nil
         ].compactMap { $0 }.joined(separator: " and ")
-        return "\(prefix) \(events.count) \(events.count == 1 ? "event" : "events"): \(details)"
+        return "\(events.count) \(events.count == 1 ? "event" : "events") (\(details))"
     }
 
     private static func riskSummary(_ risks: WeatherAwarenessSnapshot.Risks) -> String {
