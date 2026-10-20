@@ -6,13 +6,21 @@ struct GetWeatherAwarenessIntent: AppIntent {
     static let description = IntentDescription(
         "Returns SkyAware’s latest accepted local weather awareness assessment."
     )
-    static let openAppWhenRun = false
-
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let result = await WeatherAwarenessSnapshotStore.live.read()
         let response = WeatherAwarenessResponseFormatter.make(from: result)
         return .result(value: response, dialog: IntentDialog(stringLiteral: response))
     }
+}
+
+@available(iOS 26.0, *)
+extension GetWeatherAwarenessIntent {
+    static var supportedModes: IntentModes { .background }
+}
+
+@available(*, deprecated)
+extension GetWeatherAwarenessIntent {
+    static var openAppWhenRun: Bool { false }
 }
 
 struct SkyAwareAppShortcuts: AppShortcutsProvider {
