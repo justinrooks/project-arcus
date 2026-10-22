@@ -14,6 +14,12 @@
 		D2A000052F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */; };
 		D58000012F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58000022F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift */; };
 		D69500012F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D69500022F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift */; };
+		A7670002A001000100A10001 /* HomeProjectionStoreScalingMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670006A001000100A10001 /* HomeProjectionStoreScalingMeasurementTests.swift */; };
+		A7670003A001000100A10001 /* MapAcceptedUpdateMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670007A001000100A10001 /* MapAcceptedUpdateMeasurementTests.swift */; };
+		A7670004A001000100A10001 /* MapSceneWarmingMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670008A001000100A10001 /* MapSceneWarmingMeasurementTests.swift */; };
+		A7670005A001000100A10001 /* RiskPolygonOverlayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670009A001000100A10001 /* RiskPolygonOverlayTests.swift */; };
+		A7670020A001000100A10001 /* MapFeatureModelTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670021A001000100A10001 /* MapFeatureModelTestSupport.swift */; };
+		A7670022A001000100A10001 /* TestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670023A001000100A10001 /* TestStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -37,6 +43,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = D1A1000331AA000100A10001;
 			remoteInfo = SkyAwareWidgetsExtension;
+		};
+		A7670014A001000100A10001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D095EF9B2E16F5690074F867 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D095EFA22E16F5690074F867;
+			remoteInfo = SkyAware;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -68,6 +81,13 @@
 		D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite; sourceTree = "<group>"; };
 		D58000022F58000100AA1001 /* Tests/UnitTests/BarometricPressureTrendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/BarometricPressureTrendTests.swift; sourceTree = "<group>"; };
 		D69500022F695000100A0001 /* Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/OnboardingSecondaryActionStyleTests.swift; sourceTree = "<group>"; };
+		A7670006A001000100A10001 /* HomeProjectionStoreScalingMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift; sourceTree = "<group>"; };
+		A7670007A001000100A10001 /* MapAcceptedUpdateMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/MapAcceptedUpdateMeasurementTests.swift; sourceTree = "<group>"; };
+		A7670008A001000100A10001 /* MapSceneWarmingMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/MapSceneWarmingMeasurementTests.swift; sourceTree = "<group>"; };
+		A7670009A001000100A10001 /* RiskPolygonOverlayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/RiskPolygonOverlayTests.swift; sourceTree = "<group>"; };
+		A7670021A001000100A10001 /* MapFeatureModelTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/MapFeatureModelTestSupport.swift; sourceTree = "<group>"; };
+		A7670023A001000100A10001 /* TestStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/TestStore.swift; sourceTree = "<group>"; };
+		A7670013A001000100A10001 /* SkyAwarePerformanceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwarePerformanceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -392,6 +412,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7670011A001000100A10001 /* SkyAwarePerformanceTests Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7670010A001000100A10001 /* SkyAwarePerformanceTests Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -423,6 +457,7 @@
 				D095EFA42E16F5690074F867 /* Products */,
 				4FF60265E384AB8FC83C01FB /* Frameworks */,
 				D0A2DAD02F89472C005FF329 /* Recovered References */,
+				A7670019A001000100A10001 /* Performance Test Sources */,
 			);
 			sourceTree = "<group>";
 		};
@@ -432,9 +467,23 @@
 				D095EFA32E16F5690074F867 /* SkyAware.app */,
 				D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */,
 				D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */,
+				A7670013A001000100A10001 /* SkyAwarePerformanceTests.xctest */,
 				D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A7670019A001000100A10001 /* Performance Test Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A7670006A001000100A10001 /* HomeProjectionStoreScalingMeasurementTests.swift */,
+				A7670007A001000100A10001 /* MapAcceptedUpdateMeasurementTests.swift */,
+				A7670008A001000100A10001 /* MapSceneWarmingMeasurementTests.swift */,
+				A7670009A001000100A10001 /* RiskPolygonOverlayTests.swift */,
+				A7670021A001000100A10001 /* MapFeatureModelTestSupport.swift */,
+				A7670023A001000100A10001 /* TestStore.swift */,
+			);
+			name = "Performance Test Sources";
 			sourceTree = "<group>";
 		};
 		D0A2DAD02F89472C005FF329 /* Recovered References */ = {
@@ -520,6 +569,24 @@
 			productReference = D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A7670001A001000100A10001 /* SkyAwarePerformanceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7670016A001000100A10001 /* Build configuration list for PBXNativeTarget "SkyAwarePerformanceTests" */;
+			buildPhases = (
+				A7670012A001000100A10001 /* Sources */,
+				A7670010A001000100A10001 /* Frameworks */,
+				A7670011A001000100A10001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7670015A001000100A10001 /* PBXTargetDependency */,
+			);
+			name = SkyAwarePerformanceTests;
+			productName = SkyAwarePerformanceTests;
+			productReference = A7670013A001000100A10001 /* SkyAwarePerformanceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		D1A1000331AA000100A10001 /* SkyAwareWidgetsExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D1A1001131AA000100A10001 /* Build configuration list for PBXNativeTarget "SkyAwareWidgetsExtension" */;
@@ -564,6 +631,10 @@
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = D095EFA22E16F5690074F867;
 					};
+					A7670001A001000100A10001 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = D095EFA22E16F5690074F867;
+					};
 					D1A1000331AA000100A10001 = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -590,6 +661,7 @@
 				D095EFA22E16F5690074F867 /* SkyAware */,
 				D095EFB12E16F56A0074F867 /* SkyAwareTests */,
 				D095EFBB2E16F56A0074F867 /* SkyAwareUITests */,
+				A7670001A001000100A10001 /* SkyAwarePerformanceTests */,
 				D1A1000331AA000100A10001 /* SkyAwareWidgetsExtension */,
 			);
 		};
@@ -659,6 +731,19 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A7670012A001000100A10001 /* SkyAwarePerformanceTests Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A7670002A001000100A10001 /* HomeProjectionStoreScalingMeasurementTests.swift in Sources */,
+				A7670003A001000100A10001 /* MapAcceptedUpdateMeasurementTests.swift in Sources */,
+				A7670004A001000100A10001 /* MapSceneWarmingMeasurementTests.swift in Sources */,
+				A7670005A001000100A10001 /* RiskPolygonOverlayTests.swift in Sources */,
+				A7670020A001000100A10001 /* MapFeatureModelTestSupport.swift in Sources */,
+				A7670022A001000100A10001 /* TestStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -676,6 +761,11 @@
 			isa = PBXTargetDependency;
 			target = D1A1000331AA000100A10001 /* SkyAwareWidgetsExtension */;
 			targetProxy = D1A1000C31AA000100A10001 /* PBXContainerItemProxy */;
+		};
+		A7670015A001000100A10001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D095EFA22E16F5690074F867 /* SkyAware */;
+			targetProxy = A7670014A001000100A10001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -931,6 +1021,46 @@
 			};
 			name = Release;
 		};
+		A7670017A001000100A10001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwarePerformanceTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) PERFORMANCE_TESTS";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkyAware.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SkyAware";
+			};
+			name = Debug;
+		};
+		A7670018A001000100A10001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwarePerformanceTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) PERFORMANCE_TESTS";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkyAware.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SkyAware";
+			};
+			name = Release;
+		};
 		D095EFCD2E16F56A0074F867 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1056,6 +1186,15 @@
 			buildConfigurations = (
 				D095EFCD2E16F56A0074F867 /* Debug */,
 				D095EFCE2E16F56A0074F867 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7670016A001000100A10001 /* Build configuration list for PBXNativeTarget "SkyAwarePerformanceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7670017A001000100A10001 /* Debug */,
+				A7670018A001000100A10001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

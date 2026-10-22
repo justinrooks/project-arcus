@@ -1,0 +1,25 @@
+{
+  "configurations" : [
+    {
+      "id" : "77E60EFE-51EF-4C8F-A26F-4AA2F566F562",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "diagnosticCollectionPolicy" : "Never"
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:SkyAware.xcodeproj",
+        "identifier" : "A7670001A001000100A10001",
+        "name" : "SkyAwarePerformanceTests"
+      }
+    }
+  ],
+  "version" : 2
+}

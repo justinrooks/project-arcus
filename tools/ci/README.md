@@ -3,6 +3,18 @@
 This repository owns the test plans and result validation scripts. Xcode Cloud owns workflow creation and the
 selected Xcode/runtime images.
 
+## Local test-lane selection
+
+Use `tools/ci/run_test_lane.sh` for local simulator validation. It runs the selected shared scheme test plan, writes a fresh `.xcresult` bundle, and invokes `ci_scripts/verify_xcresult.sh`; do not bypass the runner for focused selections.
+
+- `tools/ci/run_test_lane.sh unit` runs `SkyAware_Tests`, the default regression suite required for normal development and CI validation. During implementation, narrow the suite with standard Xcode selectors after the lane name; run the full unit lane for final regression validation. For example: `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`.
+- Compile-time target partitioning keeps the six timing entry points out of `SkyAware_Tests`, and the runner's native XCResult verification asserts that all six remain absent; separate plan and command-line skip lists are unnecessary.
+- `tools/ci/run_test_lane.sh performance` runs the optional `SkyAware_Performance` measurement suite. Choose it for performance investigations or when a change could affect measured behavior; validate regression behavior with the unit lane as well. These measurements depend on the simulator and host environment and do not use stable CI timing thresholds.
+- Focused performance runs accept target-qualified `-only-testing` or `-skip-testing` selectors, and the runner verifies the exact remaining expected cases. For example: `tools/ci/run_test_lane.sh performance -only-testing:SkyAwarePerformanceTests/MapSceneWarmingMeasurementTests`.
+- `tools/ci/run_test_lane.sh ui-navigation` runs the separate `SkyAware_UI_Smoke` navigation smoke suite. This lane remains distinct from regression and performance validation.
+
+Report the exact command, finalized result, logical test counts and parameter-expanded count when available, simulator/runtime, configuration, test plan, and `.xcresult` path. For performance runs, report the measured tests, environment, and available result attachments; do not conflate their environment-dependent measurements with deterministic regression evidence.
+
 ## Unit workflow
 
 Configure one Xcode Cloud test action with:

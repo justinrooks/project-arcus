@@ -10,13 +10,17 @@ import Testing
 final class MapAcceptedUpdateMeasurementTests: XCTestCase {
     private static let repetitions = 8
 
+#if !PERFORMANCE_TESTS
     func testSelectedSceneCriticalPathPreservesAcceptedState() async {
         await runSelectedSceneCriticalPath(repetitions: 1, recordsTiming: false)
     }
+#endif
 
+#if PERFORMANCE_TESTS
     func testSelectedSceneCriticalPathAfterSourceScoping() async {
         await runSelectedSceneCriticalPath(repetitions: Self.repetitions, recordsTiming: true)
     }
+#endif
 
     private func runSelectedSceneCriticalPath(repetitions: Int, recordsTiming: Bool) async {
         var lines = ["Post-#709 logical coherent publication; in-memory providers; milliseconds"]
@@ -85,13 +89,17 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
         add(attachment)
     }
 
+#if !PERFORMANCE_TESTS
     func testAcceptedReloadScenariosPreserveReadAndSceneContracts() async {
         await runAcceptedReloadScenarios(repetitions: 2, recordsTiming: false)
     }
+#endif
 
+#if PERFORMANCE_TESTS
     func testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn() async {
         await runAcceptedReloadScenarios(repetitions: Self.repetitions, recordsTiming: true)
     }
+#endif
 
     private func runAcceptedReloadScenarios(repetitions: Int, recordsTiming: Bool) async {
         let counts = MapAcceptedUpdateReadCounts()
@@ -367,6 +375,7 @@ private actor CountedMapAlertSource: ArcusAlertQuerying {
     func getAlert(id: String) async throws -> AlertDTO? { nil }
 }
 
+#if !PERFORMANCE_TESTS
 @Suite("Scoped Map accepted updates")
 @MainActor
 struct MapAcceptedUpdateScopeTests {
@@ -808,6 +817,7 @@ struct MapAcceptedUpdateScopeTests {
         #expect(await h.planner.snapshot() == [.meso: 1])
     }
 }
+#endif
 
 @MainActor
 private struct ScopedMapHarness {
