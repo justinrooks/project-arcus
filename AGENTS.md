@@ -32,6 +32,9 @@
   - `SkyAware_Performance` is an optional measurement suite. Run it during performance investigations or when a
     change could affect measured behavior; run the regression suite as well when validating such a change:
     `tools/ci/run_test_lane.sh performance`
+  - Focused measurements use target-qualified selectors through the same runner, with XCResult verification narrowed
+    to the selected expected set. For example:
+    `tools/ci/run_test_lane.sh performance -only-testing:SkyAwarePerformanceTests/MapSceneWarmingMeasurementTests`
   - `SkyAware_UI_Smoke` remains a separate UI navigation smoke lane:
     `tools/ci/run_test_lane.sh ui-navigation`
   - The runner accepts focused `xcodebuild test` selection arguments after the lane name. It creates a fresh
