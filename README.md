@@ -52,10 +52,7 @@ xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=i
 ```
 
 ## Testing
-The canonical validation procedure is maintained in [`AGENTS.md`](AGENTS.md). It defines the explicit
-`SkyAware_Tests` unit lane and the `SkyAware_All_Tests` simulator navigation-smoke lane, including fresh
-`.xcresult` paths, `xcresulttool` inspection, exact test counts, and the distinction between simulator, device,
-and Instruments evidence.
+The canonical validation procedure is maintained in [`AGENTS.md`](AGENTS.md). `SkyAware_Tests` is the required regression lane, `SkyAware_Performance` is an optional measurement lane, and `SkyAware_UI_Smoke` remains the separate simulator navigation-smoke lane. All local selections use `tools/ci/run_test_lane.sh` and its native `.xcresult` verification; the guidance explains what evidence each lane supports and how to report it.
 
 ## Configuration
 - App configuration lives in `Config`.

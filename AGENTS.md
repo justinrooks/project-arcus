@@ -24,17 +24,22 @@
 ## Build, Test, and Development Commands
 - Build (Debug):
   `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
-- Validation lanes (Debug, simulator):
-  - Unit lane (`SkyAware_Tests`, all `SkyAwareTests`):
+- Test-lane policy (Debug, simulator):
+  - `SkyAware_Tests` is the default regression suite and is required for normal implementation and CI validation:
     `tools/ci/run_test_lane.sh unit`
-  - On-demand performance lane (`SkyAware_Performance`, six classified measurement tests):
-    `tools/ci/run_test_lane.sh performance`
-  - Focused Swift Testing suite (`SevereRiskRepoActiveSelectionTests`):
+  - During implementation, run focused regression selections through the same runner so native XCResult verification remains active; run the full unit lane for final regression validation. For example:
     `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`
-  - Navigation-smoke lane (`SkyAware_UI_Smoke`, exactly one UI test):
+  - `SkyAware_Performance` is an optional measurement suite. Run it during performance investigations or when a
+    change could affect measured behavior; run the regression suite as well when validating such a change:
+    `tools/ci/run_test_lane.sh performance`
+  - `SkyAware_UI_Smoke` remains a separate UI navigation smoke lane:
     `tools/ci/run_test_lane.sh ui-navigation`
-  - `run_test_lane.sh` creates a fresh `.xcresult` bundle for every invocation and calls `ci_scripts/verify_xcresult.sh`. The verifier rejects missing, unfinalized, unknown-result, and zero-test bundles, then reports exact counts, simulator, OS, Debug configuration, test-plan configuration, and bundle path.
-- Validation evidence categories: `SkyAware_Tests` is unit evidence; `SkyAware_UI_Smoke` is simulator UI navigation evidence. Neither establishes physical-device behavior or Instruments/performance evidence. Deterministic tests use stubs/fakes and make no intentional live WeatherKit, NWS, SPC, Arcus, or APNs requests.
+  - The runner accepts focused `xcodebuild test` selection arguments after the lane name. It creates a fresh
+    `.xcresult` bundle and invokes `ci_scripts/verify_xcresult.sh` for every lane. Focused runs must still use this
+    runner and its native result verification.
+- Evidence reporting: report the exact lane and command, finalized result, logical test counts and parameter-expanded count when available, simulator/runtime, configuration, plan, and `.xcresult` path. Regression results are deterministic behavior evidence. Performance measurements are environment-dependent diagnostics; include the test, environment, and available measurement attachments, and do not present a passing measurement suite as proof of a performance improvement by itself.
+- Deterministic tests use stubs/fakes and make no intentional live WeatherKit, NWS, SPC, Arcus, or APNs requests.
+- `SkyAware_UI_Smoke` provides simulator UI navigation evidence. Unit and performance lanes do not establish rendered UI, physical-device behavior, or Instruments/device performance evidence.
 - Resolve Swift package dependencies:
   `xcodebuild -resolvePackageDependencies -project SkyAware.xcodeproj`
 - Open in Xcode:
