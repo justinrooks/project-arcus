@@ -11,6 +11,27 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
     private static let firstSwitchLayer = MapLayer.wind
     private static let measuredIterations = 10
 
+    func testSceneWarmingPreservesDeterminismAndCacheCounts() {
+        var accumulator = MapSceneMeasurementAccumulator()
+        for fixture in MapSceneMeasurementFixture.all {
+            verifyDeterminism(of: fixture)
+            for _ in 0..<2 {
+                for showsWarnings in [false, true] {
+                    accumulator.record(
+                        measureIteration(fixture: fixture, showsWarningGeometry: showsWarnings, recordsTiming: false),
+                        file: #filePath,
+                        line: #line
+                    )
+                }
+            }
+        }
+        XCTAssertEqual(accumulator.iterationCounts, [2])
+    }
+
+    func testRetainedScenePreservesVisibleOverlayIdentity() {
+        runRetainedSceneConstruction(iterations: 1, recordsTiming: false)
+    }
+
     func testInactiveSceneWarmingTradeoff() {
         let fixtures = MapSceneMeasurementFixture.all
 
@@ -57,6 +78,10 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
     }
 
     func testRetainedScenePolygonConstruction() {
+        runRetainedSceneConstruction(iterations: Self.measuredIterations, recordsTiming: true)
+    }
+
+    private func runRetainedSceneConstruction(iterations: Int, recordsTiming: Bool) {
         var report: [String] = []
         for fixture in MapSceneMeasurementFixture.all {
             let plan = fixture.plan(for: .categorical)
@@ -66,8 +91,8 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
                     var samples: [MapSceneMeasurementTiming] = []
                     var constructions = 0
                     var polygonObjects = 0
-                    for _ in 0..<Self.measuredIterations {
-                        let result = timed {
+                    for _ in 0..<iterations {
+                        let result = timed(recordsTiming: recordsTiming) {
                             MapSceneMaterializer.materialize(plan: plan, initialCenterCoordinate: nil,
                                 showsWarningGeometry: visible, reusing: reuse ? previous : nil,
                                 makePolygon: { entry in
@@ -87,6 +112,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
                             }
                         }
                     }
+                    guard recordsTiming else { continue }
                     let wall = samples.map(\.wallMilliseconds).sorted()
                     let cpu = samples.map(\.cpuMilliseconds).sorted()
                     report.append("fixture=\(fixture.profile.name) warnings=\(visible) reuse=\(reuse) " +
@@ -96,6 +122,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
                 }
             }
         }
+        guard recordsTiming else { return }
         let attachment = XCTAttachment(string: report.joined(separator: "\n"))
         attachment.name = "MapRetainedSceneMeasurement.txt"
         attachment.lifetime = .keepAlways
@@ -190,12 +217,13 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
 
     private func measureIteration(
         fixture: MapSceneMeasurementFixture,
-        showsWarningGeometry: Bool
+        showsWarningGeometry: Bool,
+        recordsTiming: Bool = true
     ) -> [MapSceneMeasurementObservation] {
         var observations: [MapSceneMeasurementObservation] = []
         let inactiveLayers = MapLayer.allCases.filter { $0 != Self.selectedLayer }
 
-        let selected = timed {
+        let selected = timed(recordsTiming: recordsTiming) {
             materialize(
                 plan: fixture.plan(for: Self.selectedLayer),
                 showsWarningGeometry: showsWarningGeometry
@@ -212,7 +240,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
         )
 
         for layer in inactiveLayers {
-            let inactive = timed {
+            let inactive = timed(recordsTiming: recordsTiming) {
                 materialize(plan: fixture.plan(for: layer), showsWarningGeometry: showsWarningGeometry)
             }
             observations.append(
@@ -226,7 +254,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
             )
         }
 
-        let inactiveTotal = timed {
+        let inactiveTotal = timed(recordsTiming: recordsTiming) {
             Dictionary(uniqueKeysWithValues: inactiveLayers.map { layer in
                 (
                     layer,
@@ -244,7 +272,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
             )
         )
 
-        let eager = timed {
+        let eager = timed(recordsTiming: recordsTiming) {
             Dictionary(uniqueKeysWithValues: MapLayer.allCases.map { layer in
                 (
                     layer,
@@ -262,7 +290,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
             )
         )
 
-        let selectedThenCold = timed {
+        let selectedThenCold = timed(recordsTiming: recordsTiming) {
             var cache = MapSceneCache()
             cache.insert(
                 materialize(
@@ -292,7 +320,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
 
         var coldCache = MapSceneCache()
         coldCache.insert(selected.value, for: Self.selectedLayer)
-        let coldSwitch = timed {
+        let coldSwitch = timed(recordsTiming: recordsTiming) {
             let scene = materialize(
                 plan: fixture.plan(for: Self.firstSwitchLayer),
                 showsWarningGeometry: showsWarningGeometry
@@ -310,7 +338,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
             )
         )
 
-        let warmSwitch = timed { coldCache.scene(for: Self.firstSwitchLayer) }
+        let warmSwitch = timed(recordsTiming: recordsTiming) { coldCache.scene(for: Self.firstSwitchLayer) }
         XCTAssertNotNil(warmSwitch.value)
         observations.append(
             observation(
@@ -370,7 +398,13 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
         )
     }
 
-    private func timed<Value>(_ operation: () -> Value) -> (value: Value, timing: MapSceneMeasurementTiming) {
+    private func timed<Value>(
+        recordsTiming: Bool = true,
+        _ operation: () -> Value
+    ) -> (value: Value, timing: MapSceneMeasurementTiming) {
+        guard recordsTiming else {
+            return (operation(), MapSceneMeasurementTiming(wallMilliseconds: 0, cpuMilliseconds: 0))
+        }
         let wallStart = DispatchTime.now().uptimeNanoseconds
         let cpuStart = processCPUTimeNanoseconds()
         let value = operation()
