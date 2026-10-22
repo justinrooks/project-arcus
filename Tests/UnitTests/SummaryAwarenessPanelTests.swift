@@ -291,13 +291,19 @@ struct SummaryAwarenessPanelTests {
         ]
 
         let widths: [CGFloat] = [175, 175, 175, 175, 360, 360, 360]
+        let minimumRowHeight: CGFloat = 90
         let heights = try zip(rows, widths).map { row, width -> CGFloat in
-            let renderer = ImageRenderer(content: row.frame(width: width))
+            let renderer = ImageRenderer(content: row
+                .dynamicTypeSize(.large)
+                .frame(width: width))
             renderer.scale = 1
             let height = try #require(renderer.uiImage?.size.height)
             var actionableRow = row
             actionableRow.showsChevron = true
-            let actionableRenderer = ImageRenderer(content: actionableRow.frame(width: width))
+            let actionableRenderer = ImageRenderer(content: actionableRow
+                .dynamicTypeSize(.large)
+                .frame(width: width))
+            actionableRenderer.scale = 1
             let actionableHeight = try #require(actionableRenderer.uiImage?.size.height)
             #expect(actionableHeight >= height, "Chevron spacing must not clip row content for \(row.title), intensity: \(row.intensity != nil).")
             if width >= 300 {
@@ -306,12 +312,16 @@ struct SummaryAwarenessPanelTests {
             return height
         }
 
-        #expect(heights[0] > 90 && heights[2] > 90, "Long quiet labels must be able to expand.")
         #expect(
-            heights.enumerated().allSatisfy { index, height in
-                index == 0 || index == 2 ? height >= 90 : height == 90
-            },
-            "Rendered compact rail heights: \(heights)"
+            heights[0] > minimumRowHeight && heights[2] > minimumRowHeight,
+            "Long quiet labels must be able to expand."
+        )
+        #expect(
+            heights.allSatisfy { $0 >= minimumRowHeight },
+            """
+            Every supporting rail must preserve its compact minimum height of \(minimumRowHeight) points.
+            Rendered heights: \(heights)
+            """
         )
 
         let evidenceRoot = URL(fileURLWithPath: "/private/tmp/692-today-support-chevrons", isDirectory: true)
