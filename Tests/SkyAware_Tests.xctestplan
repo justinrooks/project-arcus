@@ -9,7 +9,7 @@
     }
   ],
   "defaultOptions" : {
-
+    "diagnosticCollectionPolicy" : "Never"
   },
   "testTargets" : [
     {
