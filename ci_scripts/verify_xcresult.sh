@@ -3,7 +3,7 @@
 set -u
 
 if (( $# < 2 )); then
-    print -u2 "Usage: $0 <result-bundle-path> <build-configuration> [--target <name>] [--exclude <test-identifier ...> | expected-test-identifier ...]"
+    print -u2 "Usage: $0 <result-bundle-path> <build-configuration> [--regression|--regression-focused] [--test-plan <name>] [--target <name>] [--exclude <test-identifier ...> | expected-test-identifier ...]"
     exit 64
 fi
 
@@ -13,8 +13,23 @@ shift 2
 expected_test_identifiers=()
 excluded_test_identifiers=()
 expected_target=""
+expected_plan=""
+regression_contract=0
 while (( $# > 0 )); do
     case "$1" in
+        --regression)
+            regression_contract=1
+            shift
+            ;;
+        --regression-focused)
+            regression_contract=2
+            shift
+            ;;
+        --test-plan)
+            (( $# >= 2 )) || exit 64
+            expected_plan="$2"
+            shift 2
+            ;;
         --target)
             (( $# >= 2 )) || exit 64
             expected_target="$2"
@@ -31,6 +46,31 @@ while (( $# > 0 )); do
             ;;
     esac
 done
+
+if (( regression_contract )); then
+    expected_target="SkyAwareTests"
+    expected_plan="SkyAware_Tests"
+    allowed_skipped_test_identifiers=(
+        'SummaryAwarenessPanelTests/awarenessFamilyRenderEvidence()'
+    )
+    if (( regression_contract == 1 )); then
+        minimum_logical_tests=1470
+        required_test_identifiers=(
+            'WeatherAwarenessResultTests/acceptedCommitPublication()'
+            'GetWeatherAwarenessIntentTests/currentMixedAndMesoOnlyCounts()'
+            'StormSetupPresentationTests/summaryStateContract_selectsEveryTerminalState()'
+            'MapLegendAccessibilityTests/hatchingLegend_remainsSemantic()'
+            'WidgetRouteURLTests/buildsSummaryURL()'
+        )
+    else
+        minimum_logical_tests=0
+        required_test_identifiers=()
+    fi
+else
+    minimum_logical_tests=0
+    required_test_identifiers=()
+    allowed_skipped_test_identifiers=()
+fi
 
 fail() {
     print -u2 "XCResult verification failed: $1"
@@ -73,7 +113,7 @@ print -r -- "$destinations" | plutil -p - || fail "could not format destination 
 [[ "$result" != "unknown" ]] || fail "summary result is unknown"
 [[ "$result" == "Passed" ]] || fail "summary result is $result"
 
-if (( ${#expected_test_identifiers[@]} > 0 || ${#excluded_test_identifiers[@]} > 0 || ${#expected_target} > 0 )); then
+if (( ${#expected_test_identifiers[@]} > 0 || ${#excluded_test_identifiers[@]} > 0 || ${#expected_target} > 0 || ${#expected_plan} > 0 )); then
     if (( ${#expected_test_identifiers[@]} > 0 )); then
         (( total == ${#expected_test_identifiers[@]} )) || \
             fail "expected ${#expected_test_identifiers[@]} tests, found $total"
@@ -86,22 +126,46 @@ if (( ${#expected_test_identifiers[@]} > 0 || ${#excluded_test_identifiers[@]} >
     xcrun xcresulttool get test-results tests --path "$result_bundle" --compact > "$tests_path" || \
         fail "xcresulttool could not read test details from $result_bundle"
 
-    python3 - "$tests_path" "$expected_target" "${#expected_test_identifiers[@]}" "${expected_test_identifiers[@]}" "${excluded_test_identifiers[@]}" <<'PY'
+    python3 - "$tests_path" "$expected_target" "$expected_plan" "$regression_contract" "$minimum_logical_tests" \
+        "${#required_test_identifiers[@]}" "${required_test_identifiers[@]}" \
+        "${#expected_test_identifiers[@]}" "${expected_test_identifiers[@]}" \
+        "${#excluded_test_identifiers[@]}" "${excluded_test_identifiers[@]}" \
+        "${#allowed_skipped_test_identifiers[@]}" "${allowed_skipped_test_identifiers[@]}" <<'PY'
 import json
 import sys
 
 path = sys.argv[1]
 expected_target = sys.argv[2]
-expected_count = int(sys.argv[3])
-expected = sys.argv[4:4 + expected_count]
-excluded = sys.argv[4 + expected_count:]
+expected_plan = sys.argv[3]
+regression_contract = int(sys.argv[4])
+minimum_logical_tests = int(sys.argv[5])
+cursor = 6
+required_count = int(sys.argv[cursor])
+cursor += 1
+required = sys.argv[cursor:cursor + required_count]
+cursor += required_count
+expected_count = int(sys.argv[cursor])
+cursor += 1
+expected = sys.argv[cursor:cursor + expected_count]
+cursor += expected_count
+excluded_count = int(sys.argv[cursor])
+cursor += 1
+excluded = sys.argv[cursor:cursor + excluded_count]
+cursor += excluded_count
+allowed_skip_count = int(sys.argv[cursor])
+cursor += 1
+allowed_skips = sys.argv[cursor:cursor + allowed_skip_count]
 with open(path, encoding="utf-8") as result_file:
     data = json.load(result_file)
 
 actual = []
 targets = []
+plans = []
 def visit(node):
-    if node.get("nodeType") == "Unit test bundle":
+    if str(node.get("nodeType", "")).startswith("Test Plan"):
+        name = node.get("name", "")
+        plans.append(name.removeprefix("Test Plan '").removesuffix("'"))
+    if "test bundle" in str(node.get("nodeType", "")).lower():
         targets.append(node.get("name", ""))
     if node.get("nodeType") == "Test Case":
         actual.append((node.get("nodeIdentifier", ""), node.get("result", "")))
@@ -117,7 +181,17 @@ unexpected = sorted(set(actual_ids) - set(expected))
 not_passed = sorted(identifier for identifier, result in actual if result != "Passed")
 present_excluded = sorted(set(excluded) & set(actual_ids))
 target_mismatch = expected_target and targets != [expected_target]
-if missing or (expected and (unexpected or len(actual_ids) != len(expected))) or present_excluded or (expected and not_passed) or target_mismatch:
+required_missing = sorted(set(required) - set(actual_ids))
+skipped_ids = sorted(identifier for identifier, result in actual if result == "Skipped")
+unexpected_skips = sorted(set(skipped_ids) - set(allowed_skips))
+plan_mismatch = expected_plan and plans != [expected_plan]
+logical_count_too_low = regression_contract == 1 and len(actual_ids) < minimum_logical_tests
+regression_failures = regression_contract > 0 and any(
+    result not in ("Passed", "Skipped") for _, result in actual
+)
+if (missing or (expected and (unexpected or len(actual_ids) != len(expected))) or
+        present_excluded or (expected and not_passed) or target_mismatch or required_missing or
+        unexpected_skips or plan_mismatch or logical_count_too_low or regression_failures):
     if expected:
         print(f"Expected tests: {sorted(expected)}", file=sys.stderr)
     print(f"Actual tests: {sorted(actual_ids)}", file=sys.stderr)
@@ -131,11 +205,30 @@ if missing or (expected and (unexpected or len(actual_ids) != len(expected))) or
         print(f"Excluded tests unexpectedly ran: {present_excluded}", file=sys.stderr)
     if target_mismatch:
         print(f"Expected target: {expected_target}; actual targets: {targets}", file=sys.stderr)
+    if required_missing:
+        print(f"Required regression sentinels missing: {required_missing}", file=sys.stderr)
+    if unexpected_skips:
+        print(f"Unexpected skipped tests: {unexpected_skips}", file=sys.stderr)
+    if plan_mismatch:
+        print(f"Expected test plan: {expected_plan}; actual plans: {plans}", file=sys.stderr)
+    if logical_count_too_low:
+        print(f"Expected at least {minimum_logical_tests} logical tests; found {len(actual_ids)}", file=sys.stderr)
+    if regression_failures:
+        failed_regression_cases = sorted(
+            identifier for identifier, result in actual if result not in ("Passed", "Skipped")
+        )
+        print(f"Regression cases not passed: {failed_regression_cases}", file=sys.stderr)
     sys.exit(1)
 PY
     [[ $? == 0 ]] || fail "test identities did not match the expected set"
     if (( ${#expected_test_identifiers[@]} > 0 )); then
         print "XCResult test membership: exact expected set (${#expected_test_identifiers[@]} tests), all passed"
+    elif (( regression_contract == 1 )); then
+        print "XCResult regression contract: plan=SkyAware_Tests target=SkyAwareTests logicalTests>=${minimum_logical_tests}, sentinels=${#required_test_identifiers[@]}, allowedSkips=${#allowed_skipped_test_identifiers[@]}"
+    elif (( regression_contract == 2 )); then
+        print "XCResult focused regression: plan=SkyAware_Tests target=SkyAwareTests, allowedSkips=${#allowed_skipped_test_identifiers[@]}"
+    elif [[ -n "$expected_plan" ]]; then
+        print "XCResult test plan: $expected_plan"
     else
         print "XCResult test membership: ${#excluded_test_identifiers[@]} excluded tests absent, all executed tests passed"
     fi

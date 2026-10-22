@@ -40,10 +40,19 @@ esac
 
 expected_tests=()
 excluded_tests=()
+regression_verification="--regression"
 if [[ "$lane" == performance ]]; then
     expected_tests=("${measurement_tests[@]}")
 elif [[ "$lane" == unit ]]; then
     excluded_tests=("${measurement_tests[@]}")
+    for argument in "$@"; do
+        case "$argument" in
+            -only-testing|-only-testing:*|-skip-testing|-skip-testing:*)
+                regression_verification="--regression-focused"
+                break
+                ;;
+        esac
+    done
 fi
 
 selector_matches_test() {
@@ -178,7 +187,7 @@ set +e
 "${command[@]}"
 xcodebuild_status=$?
 if [[ "$lane" == unit ]]; then
-    ci_scripts/verify_xcresult.sh "$result_bundle" Debug --exclude "${excluded_tests[@]}"
+    ci_scripts/verify_xcresult.sh "$result_bundle" Debug "$regression_verification" --exclude "${excluded_tests[@]}"
 elif [[ "$lane" == performance ]]; then
     ci_scripts/verify_xcresult.sh "$result_bundle" Debug --target SkyAwarePerformanceTests "${expected_tests[@]}"
 else
