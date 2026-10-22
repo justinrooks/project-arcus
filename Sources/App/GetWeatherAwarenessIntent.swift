@@ -28,8 +28,8 @@ struct SkyAwareAppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: GetWeatherAwarenessIntent(),
             phrases: [
-                "Get weather awareness in \(.applicationName)",
-                "Check my local weather awareness with \(.applicationName)"
+                "\(.applicationName), is there any severe weather I should know about",
+                "Get weather awareness from \(.applicationName)"
             ],
             shortTitle: "Weather Awareness",
             systemImageName: "cloud.bolt.rain"
