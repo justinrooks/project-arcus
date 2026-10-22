@@ -1,3 +1,18 @@
+SkyAware v1.5.0
+Highlights:
+- Browse SPC Days 1–3 outlook discussions and risk maps; confirm the selected forecast day stays selected when moving between Outlooks and Map.
+- Open NWS alerts from notifications and mesoscale discussion notifications; confirm the matching alert or discussion opens promptly.
+- Try the weather awareness Siri Shortcut and review the reported weather and active-alert coverage.
+- Refresh Map data and check the update indicator, stable legend, and warning geometry.
+- After successful Today refreshes, review requests may appear when eligible.
+
+What to test:
+- Switch among SPC forecast days in Outlooks and Map, open a discussion, and navigate between the views; confirm each view reflects the selected day.
+- Tap NWS and mesoscale discussion notifications with cached and updated data; confirm the requested item opens and unavailable content is clearly identified.
+- Run the weather awareness Shortcut with current, stale, and unavailable data where available; confirm its summary reflects the accepted assessment and does not overstate alert status.
+- Refresh Map data and inspect the legend and warning polygons, including areas with interior holes.
+- Complete successful Today refreshes and confirm any review prompt appears only when eligible and does not interrupt the refresh.
+
 SkyAware v1.4.0(235)
 Highlights:
 - Review Today, Map, and widget layouts in light and dark appearances for consistent hierarchy and weather meaning.

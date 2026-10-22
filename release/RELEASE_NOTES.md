@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.5.0
+
+## Overview
+This release adds forecast-day navigation across SPC Days 1–3 Outlooks and Map views, moves mesoscale discussions to Arcus Signal, improves notification opens and Map refresh behavior, and adds weather awareness through Siri Shortcuts.
+
+## Highlights
+- Browse SPC Days 1–3 discussions and risk maps while keeping the selected forecast day through navigation.
+- Open NWS alerts from notifications without waiting for Home ingestion, and open typed mesoscale notifications directly to their discussion.
+- Siri Shortcuts can report accepted weather awareness and active-alert coverage.
+- Map updates now refresh affected sources, show update status, preserve warning polygon holes, and limit rendering work to changed or visible geometry.
+- SkyAware may request an App Store review after a successful Today refresh when eligible.
+- Regression coverage was expanded across these workflows, and the swiftyh3 dependency was updated.
+
 ## v1.4.0(235)
 
 ## Overview
