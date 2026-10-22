@@ -11,6 +11,7 @@ struct HomeProjectionStoreScalingMeasurementTests {
     private static let populations = [1, 10, 100, 1_000]
     private static let measuredRepetitions = 9
 
+#if PERFORMANCE_TESTS
     @Test("seeded retained projections preserve baseline semantics and report scan scaling")
     func seededRetainedProjections_reportBaselineAndPresentationScaling() async throws {
         for population in Self.populations {
@@ -29,7 +30,7 @@ struct HomeProjectionStoreScalingMeasurementTests {
             named: "HomeProjectionScalingMeasurement.txt"
         )
     }
-
+#else
     @Test("seeded retained projections preserve semantics and operation counts without measurements")
     func seededRetainedProjections_preserveSemanticsAndOperationCounts() async throws {
         for population in Self.populations {
@@ -44,6 +45,7 @@ struct HomeProjectionStoreScalingMeasurementTests {
             #expect(convertAndSelect(observed, currentContext: fixture.target)?.projectionKey == fixture.targetKey)
         }
     }
+#endif
 
     private func verifyCorrectness(population: Int) async throws {
         let fixture = try makeFixture(population: population, baselineOnTarget: population == 1)

@@ -3,7 +3,7 @@
 set -u
 
 if (( $# < 1 )); then
-    print -u2 "Usage: $0 <unit|ui-navigation> [xcodebuild test selection arguments]"
+    print -u2 "Usage: $0 <unit|performance|ui-navigation> [xcodebuild test selection arguments]"
     exit 64
 fi
 
@@ -14,6 +14,18 @@ case "$lane" in
     unit)
         test_plan="SkyAware_Tests"
         result_name="unit"
+        default_selection=(
+            '-skip-testing:SkyAwareTests/HomeProjectionStoreScalingMeasurementTests/seededRetainedProjections_reportBaselineAndPresentationScaling()'
+            '-skip-testing:SkyAwareTests/MapAcceptedUpdateMeasurementTests/testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn()'
+            '-skip-testing:SkyAwareTests/MapAcceptedUpdateMeasurementTests/testSelectedSceneCriticalPathAfterSourceScoping()'
+            '-skip-testing:SkyAwareTests/MapSceneWarmingMeasurementTests/testInactiveSceneWarmingTradeoff()'
+            '-skip-testing:SkyAwareTests/MapSceneWarmingMeasurementTests/testRetainedScenePolygonConstruction()'
+            '-skip-testing:SkyAwareTests/RiskPolygonOverlayTests/hatchDrawingMeasurement()'
+        )
+        ;;
+    performance)
+        test_plan="SkyAware_Performance"
+        result_name="performance"
         default_selection=()
         ;;
     ui-navigation)
@@ -26,6 +38,27 @@ case "$lane" in
         exit 64
         ;;
 esac
+
+expected_tests=()
+if [[ "$lane" == performance ]]; then
+    expected_tests=(
+        'MapSceneWarmingMeasurementTests/testInactiveSceneWarmingTradeoff()'
+        'MapSceneWarmingMeasurementTests/testRetainedScenePolygonConstruction()'
+        'MapAcceptedUpdateMeasurementTests/testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn()'
+        'MapAcceptedUpdateMeasurementTests/testSelectedSceneCriticalPathAfterSourceScoping()'
+        'RiskPolygonOverlayTests/hatchDrawingMeasurement()'
+        'HomeProjectionStoreScalingMeasurementTests/seededRetainedProjections_reportBaselineAndPresentationScaling()'
+    )
+elif [[ "$lane" == unit ]]; then
+    excluded_tests=(
+        'MapSceneWarmingMeasurementTests/testInactiveSceneWarmingTradeoff()'
+        'MapSceneWarmingMeasurementTests/testRetainedScenePolygonConstruction()'
+        'MapAcceptedUpdateMeasurementTests/testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn()'
+        'MapAcceptedUpdateMeasurementTests/testSelectedSceneCriticalPathAfterSourceScoping()'
+        'RiskPolygonOverlayTests/hatchDrawingMeasurement()'
+        'HomeProjectionStoreScalingMeasurementTests/seededRetainedProjections_reportBaselineAndPresentationScaling()'
+    )
+fi
 
 result_root="$(mktemp -d "${TMPDIR:-/tmp}/skyaware-results.XXXXXX")" || exit 1
 result_bundle="$result_root/$result_name.xcresult"
@@ -47,7 +80,13 @@ command+=("${default_selection[@]}" "$@" test)
 set +e
 "${command[@]}"
 xcodebuild_status=$?
-ci_scripts/verify_xcresult.sh "$result_bundle" Debug
+if [[ "$lane" == unit ]]; then
+    ci_scripts/verify_xcresult.sh "$result_bundle" Debug --exclude "${excluded_tests[@]}"
+elif [[ "$lane" == performance ]]; then
+    ci_scripts/verify_xcresult.sh "$result_bundle" Debug --target SkyAwarePerformanceTests "${expected_tests[@]}"
+else
+    ci_scripts/verify_xcresult.sh "$result_bundle" Debug
+fi
 verification_status=$?
 set -e
 

@@ -27,6 +27,8 @@
 - Validation lanes (Debug, simulator):
   - Unit lane (`SkyAware_Tests`, all `SkyAwareTests`):
     `tools/ci/run_test_lane.sh unit`
+  - On-demand performance lane (`SkyAware_Performance`, six classified measurement tests):
+    `tools/ci/run_test_lane.sh performance`
   - Focused Swift Testing suite (`SevereRiskRepoActiveSelectionTests`):
     `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`
   - Navigation-smoke lane (`SkyAware_UI_Smoke`, exactly one UI test):

@@ -11,6 +11,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
     private static let firstSwitchLayer = MapLayer.wind
     private static let measuredIterations = 10
 
+#if !PERFORMANCE_TESTS
     func testSceneWarmingPreservesDeterminismAndCacheCounts() {
         var accumulator = MapSceneMeasurementAccumulator()
         for fixture in MapSceneMeasurementFixture.all {
@@ -31,7 +32,9 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
     func testRetainedScenePreservesVisibleOverlayIdentity() {
         runRetainedSceneConstruction(iterations: 1, recordsTiming: false)
     }
+#endif
 
+#if PERFORMANCE_TESTS
     func testInactiveSceneWarmingTradeoff() {
         let fixtures = MapSceneMeasurementFixture.all
 
@@ -80,6 +83,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
     func testRetainedScenePolygonConstruction() {
         runRetainedSceneConstruction(iterations: Self.measuredIterations, recordsTiming: true)
     }
+#endif
 
     private func runRetainedSceneConstruction(iterations: Int, recordsTiming: Bool) {
         var report: [String] = []

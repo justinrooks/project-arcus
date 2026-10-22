@@ -34,6 +34,9 @@
             default = "YES">
          </TestPlanReference>
          <TestPlanReference
+            reference = "container:Tests/SkyAware_Performance.xctestplan">
+         </TestPlanReference>
+         <TestPlanReference
             reference = "container:Tests/SkyAware_All_Tests.xctestplan">
          </TestPlanReference>
          <TestPlanReference
@@ -60,6 +63,17 @@
                BlueprintIdentifier = "D095EFBB2E16F56A0074F867"
                BuildableName = "SkyAwareUITests.xctest"
                BlueprintName = "SkyAwareUITests"
+               ReferencedContainer = "container:SkyAware.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A7670001A001000100A10001"
+               BuildableName = "SkyAwarePerformanceTests.xctest"
+               BlueprintName = "SkyAwarePerformanceTests"
                ReferencedContainer = "container:SkyAware.xcodeproj">
             </BuildableReference>
          </TestableReference>

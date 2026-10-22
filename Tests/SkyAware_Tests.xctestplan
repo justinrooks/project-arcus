@@ -14,6 +14,14 @@
   "testTargets" : [
     {
       "parallelizable" : true,
+      "skippedTests" : [
+        "HomeProjectionStoreScalingMeasurementTests/seededRetainedProjections_reportBaselineAndPresentationScaling()",
+        "MapAcceptedUpdateMeasurementTests/testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn()",
+        "MapAcceptedUpdateMeasurementTests/testSelectedSceneCriticalPathAfterSourceScoping()",
+        "MapSceneWarmingMeasurementTests/testInactiveSceneWarmingTradeoff()",
+        "MapSceneWarmingMeasurementTests/testRetainedScenePolygonConstruction()",
+        "RiskPolygonOverlayTests/hatchDrawingMeasurement()"
+      ],
       "target" : {
         "containerPath" : "container:SkyAware.xcodeproj",
         "identifier" : "D095EFB12E16F56A0074F867",

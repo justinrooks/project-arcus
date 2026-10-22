@@ -14,6 +14,7 @@ import UIKit
 
 @Suite("RiskPolygonOverlay")
 struct RiskPolygonOverlayTests {
+#if PERFORMANCE_TESTS
     @Test("Profile hatch drawing with controlled polygon and draw-region sizes")
     func hatchDrawingMeasurement() throws {
         var report: [String] = []
@@ -54,7 +55,9 @@ struct RiskPolygonOverlayTests {
         }
         Attachment.record(report.joined(separator: "\n"), named: "HatchDrawingMeasurement.txt")
     }
+#endif
 
+#if !PERFORMANCE_TESTS
     @Test("Bounded hatch stripes preserve full-region pixels at tile edges and polygon holes",
         arguments: [-45.0, 0.0, 30.0, 90.0].flatMap { angle in
             [1, 2, 3].map { (angle: angle, level: $0) }
@@ -125,6 +128,7 @@ struct RiskPolygonOverlayTests {
             drawRect: bounds.offsetBy(dx: bounds.width * 2, dy: 0), angle: radians,
             spacing: spacing, padding: 700, lineOffset: offset).isEmpty)
     }
+#endif
 
     private func hatchRenderer(width: Double, angle: Double, hole: Bool = false, level: Int = 2) -> RiskPolygonRenderer {
         var points = [MKMapPoint(x: 80_000_000, y: 80_000_000),
@@ -170,6 +174,7 @@ struct RiskPolygonOverlayTests {
         return "median:\(values.sorted()[values.count / 2]),mean:\(mean),sd:\(sqrt(variance))"
     }
 
+#if !PERFORMANCE_TESTS
     @Test("Hatch style spacing adjusts by intensity level")
     func hatchStyle_spacingAdjustsByLevel() {
         let base = HatchStyle.default
@@ -383,6 +388,7 @@ struct RiskPolygonOverlayTests {
         #expect(path.contains(holePoint, using: .evenOdd) == false)
         #expect(path.contains(shellPoint, using: .evenOdd))
     }
+#endif
 
     private func makePolygon() -> MKPolygon {
         var coordinates = [
