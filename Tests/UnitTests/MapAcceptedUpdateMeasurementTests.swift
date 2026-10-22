@@ -10,16 +10,24 @@ import Testing
 final class MapAcceptedUpdateMeasurementTests: XCTestCase {
     private static let repetitions = 8
 
+    func testSelectedSceneCriticalPathPreservesAcceptedState() async {
+        await runSelectedSceneCriticalPath(repetitions: 1, recordsTiming: false)
+    }
+
     func testSelectedSceneCriticalPathAfterSourceScoping() async {
+        await runSelectedSceneCriticalPath(repetitions: Self.repetitions, recordsTiming: true)
+    }
+
+    private func runSelectedSceneCriticalPath(repetitions: Int, recordsTiming: Bool) async {
         var lines = ["Post-#709 logical coherent publication; in-memory providers; milliseconds"]
         for scenario in ["initial-day1", "initial-day2", "initial-day3", "switch-during-day2-update"] {
             var samples: [Double] = []
-            for _ in 0..<Self.repetitions {
+            for _ in 0..<repetitions {
                 let h = ScopedMapHarness()
                 let day: SPCForecastDay = scenario == "initial-day3" ? .day3
                     : scenario == "initial-day1" ? .day1 : .day2
                 h.model.selectForecast(day: day, layer: .categorical)
-                let start: ContinuousClock.Instant
+                let start: ContinuousClock.Instant?
                 if scenario == "switch-during-day2-update" {
                     await h.load()
                     await h.resetCounts()
@@ -40,19 +48,19 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
                     let stagedBuilds = await h.planner.snapshot()
                     XCTAssertEqual(stagedBuilds, [:])
                     // Exclude artificial gate dwell; time remaining read/plan/commit work.
-                    start = .now
+                    start = recordsTiming ? .now : nil
                     await gate.release(1)
                     await task.value
-                    samples.append(Self.milliseconds(since: start))
+                    if let start { samples.append(Self.milliseconds(since: start)) }
                     XCTAssertEqual(overlayTitles(in: h.model.activeScene), ["day2-r1"])
                     let reads = await h.counts.snapshot()
                     let builds = await h.planner.snapshot()
                     XCTAssertEqual(reads, ["categorical-day2": 1])
                     XCTAssertEqual(builds, [.categorical: 1])
                 } else {
-                    start = .now
+                    start = recordsTiming ? .now : nil
                     await h.load()
-                    samples.append(Self.milliseconds(since: start))
+                    if let start { samples.append(Self.milliseconds(since: start)) }
                     let reads = await h.counts.snapshot()
                     let builds = await h.planner.snapshot()
                     XCTAssertEqual(reads, ["categorical-current": 1, "severe": 1,
@@ -65,17 +73,27 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
                 XCTAssertEqual(h.model.activeScene.legendState.presentationState, .current)
                 XCTAssertTrue(h.model.activeScene.warningLegendItems.isEmpty)
             }
+            guard recordsTiming else { continue }
             lines.append("scenario=\(scenario) repetitions=\(Self.repetitions) " +
                 "wallMedianMs=\(Self.median(samples)) wallMeanMs=\(Self.mean(samples)) " +
                 "wallStddevMs=\(Self.stddev(samples))")
         }
+        guard recordsTiming else { return }
         let attachment = XCTAttachment(string: lines.joined(separator: "\n"))
         attachment.name = "MapSelectedSceneCriticalPath.txt"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 
+    func testAcceptedReloadScenariosPreserveReadAndSceneContracts() async {
+        await runAcceptedReloadScenarios(repetitions: 2, recordsTiming: false)
+    }
+
     func testAcceptedReloadScenariosRecordSourceReadsAndSelectedSceneChurn() async {
+        await runAcceptedReloadScenarios(repetitions: Self.repetitions, recordsTiming: true)
+    }
+
+    private func runAcceptedReloadScenarios(repetitions: Int, recordsTiming: Bool) async {
         let counts = MapAcceptedUpdateReadCounts()
         let spc = CountedMapSpcData(counts: counts)
         let meso = CountedMapMesoSource(counts: counts)
@@ -114,28 +132,30 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
             var selectedOverlayRevision = 0
             var completedReloads = 0
 
-            for generation in 1...Self.repetitions {
+            for generation in 1...repetitions {
                 await counts.reset()
                 if let feedID {
-                    model.invalidateAcceptedInputs(for: .init(feedID: feedID, generation: generation + (name == "unchanged-accepted" ? Self.repetitions : 0)))
+                    model.invalidateAcceptedInputs(for: .init(feedID: feedID, generation: generation + (name == "unchanged-accepted" ? repetitions : 0)))
                 }
-                let start = ContinuousClock.now
+                let start = recordsTiming ? ContinuousClock.now : nil
                 var cpuStart = timespec()
-                clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpuStart)
+                if recordsTiming { clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpuStart) }
                 if feedID == nil {
                     await model.reload(using: spc, mesoSource: meso, warningSource: alerts, selectedLayer: .categorical)
                 } else {
                     await model.reloadAcceptedInputs(using: spc, mesoSource: meso, warningSource: alerts,
                         selectedLayer: .categorical)
                 }
-                let elapsed = start.duration(to: .now).components
-                wallMilliseconds.append(Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15)
-                var cpuEnd = timespec()
-                clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpuEnd)
-                cpuMilliseconds.append(
-                    Double(cpuEnd.tv_sec - cpuStart.tv_sec) * 1_000 +
-                        Double(cpuEnd.tv_nsec - cpuStart.tv_nsec) / 1_000_000
-                )
+                if let start {
+                    let elapsed = start.duration(to: .now).components
+                    wallMilliseconds.append(Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15)
+                    var cpuEnd = timespec()
+                    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpuEnd)
+                    cpuMilliseconds.append(
+                        Double(cpuEnd.tv_sec - cpuStart.tv_sec) * 1_000 +
+                            Double(cpuEnd.tv_nsec - cpuStart.tv_nsec) / 1_000_000
+                    )
+                }
                 let sampleCounts = await counts.snapshot()
                 if observedCounts.isEmpty { observedCounts = sampleCounts }
                 XCTAssertEqual(sampleCounts, observedCounts, "Provider reads changed within \(name)")
@@ -147,6 +167,7 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
                 completedReloads += 1
             }
 
+            guard recordsTiming else { continue }
             lines.append(
                 "MAP_ACCEPTED_UPDATE scenario=\(name) iterations=\(Self.repetitions) " +
                     "reads=\(observedCounts.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")) " +
@@ -160,6 +181,7 @@ final class MapAcceptedUpdateMeasurementTests: XCTestCase {
             )
         }
 
+        guard recordsTiming else { return }
         let attachment = XCTAttachment(string: lines.joined(separator: "\n"))
         attachment.name = "MapAcceptedUpdateMeasurement.txt"
         attachment.lifetime = .keepAlways

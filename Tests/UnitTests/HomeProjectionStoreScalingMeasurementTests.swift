@@ -30,6 +30,21 @@ struct HomeProjectionStoreScalingMeasurementTests {
         )
     }
 
+    @Test("seeded retained projections preserve semantics and operation counts without measurements")
+    func seededRetainedProjections_preserveSemanticsAndOperationCounts() async throws {
+        for population in Self.populations {
+            try await verifyCorrectness(population: population)
+            for scenario in [CommitScenario.convectiveOnly, .convectiveAndFire] {
+                let first = try await performCommit(population: population, scenario: scenario, recordsTiming: false)
+                let second = try await performCommit(population: population, scenario: scenario, recordsTiming: false)
+                #expect(first.metrics == second.metrics)
+            }
+            let fixture = try makeFixture(population: population)
+            let observed = try fetchProjections(from: fixture.container)
+            #expect(convertAndSelect(observed, currentContext: fixture.target)?.projectionKey == fixture.targetKey)
+        }
+    }
+
     private func verifyCorrectness(population: Int) async throws {
         let fixture = try makeFixture(population: population, baselineOnTarget: population == 1)
         let store = HomeProjectionStore(modelContainer: fixture.container)
@@ -113,19 +128,20 @@ struct HomeProjectionStoreScalingMeasurementTests {
 
     private func performCommit(
         population: Int,
-        scenario: CommitScenario
+        scenario: CommitScenario,
+        recordsTiming: Bool = true
     ) async throws -> CommitMeasurementSample {
         let fixture = try makeFixture(population: population)
         let store = HomeProjectionStore(modelContainer: fixture.container)
         await store.resetOperationMetricsForTesting()
 
-        let start = DispatchTime.now().uptimeNanoseconds
+        let start = recordsTiming ? DispatchTime.now().uptimeNanoseconds : 0
         _ = try await store.commitCore(
             scenario.commit(source: source(revision: 2)),
             for: fixture.target,
             loadedAt: .init(timeIntervalSince1970: 30_000)
         )
-        let elapsed = DispatchTime.now().uptimeNanoseconds - start
+        let elapsed = recordsTiming ? DispatchTime.now().uptimeNanoseconds - start : 0
         let metrics = await store.operationMetricsForTesting()
 
         #expect(metrics.fetchCount == scenario.fetchCount)
