@@ -17,37 +17,33 @@ Report the exact command, finalized result, logical test counts and parameter-ex
 
 ## Unit workflow
 
-Configure one Xcode Cloud test action with:
+The repository owns test plans and result validation; Xcode Cloud action selection is maintained externally. Build 238 is the latest configuration evidence retained in [the Unit CI 01 baseline](../../docs/audits/unit-ci-01-baseline.md); it confirms one selected destination for that run, not the current workflow UI settings.
+
+Build 238 used:
 
 - Scheme: `SkyAware`
 - Test plan: `SkyAware_Tests`
 - Build configuration: Debug
-- Xcode: 26.6 (build 17F113)
-- Destinations: Xcode Cloud's recommended-phone matrix using the runtime supplied by the selected Xcode:
-  - iPhone 16 Pro Max
-  - iPhone 16 Pro
-  - iPhone 16
-  - iPhone SE (3rd generation)
+- Xcode: 27.1 (build 27A9275)
+- Destination: one iPhone 16 Pro Max simulator on iOS 27.0 (build 24A434)
 - Parallel test execution: enabled
 
-Preserve this matrix. The verifier reports the aggregate counts and every destination returned by the finalized
-result bundle, so one process crash is visible as a matrix-wide problem without relying on the active-test label.
+The finalized Build 238 result records one destination. The current Cloud UI action settings, selected Xcode/runtime, and separate Analyze action are maintained externally and are not established by that historical result. Keep the required Cloud action on `SkyAware_Tests`; confirm any current UI setting from Xcode Cloud before treating it as current policy.
 
 ## UI smoke workflow
 
-If Cloud UI smoke coverage is enabled, create a separate test action using `SkyAware_UI_Smoke` and the same Xcode
-and recommended-phone matrix. It must not use `SkyAware_All_Tests`, which intentionally contains both unit and UI targets for
-interactive local work.
+If Cloud UI smoke coverage is enabled, create a separate test action using `SkyAware_UI_Smoke`. It must not use `SkyAware_All_Tests`, which intentionally contains both unit and UI targets for interactive local work.
 
 `SkyAware_UI_Smoke` itself selects the navigation smoke test; Cloud needs no additional selector. Keep the unit and
 UI results as separate build artifacts.
 
 ## Required result checks
 
-`ci_scripts/ci_post_xcodebuild.sh` verifies the completed Xcode Cloud `test-without-building` phase through
-`CI_RESULT_BUNDLE_PATH`; it skips the preceding `build-for-testing` phase and non-test actions. The checker rejects
-missing, staging, unreadable, unknown-result, and zero-test bundles, then reports exact aggregate counts, every
-simulator/runtime/test-plan configuration, the build configuration, and the bundle path.
+`ci_scripts/ci_post_xcodebuild.sh` verifies the completed Xcode Cloud `test-without-building` phase through `CI_RESULT_BUNDLE_PATH`; it skips the preceding `build-for-testing` phase and non-test actions. `CI_TEST_PLAN` routes the required `SkyAware_Tests` action through the regression contract and the documented optional `SkyAware_UI_Smoke` action through plan- and target-specific native result checks. Unsupported or missing plans fail. The regression verifier rejects missing, staging, unreadable, unknown-result, failing, zero-test, wrong-plan, wrong-target, and materially under-selected results. It requires five stable regression sentinels, at least 1,470 logical test cases, and no unapproved skips; it does not pin the exact total, so ordinary test additions do not require a contract update. The 1,470 floor allows nine fewer cases than the expected 1,479 after #766's six measurement extractions and five untimed replacements. The `PERFORMANCE_TESTS` target partition keeps timing-only cases out of the regression target. The only currently approved regression skip is the configuration-gated `SummaryAwarenessPanelTests/awarenessFamilyRenderEvidence()` case.
+
+The full local unit lane and the Cloud `SkyAware_Tests` action enforce the same plan, target, count floor, sentinels, and skip allowance. The separate Cloud `SkyAware_UI_Smoke` action uses its own plan, target, and native-result checks. Focused local unit selections retain native result, plan, target, outcome, and skip checks but intentionally omit the full-suite count and sentinels. `build-for-testing` prepares the selected test plan; `test-without-building` runs it and produces the result bundle the hook validates. The separate Analyze action is retained and is configured in Xcode Cloud, not this repository.
+
+No post-change Xcode Cloud action has run with this coverage contract. Compare its next action duration and phase timestamps against the historical baseline before reporting an effect; Cloud compute usage and monthly impact were not included in the Build 238 evidence, so no compute savings can be claimed from this change.
 
 For a reproducibility check, rebuild the same commit twice through the unit workflow. Both bundles must have the
 same nonzero counts, no failures, and no crash-log artifacts. Do not disable parallel execution, serialize the target,
