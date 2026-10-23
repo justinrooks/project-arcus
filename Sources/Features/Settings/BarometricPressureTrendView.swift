@@ -3,13 +3,116 @@
 //  SkyAware
 //
 
+import Charts
 import CoreMotion
 import Observation
 import SwiftUI
 
-struct PressureSample: Equatable, Sendable {
+struct PressureSample: Equatable, Identifiable, Sendable {
     let timestamp: Date
     let pressureHPA: Double
+
+    var id: Date { timestamp }
+}
+
+struct PressureChartPoint: Identifiable, Sendable {
+    let sample: PressureSample
+    let seriesID: Int
+    let seriesSampleCount: Int
+
+    var id: Date { sample.timestamp }
+}
+
+enum PressureChartData {
+    static func points(from samples: [PressureSample]) -> [PressureChartPoint] {
+        guard samples.isEmpty == false else { return [] }
+
+        var segments: [[PressureSample]] = []
+        var segmentStart = 0
+        for index in samples.indices.dropFirst() {
+            let gap = samples[index].timestamp.timeIntervalSince(samples[index - 1].timestamp)
+            if gap > PressureTrendCalculator.sampleTolerance {
+                segments.append(Array(samples[segmentStart..<index]))
+                segmentStart = index
+            }
+        }
+        segments.append(Array(samples[segmentStart...]))
+
+        return segments.enumerated().flatMap { seriesID, segment in
+            segment.map { sample in
+                PressureChartPoint(sample: sample, seriesID: seriesID, seriesSampleCount: segment.count)
+            }
+        }
+    }
+}
+
+enum PressureObservationFormatting {
+    static func samplingGap(_ duration: TimeInterval, locale: Locale = .autoupdatingCurrent) -> String {
+        // Keep any gap above the five-second coverage threshold visibly above 5.0 seconds.
+        let hundredthSeconds = (duration * 100).rounded(.up) / 100
+        let value = hundredthSeconds.formatted(
+            FloatingPointFormatStyle<Double>.number
+                .locale(locale)
+                .precision(.fractionLength(1...2))
+        )
+        return "\(value)s"
+    }
+}
+
+struct PressureObservationStatistics: Equatable, Sendable {
+    let minimum: Double?
+    let maximum: Double?
+    let range: Double?
+    let mean: Double?
+    let standardDeviation: Double?
+    let sampleCount: Int
+    let observationSpan: TimeInterval
+    let largestSamplingGap: TimeInterval
+
+    init(samples: [PressureSample]) {
+        sampleCount = samples.count
+        observationSpan = samples.first.flatMap { first in
+            samples.last.map { $0.timestamp.timeIntervalSince(first.timestamp) }
+        } ?? 0
+        largestSamplingGap = zip(samples, samples.dropFirst())
+            .map { $1.timestamp.timeIntervalSince($0.timestamp) }
+            .max() ?? 0
+
+        guard let first = samples.first else {
+            minimum = nil
+            maximum = nil
+            range = nil
+            mean = nil
+            standardDeviation = nil
+            return
+        }
+
+        var low = first.pressureHPA
+        var high = first.pressureHPA
+        var runningMean = 0.0
+        var squaredDifferences = 0.0
+        for (index, sample) in samples.enumerated() {
+            low = min(low, sample.pressureHPA)
+            high = max(high, sample.pressureHPA)
+            let count = Double(index + 1)
+            let difference = sample.pressureHPA - runningMean
+            runningMean += difference / count
+            squaredDifferences += difference * (sample.pressureHPA - runningMean)
+        }
+
+        minimum = low
+        maximum = high
+        range = high - low
+        mean = runningMean
+        standardDeviation = sqrt(squaredDifferences / Double(samples.count))
+    }
+
+    var yAxisDomain: ClosedRange<Double> {
+        guard let minimum, let maximum else { return 0...1 }
+        let span = maximum - minimum
+        let padding = max(span * 0.1, 0.05)
+        return (minimum - padding)...(maximum + padding)
+    }
 }
 
 struct PressureTrendCalculator: Sendable {
@@ -202,6 +305,8 @@ struct BarometricPressureTrendView: View {
 
     private func pressureContent(at now: Date) -> some View {
         let snapshot = model.calculator.snapshot(at: now)
+        let samples = model.calculator.samples
+        let statistics = PressureObservationStatistics(samples: samples)
 
         return VStack(alignment: .leading, spacing: 18) {
             sectionCard(title: "Current Pressure", symbol: "gauge.with.dots.needle.67percent", accent: .primary) {
@@ -249,7 +354,97 @@ struct BarometricPressureTrendView: View {
                     LabeledContent("Last Updated", value: lastUpdated.formatted(date: .omitted, time: .standard))
                 }
             }
+
+            sectionCard(title: "Pressure History", symbol: "chart.xyaxis.line", accent: .primary) {
+                if samples.isEmpty {
+                    Text("Waiting for pressure measurements…")
+                        .foregroundStyle(.secondary)
+                        .frame(height: 180, alignment: .center)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Chart(PressureChartData.points(from: samples)) { point in
+                        LineMark(
+                            x: .value("Observation time", point.sample.timestamp),
+                            y: .value("Station pressure", point.sample.pressureHPA),
+                            series: .value("Observed segment", point.seriesID)
+                        )
+                        .interpolationMethod(.linear)
+                        if point.seriesSampleCount == 1 {
+                            PointMark(
+                                x: .value("Observation time", point.sample.timestamp),
+                                y: .value("Station pressure", point.sample.pressureHPA)
+                            )
+                            .symbolSize(30)
+                        }
+                    }
+                    .chartYScale(domain: statistics.yAxisDomain)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 4)) {
+                            AxisGridLine()
+                            AxisTick()
+                            AxisValueLabel(format: .dateTime.hour().minute())
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading) {
+                            AxisGridLine()
+                            AxisTick()
+                            AxisValueLabel(
+                                format: FloatingPointFormatStyle<Double>.number.precision(.fractionLength(2))
+                            )
+                        }
+                    }
+                    .frame(height: 190)
+                    .accessibilityLabel("Retained station pressure history in hectopascals")
+                }
+
+                Text("Measured samples · latest 60 minutes retained")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let first = samples.first, let last = samples.last {
+                    LabeledContent("Observation Start", value: first.timestamp.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Observation End", value: last.timestamp.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+
+            sectionCard(title: "Observation Statistics", symbol: "function", accent: .primary) {
+                if let minimum = statistics.minimum,
+                   let maximum = statistics.maximum,
+                   let range = statistics.range,
+                   let mean = statistics.mean,
+                   let standardDeviation = statistics.standardDeviation {
+                    LabeledContent("Minimum", value: pressureText(minimum))
+                    LabeledContent("Maximum", value: pressureText(maximum))
+                    LabeledContent("Range", value: pressureText(range))
+                    LabeledContent("Mean", value: pressureText(mean))
+                    LabeledContent("Std. Deviation", value: pressureText(standardDeviation))
+                } else {
+                    Text("Insufficient evidence: no pressure measurements yet.")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Sample Count", value: "\(statistics.sampleCount)")
+                LabeledContent("Observed Span", value: durationText(statistics.observationSpan))
+                LabeledContent(
+                    "Largest Sampling Gap",
+                    value: PressureObservationFormatting.samplingGap(statistics.largestSamplingGap)
+                )
+                LabeledContent(
+                    "Coverage",
+                    value: statistics.largestSamplingGap > PressureTrendCalculator.sampleTolerance
+                        ? "Gaps observed" : statistics.sampleCount > 1 ? "Continuous" : "Insufficient evidence"
+                )
+            }
+
         }
+    }
+
+    private func pressureText(_ value: Double, signed: Bool = false) -> String {
+        value.formatted(
+            .number
+                .sign(strategy: signed ? .always(includingZero: true) : .never)
+                .precision(.fractionLength(2))
+        )
     }
 
     private func durationText(_ duration: TimeInterval) -> String {
