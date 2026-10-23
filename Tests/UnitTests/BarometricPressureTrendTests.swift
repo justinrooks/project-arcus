@@ -4,6 +4,39 @@ import Testing
 
 @Suite("Barometric pressure trend")
 struct BarometricPressureTrendTests {
+    @Test("elevation fixes require valid accuracy and current timestamps")
+    func pressureElevationFixValidation() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let valid = PressureElevationFix.accepted(
+            altitude: 1_600,
+            verticalAccuracy: 8,
+            horizontalAccuracy: 20,
+            timestamp: now.addingTimeInterval(-60),
+            now: now
+        )
+        #expect(valid?.isFresh(at: now) == true)
+        #expect(PressureElevationFix.displayValue(meters: 1_600, locale: Locale(identifier: "en_US")).contains("ft"))
+        #expect(PressureElevationFix.displayValue(meters: 1_600, locale: Locale(identifier: "fr_FR")).contains("m"))
+
+        #expect(PressureElevationFix.accepted(
+            altitude: 1_600, verticalAccuracy: -1, horizontalAccuracy: 20,
+            timestamp: now, now: now
+        ) == nil)
+        #expect(PressureElevationFix.accepted(
+            altitude: .infinity, verticalAccuracy: 8, horizontalAccuracy: 20,
+            timestamp: now, now: now
+        ) == nil)
+        #expect(PressureElevationFix.accepted(
+            altitude: 1_600, verticalAccuracy: 8, horizontalAccuracy: 101,
+            timestamp: now, now: now
+        ) == nil)
+        #expect(PressureElevationFix.accepted(
+            altitude: 1_600, verticalAccuracy: 8, horizontalAccuracy: 20,
+            timestamp: now.addingTimeInterval(-301), now: now
+        ) == nil)
+        #expect(valid?.isFresh(at: now.addingTimeInterval(301)) == false)
+    }
+
     @Test("CSV export is locale invariant and preserves retained pressure precision")
     func pressureCSVExport() {
         let sessionStart = Date(timeIntervalSince1970: 0.25)
