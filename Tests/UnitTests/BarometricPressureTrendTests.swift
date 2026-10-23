@@ -4,6 +4,38 @@ import Testing
 
 @Suite("Barometric pressure trend")
 struct BarometricPressureTrendTests {
+    @Test("CSV export is locale invariant and preserves retained pressure precision")
+    func pressureCSVExport() {
+        let sessionStart = Date(timeIntervalSince1970: 0.25)
+        let samples = [
+            PressureSample(timestamp: Date(timeIntervalSince1970: 1.25), pressureHPA: 831.123456789),
+            PressureSample(timestamp: Date(timeIntervalSince1970: 2.5), pressureHPA: 840.000000001)
+        ]
+
+        let export = PressureCSVExport(samples: samples, sessionStartedAt: sessionStart)
+
+        #expect(export.filename == "pressure-samples-19700101T000000Z.csv")
+        #expect(String(decoding: export.data, as: UTF8.self) == """
+        timestamp_utc,elapsed_seconds,pressure_hpa
+        1970-01-01T00:00:01.250Z,1.0,831.123456789
+        1970-01-01T00:00:02.500Z,2.25,840.000000001
+
+        """)
+    }
+
+    @Test("CSV export handles empty and single-sample histories")
+    func pressureCSVExportEmptyAndSingleSample() {
+        let sessionStart = Date(timeIntervalSince1970: 0)
+        let empty = PressureCSVExport(samples: [], sessionStartedAt: sessionStart)
+        let single = PressureCSVExport(
+            samples: [PressureSample(timestamp: sessionStart, pressureHPA: 831.4)],
+            sessionStartedAt: sessionStart
+        )
+
+        #expect(String(decoding: empty.data, as: UTF8.self) == "timestamp_utc,elapsed_seconds,pressure_hpa\n")
+        #expect(String(decoding: single.data, as: UTF8.self).contains("1970-01-01T00:00:00.000Z,0.0,831.4"))
+    }
+
     @Test("pressure chart segments split at gaps longer than the trend tolerance", arguments: [5.0, 5.1])
     func pressureChartSegments(gap: Double) {
         let start = Date(timeIntervalSince1970: 10_000)

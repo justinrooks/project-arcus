@@ -5,14 +5,46 @@
 
 import Charts
 import CoreMotion
+import CoreTransferable
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PressureSample: Equatable, Identifiable, Sendable {
     let timestamp: Date
     let pressureHPA: Double
 
     var id: Date { timestamp }
+}
+
+struct PressureCSVExport: Transferable, Sendable {
+    let data: Data
+    let filename: String
+
+    init(samples: [PressureSample], sessionStartedAt: Date) {
+        let timestampFormatter = ISO8601DateFormatter()
+        timestampFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let filenameFormatter = DateFormatter()
+        filenameFormatter.locale = Locale(identifier: "en_US_POSIX")
+        filenameFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        filenameFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        filename = "pressure-samples-\(filenameFormatter.string(from: sessionStartedAt)).csv"
+
+        let rows = ["timestamp_utc,elapsed_seconds,pressure_hpa"] + samples.map { sample in
+            let elapsed = sample.timestamp.timeIntervalSince(sessionStartedAt)
+            return "\(timestampFormatter.string(from: sample.timestamp)),\(elapsed),\(sample.pressureHPA)"
+        }
+        data = Data(rows.joined(separator: "\n").appending("\n").utf8)
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .commaSeparatedText) { export in
+            export.data
+        }
+        .suggestedFileName { $0.filename }
+    }
 }
 
 struct PressureChartPoint: Identifiable, Sendable {
@@ -290,6 +322,15 @@ struct BarometricPressureTrendView: View {
                         pressureContent(at: Date())
                     }
                 }
+                let export = PressureCSVExport(
+                    samples: model.calculator.samples,
+                    sessionStartedAt: model.sessionStartedAt ?? Date()
+                )
+                ShareLink(item: export, preview: SharePreview(export.filename)) {
+                    Label("Export CSV", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.calculator.samples.isEmpty)
                 Button("Reset / Restart", systemImage: "arrow.clockwise") { model.restart() }
                     .buttonStyle(.bordered)
             }
