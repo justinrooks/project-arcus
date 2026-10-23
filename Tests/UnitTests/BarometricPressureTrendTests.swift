@@ -4,6 +4,67 @@ import Testing
 
 @Suite("Barometric pressure trend")
 struct BarometricPressureTrendTests {
+    @Test("statistics summarize constant measurements")
+    func constantStatistics() {
+        let start = Date(timeIntervalSince1970: 10_000)
+        let samples = (0..<3).map { second in
+            PressureSample(timestamp: start.addingTimeInterval(Double(second)), pressureHPA: 842.25)
+        }
+
+        let statistics = PressureObservationStatistics(samples: samples)
+
+        #expect(statistics.minimum == 842.25)
+        #expect(statistics.maximum == 842.25)
+        #expect(statistics.range == 0)
+        #expect(statistics.mean == 842.25)
+        #expect(statistics.standardDeviation == 0)
+        #expect(statistics.sampleCount == 3)
+        #expect(statistics.observationSpan == 2)
+        #expect(statistics.largestSamplingGap == 1)
+        #expect(statistics.yAxisDomain.lowerBound < 842.25)
+        #expect(statistics.yAxisDomain.upperBound > 842.25)
+    }
+
+    @Test("statistics summarize monotonic and irregularly spaced measurements")
+    func monotonicIrregularStatistics() {
+        let start = Date(timeIntervalSince1970: 10_000)
+        let samples = [0.0, 2.0, 10.0].enumerated().map { index, offset in
+            PressureSample(timestamp: start.addingTimeInterval(offset), pressureHPA: 840 + Double(index))
+        }
+
+        let statistics = PressureObservationStatistics(samples: samples)
+
+        #expect(statistics.minimum == 840)
+        #expect(statistics.maximum == 842)
+        #expect(statistics.range == 2)
+        #expect(statistics.mean == 841)
+        #expect(abs((statistics.standardDeviation ?? -1) - sqrt(2.0 / 3.0)) < 0.000001)
+        #expect(statistics.sampleCount == 3)
+        #expect(statistics.observationSpan == 10)
+        #expect(statistics.largestSamplingGap == 8)
+        #expect(statistics.yAxisDomain.lowerBound > 0)
+    }
+
+    @Test("empty and single-sample statistics have finite chart domains")
+    func emptyAndSingleSampleStatistics() {
+        let empty = PressureObservationStatistics(samples: [])
+        #expect(empty.minimum == nil)
+        #expect(empty.mean == nil)
+        #expect(empty.sampleCount == 0)
+        #expect(empty.yAxisDomain == 0...1)
+
+        let single = PressureObservationStatistics(samples: [
+            PressureSample(timestamp: Date(timeIntervalSince1970: 10_000), pressureHPA: 842.25)
+        ])
+        #expect(single.minimum == 842.25)
+        #expect(single.standardDeviation == 0)
+        #expect(single.observationSpan == 0)
+        #expect(single.largestSamplingGap == 0)
+        #expect(single.yAxisDomain.lowerBound.isFinite)
+        #expect(single.yAxisDomain.upperBound.isFinite)
+        #expect(single.yAxisDomain.lowerBound < single.yAxisDomain.upperBound)
+    }
+
     @Test("converts kPa to hPa and calculates the signed fifteen-minute change")
     func calculatesChangeFromClosestRetainedSample() {
         let now = Date(timeIntervalSince1970: 10_000)
