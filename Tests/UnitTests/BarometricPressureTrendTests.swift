@@ -9,7 +9,10 @@ struct BarometricPressureTrendTests {
         let now = Date(timeIntervalSince1970: 10_000)
         var calculator = PressureTrendCalculator()
         calculator.addSample(timestamp: now.addingTimeInterval(-900), pressureKPA: 84.24)
-        calculator.addSample(timestamp: now, pressureKPA: 84.37)
+        for second in 1...900 {
+            calculator.addSample(timestamp: now.addingTimeInterval(Double(second - 900)),
+                                 pressureKPA: 84.24 + 0.13 * Double(second) / 900)
+        }
 
         let snapshot = calculator.snapshot(at: now)
 
@@ -69,20 +72,25 @@ struct BarometricPressureTrendTests {
         let now = Date(timeIntervalSince1970: 10_000)
         var calculator = PressureTrendCalculator()
         calculator.addSample(timestamp: now.addingTimeInterval(-900), pressureKPA: 84)
-        calculator.addSample(timestamp: now, pressureKPA: 84 + difference)
+        for second in 1...900 {
+            calculator.addSample(timestamp: now.addingTimeInterval(Double(second - 900)),
+                                 pressureKPA: 84 + difference * Double(second) / 900)
+        }
         let snapshot = calculator.snapshot(at: now)
         #expect(abs((snapshot.change ?? 999) - difference * 10) < 0.0001)
         #expect(snapshot.trend == (difference > 0 ? .rising : difference < 0 ? .falling : .stable))
     }
 
-    @Test("baseline tolerance never substitutes insufficient startup history")
+    @Test("continuous history never substitutes an incomplete startup window")
     func baselineTolerance() {
         let now = Date(timeIntervalSince1970: 10_000)
-        for offset in [-906.0, -905, -900, -899] {
+        for offset in [-905, -900, -899] {
             var calculator = PressureTrendCalculator()
-            calculator.addSample(timestamp: now.addingTimeInterval(offset), pressureKPA: 84)
-            calculator.addSample(timestamp: now, pressureKPA: 84.1)
-            #expect((calculator.snapshot(at: now).change != nil) == (offset == -905 || offset == -900))
+            calculator.addSample(timestamp: now.addingTimeInterval(Double(offset)), pressureKPA: 84)
+            for second in (offset + 1)...0 {
+                calculator.addSample(timestamp: now.addingTimeInterval(Double(second)), pressureKPA: 84.1)
+            }
+            #expect((calculator.snapshot(at: now).change != nil) == (offset <= -900))
         }
     }
 
@@ -91,8 +99,11 @@ struct BarometricPressureTrendTests {
         let now = Date(timeIntervalSince1970: 10_000)
         var calculator = PressureTrendCalculator()
         calculator.addSample(timestamp: now.addingTimeInterval(-1_000), pressureKPA: 84)
+        calculator.addSample(timestamp: now.addingTimeInterval(-903), pressureKPA: 84)
         calculator.addSample(timestamp: now.addingTimeInterval(-898), pressureKPA: 84.05)
-        calculator.addSample(timestamp: now, pressureKPA: 84.1)
+        for second in -897...0 {
+            calculator.addSample(timestamp: now.addingTimeInterval(Double(second)), pressureKPA: 84.1)
+        }
         #expect(calculator.snapshot(at: now).baseline?.timestamp == now.addingTimeInterval(-898))
         #expect(calculator.snapshot(at: now.addingTimeInterval(5)).change != nil)
         #expect(calculator.snapshot(at: now.addingTimeInterval(5.1)).change == nil)
@@ -106,6 +117,41 @@ struct BarometricPressureTrendTests {
         short.addSample(timestamp: now, pressureKPA: 84.1)
         #expect(short.snapshot(at: now.addingTimeInterval(2)).historyDuration == 899)
         #expect(short.snapshot(at: now.addingTimeInterval(2)).change == nil)
+    }
+
+    @Test("a long outage requires a complete continuous window before recovery")
+    func outageRecovery() {
+        let start = Date(timeIntervalSince1970: 10_000)
+        var calculator = PressureTrendCalculator()
+        calculator.addSample(timestamp: start, pressureKPA: 84)
+        calculator.addSample(timestamp: start.addingTimeInterval(900), pressureKPA: 85)
+        #expect(calculator.snapshot(at: start.addingTimeInterval(900)).change == nil)
+        for second in 901...1_801 {
+            let now = start.addingTimeInterval(Double(second))
+            calculator.addSample(timestamp: now, pressureKPA: 85 + Double(second - 900) / 9_000)
+            let snapshot = calculator.snapshot(at: now)
+            if second < 1_800 {
+                #expect(snapshot.baseline == nil)
+                #expect(snapshot.change == nil)
+                #expect(snapshot.trend == .collecting)
+            } else {
+                #expect(abs((snapshot.change ?? 999) - 1) < 0.0001)
+            }
+        }
+    }
+
+    @Test("intersample gaps accept five seconds but reject longer gaps", arguments: [5.0, 5.1])
+    func continuityTolerance(gap: Double) {
+        let start = Date(timeIntervalSince1970: 10_000)
+        var calculator = PressureTrendCalculator()
+        for second in 0...450 {
+            calculator.addSample(timestamp: start.addingTimeInterval(Double(second)), pressureKPA: 84)
+        }
+        calculator.addSample(timestamp: start.addingTimeInterval(450 + gap), pressureKPA: 84)
+        for second in 456...900 {
+            calculator.addSample(timestamp: start.addingTimeInterval(Double(second)), pressureKPA: 84)
+        }
+        #expect((calculator.snapshot(at: start.addingTimeInterval(900)).change != nil) == (gap == 5))
     }
 
     @MainActor

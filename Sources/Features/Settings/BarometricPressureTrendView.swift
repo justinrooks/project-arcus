@@ -47,8 +47,14 @@ struct PressureTrendCalculator: Sendable {
         let baseline = samples.min { lhs, rhs in
             abs(lhs.timestamp.timeIntervalSince(target)) < abs(rhs.timestamp.timeIntervalSince(target))
         }
+        // Include gaps straddling the target, but allow recovery once an outage
+        // ends at or before the start of the observation window.
+        let hasCollectionGap = zip(samples, samples.dropFirst()).contains { earlier, later in
+            later.timestamp > target
+                && later.timestamp.timeIntervalSince(earlier.timestamp) > Self.sampleTolerance
+        }
         let eligibleBaseline = baseline.flatMap {
-            abs($0.timestamp.timeIntervalSince(target)) <= Self.sampleTolerance ? $0 : nil
+            !hasCollectionGap && abs($0.timestamp.timeIntervalSince(target)) <= Self.sampleTolerance ? $0 : nil
         }
         let change = eligibleBaseline.map { current.pressureHPA - $0.pressureHPA }
         return PressureTrendSnapshot(
@@ -224,7 +230,7 @@ struct BarometricPressureTrendView: View {
                     Text("Sensor reading is stale. Waiting for a fresh reading…")
                         .foregroundStyle(.secondary)
                 } else if snapshot.historyDuration >= PressureTrendCalculator.window {
-                    Text("Collection gap near the 15-minute baseline. Waiting for usable history…")
+                    Text("Insufficient history: collection gap in the 15-minute window. Waiting for continuous readings…")
                         .foregroundStyle(.secondary)
                 } else {
                     ProgressView(value: min(snapshot.historyDuration / PressureTrendCalculator.window, 1))
