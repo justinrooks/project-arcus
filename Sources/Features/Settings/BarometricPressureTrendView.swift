@@ -15,6 +15,50 @@ struct PressureSample: Equatable, Identifiable, Sendable {
     var id: Date { timestamp }
 }
 
+struct PressureChartPoint: Identifiable, Sendable {
+    let sample: PressureSample
+    let seriesID: Int
+    let seriesSampleCount: Int
+
+    var id: Date { sample.timestamp }
+}
+
+enum PressureChartData {
+    static func points(from samples: [PressureSample]) -> [PressureChartPoint] {
+        guard samples.isEmpty == false else { return [] }
+
+        var segments: [[PressureSample]] = []
+        var segmentStart = 0
+        for index in samples.indices.dropFirst() {
+            let gap = samples[index].timestamp.timeIntervalSince(samples[index - 1].timestamp)
+            if gap > PressureTrendCalculator.sampleTolerance {
+                segments.append(Array(samples[segmentStart..<index]))
+                segmentStart = index
+            }
+        }
+        segments.append(Array(samples[segmentStart...]))
+
+        return segments.enumerated().flatMap { seriesID, segment in
+            segment.map { sample in
+                PressureChartPoint(sample: sample, seriesID: seriesID, seriesSampleCount: segment.count)
+            }
+        }
+    }
+}
+
+enum PressureObservationFormatting {
+    static func samplingGap(_ duration: TimeInterval, locale: Locale = .autoupdatingCurrent) -> String {
+        // Keep any gap above the five-second coverage threshold visibly above 5.0 seconds.
+        let hundredthSeconds = (duration * 100).rounded(.up) / 100
+        let value = hundredthSeconds.formatted(
+            FloatingPointFormatStyle<Double>.number
+                .locale(locale)
+                .precision(.fractionLength(1...2))
+        )
+        return "\(value)s"
+    }
+}
+
 struct PressureObservationStatistics: Equatable, Sendable {
     let minimum: Double?
     let maximum: Double?
@@ -318,16 +362,17 @@ struct BarometricPressureTrendView: View {
                         .frame(height: 180, alignment: .center)
                         .frame(maxWidth: .infinity)
                 } else {
-                    Chart(samples) { sample in
+                    Chart(PressureChartData.points(from: samples)) { point in
                         LineMark(
-                            x: .value("Observation time", sample.timestamp),
-                            y: .value("Station pressure", sample.pressureHPA)
+                            x: .value("Observation time", point.sample.timestamp),
+                            y: .value("Station pressure", point.sample.pressureHPA),
+                            series: .value("Observed segment", point.seriesID)
                         )
                         .interpolationMethod(.linear)
-                        if samples.count == 1 {
+                        if point.seriesSampleCount == 1 {
                             PointMark(
-                                x: .value("Observation time", sample.timestamp),
-                                y: .value("Station pressure", sample.pressureHPA)
+                                x: .value("Observation time", point.sample.timestamp),
+                                y: .value("Station pressure", point.sample.pressureHPA)
                             )
                             .symbolSize(30)
                         }
@@ -380,7 +425,10 @@ struct BarometricPressureTrendView: View {
                 }
                 LabeledContent("Sample Count", value: "\(statistics.sampleCount)")
                 LabeledContent("Observed Span", value: durationText(statistics.observationSpan))
-                LabeledContent("Largest Sampling Gap", value: durationText(statistics.largestSamplingGap))
+                LabeledContent(
+                    "Largest Sampling Gap",
+                    value: PressureObservationFormatting.samplingGap(statistics.largestSamplingGap)
+                )
                 LabeledContent(
                     "Coverage",
                     value: statistics.largestSamplingGap > PressureTrendCalculator.sampleTolerance
