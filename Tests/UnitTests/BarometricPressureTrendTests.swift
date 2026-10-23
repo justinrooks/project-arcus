@@ -37,6 +37,25 @@ struct BarometricPressureTrendTests {
         #expect(valid?.isFresh(at: now.addingTimeInterval(301)) == false)
     }
 
+    @Test("an unavailable location clears the last accepted elevation")
+    func unavailablePressureElevationClearsFix() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let fix = PressureElevationFix(
+            altitudeMeters: 1_600,
+            verticalAccuracyMeters: 8,
+            timestamp: now
+        )
+        var state = PressureElevationState()
+        state.receive(fix)
+        #expect(state.displayedFix(at: now) == fix)
+
+        state.markUnavailable()
+
+        #expect(state.unavailable)
+        #expect(state.fix == nil)
+        #expect(state.displayedFix(at: now) == nil)
+    }
+
     @Test("CSV export is locale invariant and preserves retained pressure precision")
     func pressureCSVExport() {
         let sessionStart = Date(timeIntervalSince1970: 0.25)
