@@ -155,11 +155,13 @@ struct PressureTrendCalculator: Sendable {
 
     private(set) var samples: [PressureSample] = []
 
-    mutating func addSample(timestamp: Date, pressureKPA: Double) {
-        guard samples.last.map({ timestamp > $0.timestamp }) ?? true else { return }
+    @discardableResult
+    mutating func addSample(timestamp: Date, pressureKPA: Double) -> Bool {
+        guard samples.last.map({ timestamp > $0.timestamp }) ?? true else { return false }
         samples.append(PressureSample(timestamp: timestamp, pressureHPA: pressureKPA * 10))
         let cutoff = timestamp.addingTimeInterval(-Self.retention)
         samples.removeAll { $0.timestamp < cutoff }
+        return true
     }
 
     func snapshot(at now: Date) -> PressureTrendSnapshot {
@@ -283,8 +285,11 @@ final class BarometricPressureModel {
                 return
             }
             guard let pressure else { return }
-            self.calculator.addSample(timestamp: timestamp, pressureKPA: pressure)
-            self.lastUpdated = self.calculator.samples.last?.timestamp
+            guard self.calculator.addSample(timestamp: timestamp, pressureKPA: pressure) else { return }
+            if self.lastUpdated == nil, let sessionStartedAt = self.sessionStartedAt {
+                self.sessionStartedAt = min(sessionStartedAt, timestamp)
+            }
+            self.lastUpdated = timestamp
         }
     }
 

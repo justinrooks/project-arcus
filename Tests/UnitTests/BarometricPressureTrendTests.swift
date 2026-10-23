@@ -36,6 +36,32 @@ struct BarometricPressureTrendTests {
         #expect(String(decoding: single.data, as: UTF8.self).contains("1970-01-01T00:00:00.000Z,0.0,831.4"))
     }
 
+    @MainActor
+    @Test("first accepted measurement establishes a session start no later than its timestamp")
+    func firstMeasurementBeforeSessionStart() {
+        var callback: (@MainActor (Date, Double?, String?) -> Void)?
+        let sessionStart = Date(timeIntervalSince1970: 10_000)
+        let measurementTimestamp = sessionStart.addingTimeInterval(-0.5446419715881348)
+        let model = BarometricPressureModel(
+            isAvailable: { true },
+            startUpdates: { callback = $0 }
+        )
+
+        model.start(at: sessionStart)
+        callback?(measurementTimestamp, 82.80802917480469, nil)
+
+        #expect(model.calculator.samples.map(\.timestamp) == [measurementTimestamp])
+        #expect(model.sessionStartedAt == measurementTimestamp)
+        let export = PressureCSVExport(
+            samples: model.calculator.samples,
+            sessionStartedAt: model.sessionStartedAt ?? sessionStart
+        )
+        let row = String(decoding: export.data, as: UTF8.self).split(separator: "\n")[1]
+        let fields = row.split(separator: ",")
+        let elapsedSeconds = fields.count > 1 ? Double(String(fields[1])) : nil
+        #expect(elapsedSeconds == 0)
+    }
+
     @Test("pressure chart segments split at gaps longer than the trend tolerance", arguments: [5.0, 5.1])
     func pressureChartSegments(gap: Double) {
         let start = Date(timeIntervalSince1970: 10_000)
@@ -313,6 +339,16 @@ struct BarometricPressureTrendTests {
         #expect(model.calculator.samples.isEmpty)
         callbacks[1](now.addingTimeInterval(21), 85, nil)
         #expect(model.calculator.samples.count == 1)
+        #expect(model.calculator.samples[0].timestamp == now.addingTimeInterval(21))
+        #expect(model.sessionStartedAt == now.addingTimeInterval(20))
+        let restartedExport = PressureCSVExport(
+            samples: model.calculator.samples,
+            sessionStartedAt: model.sessionStartedAt ?? now
+        )
+        #expect(
+            String(decoding: restartedExport.data, as: UTF8.self)
+                .contains("1970-01-01T02:47:01.000Z,1.0,850.0")
+        )
         callbacks[1](now, nil, "Sensor error")
         #expect(model.errorMessage == "Sensor error")
         model.restart(at: now.addingTimeInterval(30))
