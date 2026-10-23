@@ -3,6 +3,7 @@
 //  SkyAware
 //
 
+import CoreLocation
 import Charts
 import CoreMotion
 import CoreTransferable
@@ -311,8 +312,116 @@ final class BarometricPressureModel {
 }
 
 #if DEBUG
+struct PressureElevationFix: Equatable, Sendable {
+    let altitudeMeters: Double
+    let verticalAccuracyMeters: Double
+    let timestamp: Date
+
+    static func accepted(
+        altitude: Double,
+        verticalAccuracy: Double,
+        horizontalAccuracy: Double,
+        timestamp: Date,
+        now: Date
+    ) -> PressureElevationFix? {
+        let age = now.timeIntervalSince(timestamp)
+        guard altitude.isFinite,
+              verticalAccuracy.isFinite, verticalAccuracy > 0, verticalAccuracy <= 100,
+              horizontalAccuracy.isFinite, horizontalAccuracy >= 0, horizontalAccuracy <= 100,
+              age >= 0, age <= 300 else { return nil }
+        return PressureElevationFix(
+            altitudeMeters: altitude,
+            verticalAccuracyMeters: verticalAccuracy,
+            timestamp: timestamp
+        )
+    }
+
+    static func displayValue(meters: Double, locale: Locale = .autoupdatingCurrent) -> String {
+        let unit: UnitLength = locale.measurementSystem == .us ? .feet : .meters
+        return Measurement(value: meters, unit: UnitLength.meters)
+            .converted(to: unit)
+            .formatted(.measurement(width: .abbreviated, usage: .asProvided).locale(locale))
+    }
+
+    func isFresh(at now: Date) -> Bool {
+        let age = now.timeIntervalSince(timestamp)
+        return age >= 0 && age <= 300
+    }
+}
+
+struct PressureElevationState: Equatable, Sendable {
+    private(set) var fix: PressureElevationFix?
+    private(set) var unavailable = false
+
+    mutating func receive(_ fix: PressureElevationFix?) {
+        self.fix = fix
+        unavailable = fix == nil
+    }
+
+    mutating func markUnavailable() {
+        fix = nil
+        unavailable = true
+    }
+
+    func displayedFix(at now: Date) -> PressureElevationFix? {
+        guard let fix, fix.isFresh(at: now) else { return nil }
+        return fix
+    }
+}
+
+@MainActor
+@Observable
+final class PressureElevationReader: NSObject, CLLocationManagerDelegate {
+    private(set) var state = PressureElevationState()
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+
+    func requestIfAuthorized() {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.requestLocation()
+        case .notDetermined, .denied, .restricted:
+            state.markUnavailable()
+        @unknown default:
+            state.markUnavailable()
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else {
+            Task { @MainActor [weak self] in self?.state.markUnavailable() }
+            return
+        }
+        let altitude = location.altitude
+        let verticalAccuracy = location.verticalAccuracy
+        let horizontalAccuracy = location.horizontalAccuracy
+        let timestamp = location.timestamp
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let fix = PressureElevationFix.accepted(
+                altitude: altitude,
+                verticalAccuracy: verticalAccuracy,
+                horizontalAccuracy: horizontalAccuracy,
+                timestamp: timestamp,
+                now: .now
+            )
+            self.state.receive(fix)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        Task { @MainActor [weak self] in self?.state.markUnavailable() }
+    }
+}
+
 struct BarometricPressureTrendView: View {
     @State private var model = BarometricPressureModel()
+    @State private var elevationReader = PressureElevationReader()
 
     var body: some View {
         ScrollView {
@@ -325,6 +434,22 @@ struct BarometricPressureTrendView: View {
                 } else {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         pressureContent(at: Date())
+                    }
+                }
+                TimelineView(.periodic(from: .now, by: 30)) { timeline in
+                    sectionCard(title: "Location Elevation", symbol: "mountain.2", accent: .primary) {
+                        if let fix = elevationReader.state.displayedFix(at: timeline.date) {
+                            LabeledContent("Altitude", value: PressureElevationFix.displayValue(meters: fix.altitudeMeters))
+                            LabeledContent("Vertical Accuracy", value: PressureElevationFix.displayValue(meters: fix.verticalAccuracyMeters))
+                            LabeledContent("Fix Time", value: fix.timestamp.formatted(date: .omitted, time: .standard))
+                            LabeledContent("Fix Age", value: fix.timestamp.formatted(.relative(presentation: .numeric)))
+                            Text("Core Location altitude may use sensor fusion. It is not survey-grade and does not establish why pressure changed.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Elevation unavailable")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 let export = PressureCSVExport(
@@ -345,7 +470,10 @@ struct BarometricPressureTrendView: View {
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .task { model.start() }
+        .task {
+            model.start()
+            elevationReader.requestIfAuthorized()
+        }
         .onDisappear { model.stop() }
     }
 
