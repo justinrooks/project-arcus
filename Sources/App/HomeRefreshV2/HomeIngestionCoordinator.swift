@@ -183,6 +183,15 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
                     hasForegroundOwner: hasForegroundOwner,
                     hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
                 )
+                // Coalescing can replace an explicit location. Its pending callers must terminate rather than
+                // wait for a requirement that the sole follow-up run can no longer satisfy.
+                let supersededWaiterIDs = waiters.values.compactMap { waiter in
+                    waiter.earliestRunNumber > activeRunNumber && !mergedPlan.satisfies(waiter.requestedPlan)
+                        ? waiter.id : nil
+                }
+                for waiterID in supersededWaiterIDs {
+                    cancelWaiter(withID: waiterID)
+                }
             } else {
                 logger.debug(
                     "Home ingestion request queued as follow-up requested={\(requestedPlan.logDescription)}"
