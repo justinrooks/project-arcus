@@ -196,6 +196,13 @@ actor RemoteHotAlertHandler {
 
 protocol LatestHomeProjectionReading: Actor {
     func latestProjectionForWidgetSnapshotRefresh() throws -> HomeProjectionRecord?
+    func latestWidgetPublication() throws -> WidgetSnapshotPublication?
+}
+
+extension LatestHomeProjectionReading {
+    func latestWidgetPublication() throws -> WidgetSnapshotPublication? {
+        try latestProjectionForWidgetSnapshotRefresh().map { WidgetSnapshotPublication(projection: $0) }
+    }
 }
 
 extension HomeProjectionStore: LatestHomeProjectionReading {}
@@ -212,25 +219,26 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
         self.widgetSnapshotRefresher = widgetSnapshotRefresher
     }
 
+#if DEBUG
+    private var publicationCheckpointForTesting: (@Sendable () async -> Void)?
+
+    func setPublicationCheckpointForTesting(_ checkpoint: (@Sendable () async -> Void)?) {
+        publicationCheckpointForTesting = checkpoint
+    }
+#endif
+
     func refreshFromLatestProjection(generatedAt: Date) async throws {
-        guard let latestProjection = try await projectionStore.latestProjectionForWidgetSnapshotRefresh(),
-              latestProjection.lastHotAlertsLoadAt != nil else {
+        guard let publication = try await projectionStore.latestWidgetPublication(),
+              publication.projection.lastHotAlertsLoadAt != nil else {
             return
         }
 
+#if DEBUG
+        await publicationCheckpointForTesting?()
+#endif
         try widgetSnapshotRefresher.refresh(
             scope: .activeAlertProjection,
-            input: .init(
-                generatedAt: generatedAt,
-                riskSnapshotTimestamp: latestProjection.lastSlowProductsLoadAt,
-                alertSnapshotTimestamp: latestProjection.lastHotAlertsLoadAt,
-                stormRisk: latestProjection.stormRisk,
-                severeRisk: latestProjection.severeRisk,
-                fireRisk: latestProjection.fireRisk,
-                alerts: latestProjection.activeAlerts,
-                mesos: latestProjection.activeMesos,
-                locationSummary: latestProjection.placemarkSummary
-            )
+            input: .init(publication: publication, generatedAt: generatedAt)
         )
     }
 }

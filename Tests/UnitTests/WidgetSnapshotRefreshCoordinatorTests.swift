@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import SkyAware
 
@@ -204,6 +205,150 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(shouldRefreshHomeWidgetsForEnvironment([:]))
     }
 
+    @Test("delayed remote A cannot overwrite accepted B", arguments: [false, true])
+    func delayedRemotePublication_preservesAcceptedWinner(changesLocation: Bool) async throws {
+        let sandbox = try makeSandboxDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let file = WidgetSnapshotStore(directoryURL: sandbox)
+        let reloads = ReloadedKindsRecorder()
+        let coordinator = WidgetSnapshotRefreshCoordinator(store: file, reloadTimeline: { reloads.append($0) })
+        let projections = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let time = Date(timeIntervalSince1970: 10_000)
+        let first = widgetContext(cell: 1, name: "A")
+        _ = try await projections.commitCore(
+            .init(slowProducts: (.enhanced, .tornado(probability: 0.1), .critical),
+                  hotAlerts: ([makeAlert(id: "A", title: "Tornado Warning", now: time)], [])),
+            for: first, loadedAt: time
+        )
+        let gate = WidgetPublicationGate()
+        // Match production: independent coordinators and stores share one app-group destination.
+        let remoteCoordinator = WidgetSnapshotRefreshCoordinator(
+            store: WidgetSnapshotStore(directoryURL: sandbox), reloadTimeline: { reloads.append($0) }
+        )
+        let remote = RemoteAlertWidgetSnapshotRefreshDriver(projectionStore: projections, widgetSnapshotRefresher: remoteCoordinator)
+        await remote.setPublicationCheckpointForTesting { await gate.pause() }
+        // A's generatedAt is later than B's: writer clock time cannot establish source order.
+        let delayed = Task { try await remote.refreshFromLatestProjection(generatedAt: time.addingTimeInterval(120)) }
+        await gate.waitUntilPaused()
+        let second = changesLocation ? widgetContext(cell: 2, name: "B") : first
+        // Equal accepted timestamps exercise source revisions independently of wall-clock ordering.
+        let accepted = try await projections.commitCore(
+            .init(slowProducts: (.marginal, .allClear, .clear), hotAlerts: ([], [])),
+            for: second, loadedAt: time
+        )
+        let publication = accepted.widgetPublication
+        try coordinator.refresh(scope: .riskOrLocationProjection, input: .init(publication: publication, generatedAt: time))
+        let winner = try #require(file.load().snapshot)
+        let reloadCount = reloads.values().count
+        await gate.release()
+        try await delayed.value
+        #expect(file.load().snapshot == winner)
+        #expect(winner.locationSummary == second.snapshot.placemarkSummary)
+        #expect(winner.selectedAlert == nil)
+        #expect(winner.stormRisk.label == "Marginal Risk")
+        #expect(winner.severeRisk.label == "No Active Threats")
+        #expect(reloads.values().count == reloadCount)
+
+        // Legitimate receipt and repeated publication of this accepted source still reload Combined.
+        await remote.setPublicationCheckpointForTesting(nil)
+        // Read the same source explicitly: cross-location timestamp ties retain the reader's existing tie policy.
+        let repeatDriver = RemoteAlertWidgetSnapshotRefreshDriver(
+            projectionStore: WidgetPublicationReader(publication: publication), widgetSnapshotRefresher: remoteCoordinator
+        )
+        try await repeatDriver.refreshFromLatestProjection(generatedAt: time.addingTimeInterval(1))
+        #expect(reloads.values().last == SkyAwareWidgetKind.combined)
+        #expect(reloads.values().count == reloadCount + 1)
+
+        _ = try await projections.commitCore(
+            .init(hotAlerts: ([makeAlert(id: "C", title: "Tornado Warning", now: time)], [])),
+            for: second, loadedAt: time.addingTimeInterval(60)
+        )
+        try await remote.refreshFromLatestProjection(generatedAt: time.addingTimeInterval(120))
+        let updated = try #require(file.load().snapshot)
+        #expect(updated.selectedAlert?.title == "Tornado Warning")
+        #expect(updated.locationSummary == second.snapshot.placemarkSummary)
+        #expect(updated.stormRisk == winner.stormRisk)
+        #expect(updated.freshness.timestamp == time)
+        #expect(updated.alertFreshness?.timestamp == time.addingTimeInterval(60))
+        #expect(reloads.values().count == reloadCount + 2)
+    }
+
+    @Test("competing publishers preserve the newest source and whole-file freshness")
+    func competingPublishers_preserveNewestSource() async throws {
+        let sandbox = try makeSandboxDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let file = WidgetSnapshotStore(directoryURL: sandbox)
+        let coordinator = WidgetSnapshotRefreshCoordinator(store: file, reloadTimeline: { _ in })
+        let projections = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let time = Date(timeIntervalSince1970: 10_000)
+        let context = widgetContext(cell: 1, name: "A")
+        let first = try await projections.commitCore(
+            .init(slowProducts: (.enhanced, .tornado(probability: 0.1), .critical), hotAlerts: ([], [])),
+            for: context, loadedAt: time
+        )
+        let second = try await projections.commitCore(
+            .init(hotAlerts: ([makeAlert(id: "B", title: "Tornado Warning", now: time)], [])),
+            for: context, loadedAt: time.addingTimeInterval(60)
+        )
+        let older = first.widgetPublication
+        let newer = second.widgetPublication
+        let competingCoordinator = WidgetSnapshotRefreshCoordinator(
+            store: WidgetSnapshotStore(directoryURL: sandbox), reloadTimeline: { _ in }
+        )
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for index in 0..<40 {
+                group.addTask {
+                    let writer = index.isMultiple(of: 2) ? coordinator : competingCoordinator
+                    try writer.refresh(
+                        scope: .activeAlertProjection,
+                        input: .init(publication: index.isMultiple(of: 2) ? older : newer, generatedAt: time.addingTimeInterval(120))
+                    )
+                }
+            }
+            try await group.waitForAll()
+        }
+        let snapshot = try #require(file.load().snapshot)
+        #expect(snapshot.selectedAlert?.title == "Tornado Warning")
+        #expect(snapshot.stormRisk.label == "Enhanced Risk")
+        #expect(snapshot.freshness.timestamp == time)
+        #expect(snapshot.alertFreshness?.timestamp == time.addingTimeInterval(60))
+    }
+
+    @Test("reselecting cached A publishes after B and rejects delayed B")
+    func cachedLocationReselection_reservesNewOrder() async throws {
+        let sandbox = try makeSandboxDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let file = WidgetSnapshotStore(directoryURL: sandbox)
+        let reloads = ReloadedKindsRecorder()
+        let home = WidgetSnapshotRefreshCoordinator(store: file, reloadTimeline: { reloads.append($0) })
+        let remote = WidgetSnapshotRefreshCoordinator(
+            store: WidgetSnapshotStore(directoryURL: sandbox), reloadTimeline: { reloads.append($0) }
+        )
+        let projections = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let time = Date(timeIntervalSince1970: 10_000)
+        let contextA = widgetContext(cell: 1, name: "A")
+        let a = try await projections.commitCore(
+            .init(slowProducts: (.enhanced, .tornado(probability: 0.1), .critical), hotAlerts: ([], [])),
+            for: contextA, loadedAt: time
+        )
+        try home.refresh(scope: .riskOrLocationProjection, input: .init(publication: a.widgetPublication, generatedAt: time))
+        let b = try await projections.commitCore(
+            .init(slowProducts: (.marginal, .allClear, .clear), hotAlerts: ([], [])),
+            for: widgetContext(cell: 2, name: "B"), loadedAt: time.addingTimeInterval(60)
+        )
+        try remote.refresh(scope: .activeAlertProjection, input: .init(publication: b.widgetPublication, generatedAt: time))
+        let selectedA = try #require(await projections.widgetPublication(for: contextA))
+        try home.refresh(scope: .riskOrLocationProjection, input: .init(publication: selectedA, generatedAt: time))
+        let winner = try #require(file.load().snapshot)
+        #expect(winner.locationSummary == "A")
+        #expect(winner.stormRisk.label == "Enhanced Risk")
+        #expect(Array(reloads.values().suffix(SkyAwareWidgetKind.allSnapshotBacked.count)) == SkyAwareWidgetKind.allSnapshotBacked)
+        let reloadCount = reloads.values().count
+        try remote.refresh(scope: .activeAlertProjection, input: .init(publication: b.widgetPublication, generatedAt: time))
+        #expect(file.load().snapshot == winner)
+        #expect(reloads.values().count == reloadCount)
+    }
+
     private func makeSandboxDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -266,4 +411,41 @@ private extension WidgetSnapshotStoreLoadResult {
         guard case .snapshot(let snapshot) = self else { return nil }
         return snapshot
     }
+}
+
+private actor WidgetPublicationReader: LatestHomeProjectionReading {
+    let publication: WidgetSnapshotPublication
+    init(publication: WidgetSnapshotPublication) { self.publication = publication }
+    func latestProjectionForWidgetSnapshotRefresh() -> HomeProjectionRecord? { publication.projection }
+    func latestWidgetPublication() -> WidgetSnapshotPublication? { publication }
+}
+
+private actor WidgetPublicationGate {
+    private var paused = false
+    private var entered: CheckedContinuation<Void, Never>?
+    private var resume: CheckedContinuation<Void, Never>?
+    func pause() async {
+        paused = true
+        entered?.resume()
+        entered = nil
+        await withCheckedContinuation { resume = $0 }
+    }
+    func waitUntilPaused() async {
+        if !paused { await withCheckedContinuation { entered = $0 } }
+    }
+    func release() { resume?.resume(); resume = nil }
+}
+
+private func widgetContext(cell: Int64, name: String) -> LocationContext {
+    let snapshot = LocationSnapshot(
+        coordinates: .init(latitude: 39.75, longitude: -104.44),
+        timestamp: Date(timeIntervalSince1970: 100), accuracy: 25, placemarkSummary: name, h3Cell: cell
+    )
+    let grid = GridPointSnapshot(
+        nwsId: "BOU/10,20", latitude: 39.75, longitude: -104.44, gridId: "BOU", gridX: 10, gridY: 20,
+        forecastURL: nil, forecastHourlyURL: nil, forecastGridDataURL: nil, observationStationsURL: nil,
+        city: name, state: "CO", timeZoneId: "America/Denver", radarStationId: nil,
+        forecastZone: "COZ038", countyCode: "COC005", fireZone: "COZ214", countyLabel: nil, fireZoneLabel: nil
+    )
+    return LocationContext(snapshot: snapshot, h3Cell: cell, grid: grid)
 }

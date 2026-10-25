@@ -195,6 +195,13 @@ struct RiskProfileChange: Sendable, Equatable {
 struct HomeProjectionCommitAcknowledgement: Sendable, Equatable {
     let record: HomeProjectionRecord
     let riskProfileChange: RiskProfileChange?
+    let widgetPublication: WidgetSnapshotPublication
+
+    init(record: HomeProjectionRecord, riskProfileChange: RiskProfileChange?) {
+        self.record = record
+        self.riskProfileChange = riskProfileChange
+        self.widgetPublication = WidgetSnapshotPublication(projection: record)
+    }
 }
 
 struct HomeProjectionCoreCommit: Sendable {
@@ -235,6 +242,7 @@ struct HomeProjectionCoreCommit: Sendable {
 
 protocol HomeProjectionPersisting: Sendable {
     func projection(for context: LocationContext) async throws -> HomeProjectionRecord?
+    func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication?
 
     func updateStormSetup(
         _ stormSetup: StormSetupCurrentResponse,
@@ -279,6 +287,10 @@ protocol HomeProjectionPersisting: Sendable {
 }
 
 extension HomeProjectionPersisting {
+    func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication? {
+        try await projection(for: context).map { WidgetSnapshotPublication(projection: $0) }
+    }
+
     func updateSlowProducts(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
@@ -311,6 +323,7 @@ actor HomeProjectionStore {
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
     private var awarenessPublisher: WeatherAwarenessSnapshotPublisher?
     private var awarenessRevision: UInt64 = 0
+    private var widgetPublications: [String: WidgetSnapshotPublication] = [:]
     private var awarenessProjectionKey: String?
 
     /// Startup also repairs a missing/failed derived write from the last committed Home state.
@@ -420,6 +433,28 @@ actor HomeProjectionStore {
 
     func latestProjectionForWidgetSnapshotRefresh() throws -> HomeProjectionRecord? {
         try fetchLatestProjection()?.record
+    }
+
+    func widgetPublication(for context: LocationContext) throws -> WidgetSnapshotPublication? {
+        guard let record = try projection(for: context) else { return nil }
+        // An explicit Home selection may revisit a cached location after another location won.
+        let publication = WidgetSnapshotPublication(projection: record)
+        widgetPublications[record.projectionKey] = publication
+        return publication
+    }
+
+    func latestWidgetPublication() throws -> WidgetSnapshotPublication? {
+        guard let record = try latestProjectionForWidgetSnapshotRefresh() else { return nil }
+        return widgetPublication(for: record)
+    }
+
+    private func widgetPublication(for record: HomeProjectionRecord) -> WidgetSnapshotPublication {
+        if let existing = widgetPublications[record.projectionKey], existing.projection == record {
+            return existing
+        }
+        let publication = WidgetSnapshotPublication(projection: record)
+        widgetPublications[record.projectionKey] = publication
+        return publication
     }
 
     /// Read accepted Signal state without changing its location scope or freshness.
@@ -753,6 +788,7 @@ actor HomeProjectionStore {
                 eligibleDimensions: eligibleDimensions
             )
         )
+        widgetPublications[acknowledgement.record.projectionKey] = acknowledgement.widgetPublication
         let acceptsRisk = commit.slowProducts != nil && (commit.updatesConvectiveRisk || commit.updatesFireRisk)
         if acceptsRisk || commit.hotAlerts != nil {
             awarenessProjectionKey = acknowledgement.record.projectionKey
