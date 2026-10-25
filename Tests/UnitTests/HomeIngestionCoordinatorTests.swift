@@ -359,6 +359,77 @@ struct HomeIngestionCoordinatorTests {
         }
     }
 
+    @Test("superseded pending locations terminate without affecting shared owners",
+          arguments: [false, true], [0, 1, 2, 3])
+    func pendingLocationSupersession_terminatesWaiters(backgroundReplacement: Bool, cancellationOrder: Int) async throws {
+        // 0: supersession only; 1: cancel before; 2: race with merge; 3: cancel after supersession.
+        for failsReplacement in [false, true] {
+            let executor = ControlledHomeIngestionExecutor()
+            let coordinator = HomeIngestionCoordinator(executor: executor)
+            let first = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+            let second = makeContext(latitude: 39.90, longitude: -104.10, timestamp: 200)
+            let progress = AsyncCount()
+            let publications = AsyncCount()
+            let active = Task { try await coordinator.enqueueAndWait(.sessionTick) }
+            await coordinator.waitForTestWaiterCount(atLeast: 1)
+            await executor.waitForStartedRun(1)
+            let displaced = Task {
+                try await coordinator.enqueueAndWait(
+                    HomeIngestionRequest(trigger: .foregroundLocationChange, locationContext: first),
+                    progress: { _ in await progress.record() },
+                    publication: { _ in await publications.record() }
+                )
+            }
+            await coordinator.waitForTestWaiterCount(atLeast: 2)
+            let compatible = Task { try await coordinator.enqueueAndWait(.remoteHotAlertReceived) }
+            await coordinator.waitForTestWaiterCount(atLeast: 3)
+            if cancellationOrder == 1 {
+                displaced.cancel()
+                await expectCancellation(displaced)
+            }
+            let replacement = HomeIngestionRequest(
+                trigger: backgroundReplacement ? .backgroundLocationChange : .foregroundLocationChange,
+                locationContext: backgroundReplacement ? nil : second
+            )
+            // Retain fire-and-forget ownership as well as the waiting replacement caller.
+            if cancellationOrder == 2 { displaced.cancel() }
+            await coordinator.enqueue(replacement)
+            let newest = Task { try await coordinator.enqueueAndWait(replacement) }
+            await expectCancellation(displaced)
+            if cancellationOrder == 3 { displaced.cancel() }
+            await coordinator.waitForTestWaiterCount(atLeast: 3)
+            await executor.releaseRun(1)
+            #expect(try await active.value == .empty)
+            await executor.waitForStartedRun(2)
+            await executor.emitProgress(.started(.lane(.hotAlerts)), forRun: 2)
+            await executor.emitCorePublication(forRun: 2)
+            #expect(await progress.value() == 0)
+            #expect(await publications.value() == 0)
+            #expect(await executor.executedPlans().last?.locationRequest == HomeIngestionPlan(request: replacement).locationRequest)
+            if failsReplacement {
+                await executor.failRun(2)
+                for task in [compatible, newest] {
+                    do {
+                        _ = try await task.value
+                        Issue.record("Expected replacement executor failure")
+                    } catch is ControlledHomeIngestionExecutor.TestFailure {
+                    } catch {
+                        Issue.record("Unexpected error: \(error)")
+                    }
+                }
+            } else {
+                await executor.releaseRun(2)
+                #expect(try await compatible.value == .empty)
+                #expect(try await newest.value == .empty)
+            }
+            displaced.cancel()
+            #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+            #expect(await coordinator.testPendingPlanForWaiterCharacterization() == nil)
+            #expect(await executor.executedPlans().count == 2)
+            #expect(await executor.wasCanceled(run: 2) == false)
+        }
+    }
+
     @Test("remote hot-alert requests queue follow-up when active run is not remote-aware")
     func remoteHotAlert_queuesFollowUpWhenActiveRunLacksRemoteContext() async throws {
         let gate = AsyncGate()
@@ -1189,7 +1260,10 @@ private func expectCancellation(_ task: Task<HomeSnapshot, Error>) async {
 }
 
 private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
+    struct TestFailure: Error {}
     private let snapshot: HomeSnapshot
+    private var plans: [HomeIngestionPlan] = []
+    private var failedRuns: Set<Int> = []
     private var progresses: [HomeIngestionRunProgress] = []
     private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
     private let startedRuns = AsyncCount()
@@ -1202,7 +1276,7 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
-        _ = plan
+        plans.append(plan)
         progresses.append(progress)
         let run = progresses.count
         await startedRuns.record()
@@ -1216,6 +1290,7 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
                     cancel(run)
                 }
                 try Task.checkCancellation()
+                if failedRuns.contains(run) { throw TestFailure() }
             } onCancel: {
                 Task {
                     await self.cancel(run)
@@ -1243,6 +1318,13 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
         }
         continuation.resume()
     }
+
+    func failRun(_ run: Int) {
+        failedRuns.insert(run)
+        releaseRun(run)
+    }
+
+    func executedPlans() -> [HomeIngestionPlan] { plans }
 
     func emitProgress(_ event: HomeIngestionProgressEvent, forRun run: Int) async {
         await progress(for: run).report(event)

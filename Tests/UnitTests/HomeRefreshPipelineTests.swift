@@ -363,6 +363,53 @@ struct HomeRefreshPipelineTests {
         #expect(requests[3].locationContext == movedContext)
     }
 
+    @Test("a superseded Home follow-up releases activity and admits deferred movement")
+    func supersededFollowUp_unwindsActivityAndRefreshesDeferredMovement() async throws {
+        let initial = makeContext(h3Cell: 111_111)
+        let moved = makeContext(h3Cell: 222_222, timestamp: 200)
+        let blocker = makeContext(h3Cell: 333_333, timestamp: 300)
+        let executor = SupersessionPipelineExecutor(contexts: [initial, initial, moved, moved])
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let session = FakeLocationSession(currentContext: initial, preparedContext: initial)
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: session)
+
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+        await executor.waitForRun(0)
+        // Queue an incompatible tick before prime finishes, so Home's explicit follow-up must wait behind it.
+        await coordinator.enqueue(.sessionTick, locationContext: blocker)
+        await executor.releaseRun(0)
+        await executor.waitForRun(1)
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        #expect(await coordinator.testPendingPlanForWaiterCharacterization()?.locationRequest == .explicit(initial))
+        #expect(pipeline.isRefreshInFlight)
+
+        session.currentContext = moved
+        session.preparedContext = moved
+        await pipeline.handleContextRefreshKeyChange(moved.refreshKey, scenePhase: .active, environment: environment)
+        await coordinator.enqueue(.backgroundLocationChange)
+        // The canceled follow-up's defer must admit the movement prime before the blocking run is released.
+        let movementAdmitted = await waitUntil {
+            await coordinator.testPendingPlanForWaiterCharacterization()?.locationRequest == .explicit(moved)
+        }
+        #expect(movementAdmitted)
+        await executor.releaseRun(1)
+        await executor.waitForRun(2)
+        await executor.releaseRun(2)
+        await executor.waitForRun(3)
+        await executor.releaseRun(3)
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.isRefreshInFlight == false)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == moved.refreshKey)
+        #expect(pipeline.snap == moved.snapshot)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+        let plans = await executor.executedPlans()
+        #expect(plans.count == 4)
+        #expect(plans.last?.locationRequest == .explicit(moved))
+        await pipeline.handleScenePhaseChange(.background, environment: environment)
+    }
+
     @Test("force refresh waits for unified queue completion when loading is shown")
     func forceRefresh_waitsUntilCoordinatorCompletes() async {
         let gate = AsyncGate()
@@ -5228,6 +5275,33 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
 private enum TestError: Error {
     case failed
+}
+
+private actor SupersessionPipelineExecutor: HomeIngestionExecuting {
+    private let contexts: [LocationContext]
+    private let started: [AsyncGate]
+    private let releases: [AsyncGate]
+    private var plans: [HomeIngestionPlan] = []
+
+    init(contexts: [LocationContext]) {
+        self.contexts = contexts
+        started = contexts.map { _ in AsyncGate() }
+        releases = contexts.map { _ in AsyncGate() }
+    }
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        let index = plans.count
+        precondition(contexts.indices.contains(index), "Unexpected extra ingestion run")
+        plans.append(plan)
+        await started[index].open()
+        await releases[index].wait()
+        let context = contexts[index]
+        return HomeSnapshot(locationContext: context, locationSnapshot: context.snapshot, refreshKey: context.refreshKey)
+    }
+
+    func waitForRun(_ index: Int) async { await started[index].wait() }
+    func releaseRun(_ index: Int) async { await releases[index].open() }
+    func executedPlans() -> [HomeIngestionPlan] { plans }
 }
 
 private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
