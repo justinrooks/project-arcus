@@ -349,6 +349,60 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(reloads.values().count == reloadCount)
     }
 
+    @Test("unrelated A updates cannot reselect its widget content", arguments: [false, true], [false, true])
+    func unrelatedProjectionUpdates_preserveWidgetSelection(weatherOnlyCommit: Bool, recreatesStore: Bool) async throws {
+        let sandbox = try makeSandboxDirectory()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let file = WidgetSnapshotStore(directoryURL: sandbox)
+        let reloadedLocations = ReloadedKindsRecorder()
+        let home = WidgetSnapshotRefreshCoordinator(store: file, reloadTimeline: { _ in })
+        let remoteCoordinator = WidgetSnapshotRefreshCoordinator(
+            store: WidgetSnapshotStore(directoryURL: sandbox),
+            reloadTimeline: { _ in reloadedLocations.append(file.load().snapshot?.locationSummary ?? "missing") }
+        )
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projections = HomeProjectionStore(modelContainer: container)
+        let time = Date(timeIntervalSince1970: 10_000)
+        let contextA = widgetContext(cell: 1, name: "A")
+        let a = try await projections.commitCore(
+            .init(slowProducts: (.enhanced, .tornado(probability: 0.1), .critical), hotAlerts: ([], [])),
+            for: contextA, loadedAt: time
+        )
+        try home.refresh(scope: .riskOrLocationProjection, input: .init(publication: a.widgetPublication, generatedAt: time))
+        let b = try await projections.commitCore(
+            .init(slowProducts: (.marginal, .allClear, .clear), hotAlerts: ([], [])),
+            for: widgetContext(cell: 2, name: "B"), loadedAt: time.addingTimeInterval(60)
+        )
+        let generatedAt = time.addingTimeInterval(60)
+        try home.refresh(scope: .riskOrLocationProjection, input: .init(publication: b.widgetPublication, generatedAt: generatedAt))
+        let winner = try #require(file.load().snapshot)
+        if weatherOnlyCommit {
+            _ = try await projections.commitCore(
+                .init(weather: .some(nil)), for: contextA, loadedAt: time.addingTimeInterval(120)
+            )
+        } else {
+            _ = try await projections.updateWeather(nil, for: contextA, loadedAt: time.addingTimeInterval(120))
+        }
+        // General modification order really does point to A; it must not choose widget content.
+        #expect(try await projections.latestProjectionForWidgetSnapshotRefresh()?.projectionKey == a.record.projectionKey)
+        let reader = recreatesStore ? HomeProjectionStore(modelContainer: container) : projections
+        let selected = try #require(await reader.latestWidgetPublication())
+        #expect(selected.projection.projectionKey == b.record.projectionKey)
+        if !recreatesStore { #expect(selected.order == b.widgetPublication.order) }
+        let remote = RemoteAlertWidgetSnapshotRefreshDriver(projectionStore: reader, widgetSnapshotRefresher: remoteCoordinator)
+        try await remote.refreshFromLatestProjection(generatedAt: generatedAt)
+        #expect(file.load().snapshot == winner)
+        // Repeated publication may reload current B; no callback may expose stale A.
+        #expect(reloadedLocations.values() == ["B"])
+
+        let selectedA = try #require(await reader.widgetPublication(for: contextA))
+        try home.refresh(scope: .riskOrLocationProjection, input: .init(publication: selectedA, generatedAt: generatedAt))
+        try await remote.refreshFromLatestProjection(generatedAt: generatedAt)
+        #expect(file.load().snapshot?.locationSummary == "A")
+        #expect(reloadedLocations.values() == ["B", "A"])
+        #expect(try await reader.latestWidgetPublication()?.order == selectedA.order)
+    }
+
     private func makeSandboxDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
