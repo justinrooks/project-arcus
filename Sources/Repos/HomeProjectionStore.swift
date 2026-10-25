@@ -195,6 +195,13 @@ struct RiskProfileChange: Sendable, Equatable {
 struct HomeProjectionCommitAcknowledgement: Sendable, Equatable {
     let record: HomeProjectionRecord
     let riskProfileChange: RiskProfileChange?
+    let widgetPublication: WidgetSnapshotPublication
+
+    init(record: HomeProjectionRecord, riskProfileChange: RiskProfileChange?) {
+        self.record = record
+        self.riskProfileChange = riskProfileChange
+        self.widgetPublication = WidgetSnapshotPublication(projection: record)
+    }
 }
 
 struct HomeProjectionCoreCommit: Sendable {
@@ -235,6 +242,7 @@ struct HomeProjectionCoreCommit: Sendable {
 
 protocol HomeProjectionPersisting: Sendable {
     func projection(for context: LocationContext) async throws -> HomeProjectionRecord?
+    func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication?
 
     func updateStormSetup(
         _ stormSetup: StormSetupCurrentResponse,
@@ -279,6 +287,10 @@ protocol HomeProjectionPersisting: Sendable {
 }
 
 extension HomeProjectionPersisting {
+    func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication? {
+        try await projection(for: context).map { WidgetSnapshotPublication(projection: $0) }
+    }
+
     func updateSlowProducts(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
@@ -311,6 +323,7 @@ actor HomeProjectionStore {
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
     private var awarenessPublisher: WeatherAwarenessSnapshotPublisher?
     private var awarenessRevision: UInt64 = 0
+    private var acceptedWidgetPublication: WidgetSnapshotPublication?
     private var awarenessProjectionKey: String?
 
     /// Startup also repairs a missing/failed derived write from the last committed Home state.
@@ -420,6 +433,29 @@ actor HomeProjectionStore {
 
     func latestProjectionForWidgetSnapshotRefresh() throws -> HomeProjectionRecord? {
         try fetchLatestProjection()?.record
+    }
+
+    func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication? {
+        guard let record = try projection(for: context) else { return nil }
+        // An explicit Home selection may revisit a cached location after another location won.
+        let publication = WidgetSnapshotPublication(projection: record)
+        acceptedWidgetPublication = publication
+        return publication
+    }
+
+    func latestWidgetPublication() throws -> WidgetSnapshotPublication? {
+        // Reading or enriching a projection does not accept widget content or select its location.
+        if let acceptedWidgetPublication { return acceptedWidgetPublication }
+        // Restore from canonical accepted domains on startup, never general modification time.
+        let record = try retentionCoordinator.withActiveProjectionKey { activeKey in
+            if let key = activeKey ?? awarenessProjectionKey { return try fetchProjection(withKey: key)?.record }
+            return try fetchLatestAwarenessProjection()?.record
+        }
+        guard let record,
+              record.lastSlowProductsLoadAt != nil || record.lastHotAlertsLoadAt != nil else { return nil }
+        let publication = WidgetSnapshotPublication(projection: record)
+        acceptedWidgetPublication = publication
+        return publication
     }
 
     /// Read accepted Signal state without changing its location scope or freshness.
@@ -649,6 +685,7 @@ actor HomeProjectionStore {
         projection.updatedAt = loadedAt
         try saveProjection(named: "Projection Hot Alerts Save")
         let record = projection.record
+        acceptedWidgetPublication = WidgetSnapshotPublication(projection: record)
         awarenessProjectionKey = record.projectionKey
         await publishAcceptedAwareness()
         return record
@@ -755,6 +792,7 @@ actor HomeProjectionStore {
         )
         let acceptsRisk = commit.slowProducts != nil && (commit.updatesConvectiveRisk || commit.updatesFireRisk)
         if acceptsRisk || commit.hotAlerts != nil {
+            acceptedWidgetPublication = acknowledgement.widgetPublication
             awarenessProjectionKey = acknowledgement.record.projectionKey
             await publishAcceptedAwareness()
         }

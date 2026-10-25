@@ -1,9 +1,27 @@
 import Foundation
+import Synchronization
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
 
+/// Reserved at the accepted-state owner, before any suspension can reorder publishers.
+/// This is process-local ordering only: no publisher survives an app process restart.
+struct WidgetSnapshotPublication: Sendable, Equatable {
+    private static let sequence = Mutex<UInt64>(0)
+    let order: UInt64
+    let projection: HomeProjectionRecord
+
+    init(projection: HomeProjectionRecord) {
+        self.projection = projection
+        self.order = Self.sequence.withLock { value in
+            value += 1
+            return value
+        }
+    }
+}
+
 struct WidgetSnapshotRefreshInput: Sendable {
+    let publication: WidgetSnapshotPublication?
     let generatedAt: Date
     let riskSnapshotTimestamp: Date?
     let alertSnapshotTimestamp: Date?
@@ -16,6 +34,7 @@ struct WidgetSnapshotRefreshInput: Sendable {
 
     init(
         generatedAt: Date,
+        publication: WidgetSnapshotPublication? = nil,
         snapshotTimestamp: Date? = nil,
         riskSnapshotTimestamp: Date? = nil,
         alertSnapshotTimestamp: Date? = nil,
@@ -26,6 +45,7 @@ struct WidgetSnapshotRefreshInput: Sendable {
         mesos: [MdDTO],
         locationSummary: String?
     ) {
+        self.publication = publication
         self.generatedAt = generatedAt
         self.riskSnapshotTimestamp = riskSnapshotTimestamp ?? snapshotTimestamp
         self.alertSnapshotTimestamp = alertSnapshotTimestamp ?? snapshotTimestamp
@@ -35,6 +55,26 @@ struct WidgetSnapshotRefreshInput: Sendable {
         self.alerts = alerts
         self.mesos = mesos
         self.locationSummary = locationSummary
+    }
+
+    init(
+        publication: WidgetSnapshotPublication,
+        generatedAt: Date,
+        riskSnapshotTimestamp: Date? = nil
+    ) {
+        let record = publication.projection
+        self.init(
+            generatedAt: generatedAt,
+            publication: publication,
+            riskSnapshotTimestamp: riskSnapshotTimestamp ?? record.lastSlowProductsLoadAt,
+            alertSnapshotTimestamp: record.lastHotAlertsLoadAt,
+            stormRisk: record.stormRisk,
+            severeRisk: record.severeRisk,
+            fireRisk: record.fireRisk,
+            alerts: record.activeAlerts,
+            mesos: record.activeMesos,
+            locationSummary: record.placemarkSummary
+        )
     }
 
     var snapshotTimestamp: Date? {
@@ -86,7 +126,7 @@ struct WidgetSnapshotRefreshCoordinator: WidgetSnapshotRefreshing {
             ),
             now: input.generatedAt
         )
-        try store.write(snapshot)
+        guard try store.write(snapshot, publicationOrder: input.publication?.order) else { return }
         for kind in affectedKinds(for: scope) {
             reloadTimeline(kind)
         }

@@ -1140,8 +1140,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
         guard weather != nil || slowProducts != nil || hotAlerts != nil else {
             let projection: HomeProjectionRecord?
+            let publication: WidgetSnapshotPublication?
             do {
-                projection = try await projectionStore.projection(for: context)
+                publication = try await projectionStore.widgetPublication(for: context)
+                projection = publication?.projection
             } catch {
                 environment.logger.error(
                     "Failed to load the persisted home projection during ingestion: \(error.localizedDescription, privacy: .public)"
@@ -1152,8 +1154,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             do {
                 try refreshWidgets(
                     for: plan,
-                    projection: projection,
-                    snapshot: snapshot,
+                    publication: publication,
                     loadedAt: loadedAt,
                     slowProductDecision: slowProductDecision,
                     acceptsHotFeedSnapshot: acceptsHotFeedSnapshot
@@ -1193,8 +1194,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         do {
             try refreshWidgets(
                 for: plan,
-                projection: acknowledgement.record,
-                snapshot: snapshot,
+                publication: acknowledgement.widgetPublication,
                 loadedAt: loadedAt,
                 slowProductDecision: slowProductDecision,
                 acceptsHotFeedSnapshot: acceptsHotFeedSnapshot
@@ -1209,8 +1209,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
     private func refreshWidgets(
         for plan: HomeIngestionPlan,
-        projection: HomeProjectionRecord?,
-        snapshot: HomeSnapshot,
+        publication: WidgetSnapshotPublication?,
         loadedAt: Date,
         slowProductDecision: SlowProductPersistenceDecision,
         acceptsHotFeedSnapshot: Bool
@@ -1228,22 +1227,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
             return
         }
-        guard let projection else {
+        guard let publication else {
             return
         }
         try widgetSnapshotRefresher.refresh(
             scope: scope,
             input: .init(
+                publication: publication,
                 generatedAt: loadedAt,
                 riskSnapshotTimestamp: slowProductDecision.convectiveFreshnessTimestamp
-                    ?? projection.lastSlowProductsLoadAt,
-                alertSnapshotTimestamp: projection.lastHotAlertsLoadAt,
-                stormRisk: snapshot.stormRisk,
-                severeRisk: snapshot.severeRisk,
-                fireRisk: snapshot.fireRisk,
-                alerts: projection.activeAlerts,
-                mesos: projection.activeMesos,
-                locationSummary: snapshot.locationSnapshot?.placemarkSummary
             )
         )
     }

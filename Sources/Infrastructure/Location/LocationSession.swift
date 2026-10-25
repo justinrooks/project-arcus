@@ -22,7 +22,7 @@ enum LocationStartupState: Equatable {
 
 @MainActor
 @Observable
-final class LocationSession {
+final class LocationSession: Sendable {
     private var isUITestStaticHome: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
     }
