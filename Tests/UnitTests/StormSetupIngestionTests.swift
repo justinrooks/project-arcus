@@ -2,6 +2,7 @@ import CoreLocation
 import Foundation
 import OSLog
 import SwiftData
+import Synchronization
 import Testing
 import ArcusCore
 @testable import SkyAware
@@ -9,6 +10,196 @@ import ArcusCore
 @MainActor
 @Suite("Storm Setup Ingestion", .serialized)
 struct StormSetupIngestionTests {
+    @Test("automatic and manual remain analyzing through a virtual 25-second success", arguments: [false, true])
+    func pipeline_pendingToSuccess(manual: Bool) async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let dates = MutableDateProvider(fixedNow)
+        let deadline = ControlledStormSetupDeadline()
+        let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let harness = try makeHarness(
+            context: context, query: StormSetupQueryingFake(response: .success(dto), gate: gate), dateProvider: dates,
+            stormSetupDeadlineNow: { dates.deadlineNow },
+            stormSetupDeadlineSleep: { try await deadline.sleep(seconds: $0) }
+        )
+        let pipeline = HomeRefreshPipeline(initialStormRisk: .enhanced)
+        let spc = StormSetupTestSpcProvider()
+        let environment = HomeRefreshPipeline.Environment(
+            logger: Logger(subsystem: "SkyAwareTests", category: "StormSetupActivity"),
+            sync: spc, outlooks: spc,
+            coordinator: HomeIngestionCoordinator(executor: harness.executor),
+            locationSession: harness.locationSession
+        )
+        let task = Task {
+            if manual {
+                await pipeline.refreshStormSetupManually(environment: environment)
+            } else {
+                await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+            }
+        }
+        await gate.waitForStartedCount(1)
+        try #require(await waitUntil(timeout: 5) { await deadline.seconds != nil })
+        #expect(await deadline.seconds == 30)
+        let startedAt = dates.deadlineNow
+        dates.advance(by: 25)
+        #expect(startedAt.duration(to: dates.deadlineNow) == .seconds(25))
+        #expect(pipeline.isStormSetupRefreshInFlight)
+        #expect(StormSetupSummaryState.select(.init(
+            policyInput: .init(preferences: .init(stormSetupEnabled: true), stormRisk: .enhanced, severeRisk: nil,
+                               hasQualifyingConvectiveAlert: false, hasActiveMeso: false,
+                               assessmentOverall: nil, payloadExpiresAt: nil, now: dates.date),
+            hasDisplayableGuidance: false, isRefreshInFlight: pipeline.isStormSetupRefreshInFlight,
+            isLocationUnavailable: false, attemptResult: pipeline.stormSetupAttemptResult
+        )) == .analyzing)
+        #expect(pipeline.stormSetupAttemptResult == nil)
+        if manual == false {
+            #expect(pipeline.summaryWeather == sampleWeather())
+            #expect(pipeline.stormRisk == .enhanced)
+            #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+        }
+        await gate.open()
+        await task.value
+        await deadline.release()
+        #expect(pipeline.isStormSetupRefreshInFlight == false)
+        #expect(pipeline.stormSetupAttemptResult == .success)
+        #expect(pipeline.stormSetup == normalizedStormSetupDTO(dto))
+    }
+
+    @Test("joining visible refresh preserves genuine failure and timeout outcomes", arguments: [false, true])
+    func pipeline_joinAfterStartPreservesTerminalOutcome(timeout: Bool) async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let error: any Error = timeout ? URLError(.timedOut) : TestError.failed
+        let harness = try makeHarness(context: context, query: StormSetupQueryingFake(response: .failure(error), gate: gate))
+        let coordinator = HomeIngestionCoordinator(executor: harness.executor)
+        let spc = StormSetupTestSpcProvider()
+        let environment = HomeRefreshPipeline.Environment(
+            logger: Logger(subsystem: "SkyAwareTests", category: "StormSetupActivity"),
+            sync: spc, outlooks: spc, coordinator: coordinator, locationSession: harness.locationSession
+        )
+        let pipeline = HomeRefreshPipeline()
+        let first = Task { await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment) }
+        await gate.waitForStartedCount(1)
+        #expect(pipeline.isStormSetupRefreshInFlight)
+        let second = Task { await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment) }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        await gate.open()
+        await first.value
+        await second.value
+        #expect(await harness.query.requestCount() == 1)
+        #expect(pipeline.isStormSetupRefreshInFlight == false)
+        #expect(pipeline.stormSetupAttemptResult == (timeout ? .timeout : .failure))
+        #expect(pipeline.stormSetup == nil)
+    }
+
+    @Test("old manual completion cannot clear a replacement location's activity or result")
+    func pipeline_manualLocationReplacementPreservesNewOwner() async throws {
+        let firstContext = makeContext()
+        let secondContext = makeContext(h3Cell: 654_321, timestamp: 200)
+        let firstGate = CancellationGate()
+        let secondGate = CancellationGate()
+        let firstDTO = makeStormSetupDTO(h3Cell: firstContext.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let secondDTO = makeStormSetupDTO(h3Cell: secondContext.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let query = LocationGatedStormSetupQuery(
+            responses: [firstContext.h3Cell: firstDTO.stormSetupCurrentResponse, secondContext.h3Cell: secondDTO.stormSetupCurrentResponse],
+            gates: [firstContext.h3Cell: firstGate, secondContext.h3Cell: secondGate]
+        )
+        let harness = try makeHarness(context: firstContext, stormSetupQueryingOverride: query)
+        let spc = StormSetupTestSpcProvider()
+        let environment = HomeRefreshPipeline.Environment(
+            logger: Logger(subsystem: "SkyAwareTests", category: "StormSetupActivity"),
+            sync: spc, outlooks: spc, coordinator: HomeIngestionCoordinator(executor: harness.executor),
+            locationSession: harness.locationSession
+        )
+        let pipeline = HomeRefreshPipeline()
+        let first = Task { await pipeline.refreshStormSetupManually(environment: environment) }
+        await firstGate.waitForStartedCount(1)
+        harness.locationSession.currentContext = secondContext
+        harness.locationSession.preparedContext = secondContext
+        await pipeline.handleContextRefreshKeyChange(secondContext.refreshKey, scenePhase: .inactive, environment: environment)
+        let second = Task { await pipeline.refreshStormSetupManually(environment: environment) }
+        await secondGate.waitForStartedCount(1)
+        await firstGate.open()
+        await first.value
+        #expect(pipeline.isStormSetupRefreshInFlight)
+        #expect(pipeline.stormSetupAttemptResult == nil)
+        #expect(pipeline.stormSetup == nil)
+        #expect(pipeline.stormSetupRefreshKey == secondContext.refreshKey)
+        await secondGate.open()
+        await second.value
+        #expect(pipeline.isStormSetupRefreshInFlight == false)
+        #expect(pipeline.stormSetupAttemptResult == .success)
+        #expect(pipeline.stormSetup == normalizedStormSetupDTO(secondDTO))
+    }
+
+    @Test("deadline and cancellation return before an uncooperative query and reject its late success",
+          arguments: [false, true])
+    func foregroundDeadline_rejectsLateSuccess(cancel: Bool) async throws {
+        let context = makeContext()
+        let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let query = ControlledStormSetupQuery(response: dto.stormSetupCurrentResponse)
+        let deadline = ControlledStormSetupDeadline()
+        let store = try makeProjectionStore()
+        let ingestion = HomeStormSetupIngestion(
+            logger: Logger(subsystem: "SkyAwareTests", category: "StormSetupDeadline"),
+            querying: query, projectionStore: store,
+            preferencesReader: { .init(stormSetupEnabled: true) }, currentDate: { fixedNow },
+            foregroundTimeout: 30, failedAttemptBackoff: 300,
+            sleepForDeadline: { try await deadline.sleep(seconds: $0) }
+        )
+        let task = Task {
+            await ingestion.refresh(
+                context: context, snapshot: HomeSnapshot(stormRisk: .enhanced),
+                plan: .init(request: .init(trigger: .foregroundActivate)), executionMode: .foreground
+            )
+        }
+        try #require(await waitUntil(timeout: 5) { await query.isStarted })
+        try #require(await waitUntil(timeout: 5) { await deadline.seconds != nil })
+        if cancel { task.cancel() } else { await deadline.release() }
+        let decision = await task.value
+        #expect(decision.result == (cancel ? .cancelled : .timeout))
+        #expect(decision.stormSetup == nil)
+        #expect(await query.hasReturned == false)
+        await query.release()
+        await deadline.release()
+        #expect(await waitUntil(timeout: 5) { await query.hasReturned })
+        #expect(try await store.projection(for: context)?.stormSetup == nil)
+    }
+
+    @Test("cache expiring while a manual request runs is not returned after failure")
+    func cacheExpiringDuringRequest_isNotReturned() async throws {
+        let context = makeContext()
+        let dates = MutableDateProvider(fixedNow)
+        let cache = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(20))
+        let store = try makeProjectionStore()
+        _ = try await store.updateStormSetup(cache.stormSetupCurrentResponse, for: context, loadedAt: fixedNow)
+        let query = ControlledStormSetupQuery(response: cache.stormSetupCurrentResponse)
+        let deadline = ControlledStormSetupDeadline()
+        let ingestion = HomeStormSetupIngestion(
+            logger: Logger(subsystem: "SkyAwareTests", category: "StormSetupDeadline"),
+            querying: query, projectionStore: store,
+            preferencesReader: { .init(stormSetupEnabled: true) }, currentDate: { dates.date },
+            foregroundTimeout: 30, failedAttemptBackoff: 300,
+            sleepForDeadline: { try await deadline.sleep(seconds: $0) }
+        )
+        let task = Task {
+            await ingestion.refresh(
+                context: context, snapshot: .empty,
+                plan: .init(request: .init(trigger: .foregroundActivate)), executionMode: .foreground,
+                intent: .userInitiated
+            )
+        }
+        try #require(await waitUntil(timeout: 5) { await query.isStarted })
+        try #require(await waitUntil(timeout: 5) { await deadline.seconds != nil })
+        dates.date = fixedNow.addingTimeInterval(30)
+        await deadline.release()
+        let decision = await task.value
+        #expect(decision.result == .timeout)
+        #expect(decision.stormSetup == nil)
+        await query.release()
+        #expect(try await store.projection(for: context)?.stormSetup == normalizedStormSetupDTO(cache))
+    }
+
     @Test("manual Storm Setup refresh bypasses fresh-cache and automatic eligibility gates")
     func manualRefresh_bypassesFreshCacheAndAutomaticEligibility() async throws {
         let context = makeContext()
@@ -391,7 +582,7 @@ struct StormSetupIngestionTests {
         }
         #expect(bothStarted)
         let coreOnly = await publications.values()
-        #expect(coreOnly.count == 1)
+        #expect(coreOnly.count == 2)
         let corePublication = try #require(coreOnly.first)
         #expect(corePublication.runID == runID)
         guard case .core(let core) = corePublication.stage else {
@@ -421,12 +612,17 @@ struct StormSetupIngestionTests {
         }
         #expect(stormSettled)
         #expect(await completion.isCompleted() == false)
-        #expect(await publications.values().count == 1)
+        #expect(await waitUntil(timeout: 5) {
+            await publications.values().contains { publication in
+                if case .stormSetupFinished(_, let decision) = publication.stage { return decision.result == .success }
+                return false
+            }
+        })
         await airQualityGate.open()
 
         let snapshot = try await task.value
         let allPublications = await publications.values()
-        #expect(allPublications.count == 2)
+        #expect(allPublications.count == 4)
         let enrichmentPublication = try #require(allPublications.last)
         #expect(enrichmentPublication.runID == runID)
         guard case .enrichment(let enrichment) = enrichmentPublication.stage else {
@@ -561,6 +757,7 @@ struct StormSetupIngestionTests {
         let airQualityResponse = try makeAirQualityResponse()
         let cases: [(String, StormSetupQueryingFake.Response, TimeInterval, HomeStormSetupRefreshResult)] = [
             ("failure", .failure(TestError.failed), 5, .failure),
+            ("transport timeout", .failure(URLError(.timedOut)), 5, .timeout),
             (
                 "timeout",
                 .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
@@ -570,7 +767,7 @@ struct StormSetupIngestionTests {
         ]
 
         for testCase in cases {
-            let gate = testCase.3 == .timeout ? CancellationGate() : nil
+            let gate = testCase.0 == "timeout" ? CancellationGate() : nil
             let query = StormSetupQueryingFake(response: testCase.1, gate: gate)
             let harness = try makeHarness(
                 context: context,
@@ -1938,6 +2135,7 @@ struct StormSetupIngestionTests {
     private func makeHarness(
         context: LocationContext,
         query: StormSetupQueryingFake? = nil,
+        stormSetupQueryingOverride: (any StormSetupQuerying)? = nil,
         weather: FakeWeatherClient = FakeWeatherClient(result: .success(sampleWeather())),
         airQualityQuerying: AirQualityQueryingFake? = nil,
         alerts: StormSetupTestArcusProvider = StormSetupTestArcusProvider(),
@@ -1952,8 +2150,12 @@ struct StormSetupIngestionTests {
         activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
         activeMesos: [MdDTO] = [MD.sampleDiscussionDTOs[0]],
         mapSyncOutcome: SpcMapSyncOutcome = .accepted,
-        stormSetupForegroundTimeout: TimeInterval = 5,
-        stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
+        stormSetupForegroundTimeout: TimeInterval = StormSetupHTTPClient.foregroundTimeout,
+        stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60,
+        stormSetupDeadlineNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
+        stormSetupDeadlineSleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        }
     ) throws -> StormSetupHarness {
         let container = try TestStore.container(for: [HomeProjection.self])
         let resolvedProjectionStore = projectionStore ?? HomeProjectionStore(modelContainer: container)
@@ -1985,12 +2187,14 @@ struct StormSetupIngestionTests {
                 ),
                 projectionStore: resolvedProjectionStore,
                 widgetSnapshotRefresher: widgetSnapshotRefresher,
-                stormSetupQuerying: stormSetupQuery,
+                stormSetupQuerying: stormSetupQueryingOverride ?? stormSetupQuery,
                 airQualityQuerying: airQualityQuerying,
                 stormSetupPreferencesReader: preferencesReader,
                 stormSetupCurrentDate: { dateProvider.date },
                 stormSetupForegroundTimeout: stormSetupForegroundTimeout,
-                stormSetupFailedAttemptBackoff: stormSetupFailedAttemptBackoff
+                stormSetupFailedAttemptBackoff: stormSetupFailedAttemptBackoff,
+                stormSetupDeadlineNow: stormSetupDeadlineNow,
+                stormSetupDeadlineSleep: stormSetupDeadlineSleep
             )
         )
 
@@ -2145,6 +2349,58 @@ private struct StormSetupHarness {
     let airQualityQuerying: AirQualityQueryingFake?
     let locationSession: FakeLocationSession
     let dateProvider: MutableDateProvider
+}
+
+// These providers deliberately ignore cancellation. Tests release every continuation after
+// verifying the caller finished, so a task-group drain would deadlock the regression.
+private actor LocationGatedStormSetupQuery: StormSetupQuerying {
+    let responses: [Int64: StormSetupCurrentResponse]
+    let gates: [Int64: CancellationGate]
+
+    init(responses: [Int64: StormSetupCurrentResponse], gates: [Int64: CancellationGate]) {
+        self.responses = responses
+        self.gates = gates
+    }
+
+    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse {
+        await gates[h3Cell]?.markStarted()
+        try await gates[h3Cell]?.wait()
+        return try #require(responses[h3Cell])
+    }
+}
+
+private actor ControlledStormSetupQuery: StormSetupQuerying {
+    let response: StormSetupCurrentResponse
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var isStarted = false
+    private(set) var hasReturned = false
+
+    init(response: StormSetupCurrentResponse) { self.response = response }
+
+    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            isStarted = true
+        }
+        hasReturned = true
+        return response
+    }
+
+    func release() { continuation?.resume(); continuation = nil }
+}
+
+private actor ControlledStormSetupDeadline {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var seconds: TimeInterval?
+
+    func sleep(seconds: TimeInterval) async throws {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            self.seconds = seconds
+        }
+    }
+
+    func release() { continuation?.resume(); continuation = nil }
 }
 
 private actor CancellationGate {
@@ -2954,11 +3210,24 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     }
 }
 
-private final class MutableDateProvider: @unchecked Sendable {
-    var date: Date
+private final class MutableDateProvider: Sendable {
+    private let storedDate: Mutex<Date>
+    private let storedInstant = Mutex(ContinuousClock().now)
+
+    var deadlineNow: ContinuousClock.Instant { storedInstant.withLock { $0 } }
+
+    func advance(by seconds: TimeInterval) {
+        storedDate.withLock { $0 = $0.addingTimeInterval(seconds) }
+        storedInstant.withLock { $0 = $0.advanced(by: .seconds(seconds)) }
+    }
+
+    var date: Date {
+        get { storedDate.withLock { $0 } }
+        set { storedDate.withLock { $0 = newValue } }
+    }
 
     init(_ date: Date) {
-        self.date = date
+        storedDate = Mutex(date)
     }
 }
 

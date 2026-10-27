@@ -393,6 +393,27 @@ struct HTTPDataDownloaderTests {
         #expect(backgroundTimeout == backgroundPolicy.requestTimeout)
     }
 
+    @Test("Storm Setup foreground transport allows 30 seconds and does not retry server failures")
+    func stormSetupForegroundTransport_honorsEndpointPolicy() async throws {
+        let url = URL(string: "https://example.test/v1/storm-setup/current?h3=123456")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [
+            .response(status: 503, headers: ["Retry-After": "45"], body: nil),
+            .response(status: 200, headers: [:], body: nil)
+        ]])
+        let sleeps = Mutex<[TimeInterval]>([])
+        let client = makeDownloader(
+            foregroundPolicy: StormSetupHTTPClient.foregroundPolicy,
+            sleepFor: { delay in sleeps.withLock { $0.append(delay) } }
+        )
+        let response = try await HTTPExecutionMode.$current.withValue(.foreground) {
+            try await client.get(url, headers: [:], fallbackPolicy: .disallowed)
+        }
+        #expect(response.status == 503)
+        #expect(HTTPTestURLProtocol.requestTimeouts(for: url) == [30])
+        #expect(sleeps.withLock { $0 }.isEmpty)
+    }
+
     @Test("Budgeted background request timeout is capped to remaining work")
     func budgetedBackgroundRequestCapsTimeout() async throws {
         let url = URL(string: "https://example.test/budget-timeout")!

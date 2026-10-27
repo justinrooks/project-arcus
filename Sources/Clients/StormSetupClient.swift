@@ -10,6 +10,13 @@ import ArcusCore
 import OSLog
 
 struct StormSetupHTTPClient: StormSetupQuerying {
+    static let foregroundTimeout: TimeInterval = 30
+    static let foregroundPolicy = HTTPRequestPolicy(
+        requestTimeout: foregroundTimeout,
+        resourceTimeout: foregroundTimeout,
+        retryDelays: []
+    )
+
     private let http: HTTPClient
     private let baseURL: URL
     private let logger = Logger.providersArcusClient
@@ -17,7 +24,7 @@ struct StormSetupHTTPClient: StormSetupQuerying {
 
     init(
         baseURL: URL = ArcusSignalConfiguration.baseURL(),
-        http: HTTPClient = URLSessionHTTPClient()
+        http: HTTPClient = URLSessionHTTPClient(foregroundPolicy: Self.foregroundPolicy)
     ) {
         self.baseURL = baseURL
         self.http = http

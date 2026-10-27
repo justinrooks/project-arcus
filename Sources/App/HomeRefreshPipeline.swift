@@ -124,6 +124,10 @@ final class HomeRefreshPipeline {
     private var manualRefreshProjectionKey: String?
     private var manualRefreshAttemptID: UUID?
     private(set) var isStormSetupRefreshInFlight: Bool
+    private(set) var stormSetupAttemptResult: HomeStormSetupRefreshResult?
+    private var manualStormSetupAttemptID: UUID?
+    private var automaticStormSetupRunID: UUID?
+    private var finishedStormSetupRunID: UUID?
     private(set) var isManualRefreshInFlight = false
     private(set) var didManualRefreshFail = false
     private(set) var didManualAlertRefreshFail = false
@@ -174,6 +178,7 @@ final class HomeRefreshPipeline {
         initialOutlook: ConvectiveOutlookDTO? = nil,
         initialRefreshInFlight: Bool = false,
         initialStormSetupRefreshInFlight: Bool = false,
+        initialStormSetupAttemptResult: HomeStormSetupRefreshResult? = nil,
         foregroundTimerInterval: Duration = .seconds(120)
     ) {
         self.snap = initialSnap
@@ -197,6 +202,7 @@ final class HomeRefreshPipeline {
         )
         self.activeRefreshCount = initialRefreshInFlight ? 1 : 0
         self.isStormSetupRefreshInFlight = initialStormSetupRefreshInFlight
+        self.stormSetupAttemptResult = initialStormSetupAttemptResult
         self.outlookRefreshStatus = initialOutlooks.isEmpty && initialOutlook == nil ? .loading : .success(hasContent: true)
         self.foregroundTimerInterval = foregroundTimerInterval
     }
@@ -207,6 +213,7 @@ final class HomeRefreshPipeline {
 
     func resetLocationRefreshContext() {
         deferredContextRefreshKey = nil
+        resetStormSetupActivity()
         didManualAlertRefreshFail = false
     }
 
@@ -276,7 +283,6 @@ final class HomeRefreshPipeline {
 
     func refreshStormSetupManually(environment: Environment) async {
         updateEnvironment(environment)
-        guard isStormSetupRefreshInFlight == false else { return }
         guard let context = environment.locationSession.currentContext else {
             environment.logger.debug("Skipping manual Storm Setup refresh reason=no-location")
             return
@@ -286,8 +292,22 @@ final class HomeRefreshPipeline {
             return
         }
 
+        if stormSetupRefreshKey != context.refreshKey {
+            resetStormSetupActivity()
+            stormSetup = nil
+            stormSetupCurrentResponse = nil
+            stormSetupRefreshKey = context.refreshKey
+        }
+        guard isStormSetupRefreshInFlight == false else { return }
+        let attemptID = UUID()
+        manualStormSetupAttemptID = attemptID
         isStormSetupRefreshInFlight = true
-        defer { isStormSetupRefreshInFlight = false }
+        defer {
+            if manualStormSetupAttemptID == attemptID {
+                manualStormSetupAttemptID = nil
+                isStormSetupRefreshInFlight = false
+            }
+        }
 
         let snapshot = HomeSnapshot(
             locationContext: context,
@@ -304,10 +324,12 @@ final class HomeRefreshPipeline {
             latestOutlook: outlook
         )
         let decision = await coordinator.refreshStormSetupManually(context: context, snapshot: snapshot)
-        guard environment.locationSession.currentContext?.refreshKey == context.refreshKey else {
+        guard manualStormSetupAttemptID == attemptID,
+              environment.locationSession.currentContext?.refreshKey == context.refreshKey else {
             environment.logger.debug("Discarding manual Storm Setup refresh reason=context-changed")
             return
         }
+        recordStormSetupResult(decision.result)
         applyStormSetup(
             .init(
                 snapshot: HomeSnapshot(
@@ -330,6 +352,7 @@ final class HomeRefreshPipeline {
         environment: Environment
     ) async {
         updateEnvironment(environment)
+        if newKey != stormSetupRefreshKey { resetStormSetupActivity() }
         let projectionKey = environment.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
         if manualRefreshProjectionKey != projectionKey {
             isManualRefreshInFlight = false
@@ -819,6 +842,10 @@ final class HomeRefreshPipeline {
         defer {
             if latestVisibleSubmissionID == submissionID {
                 latestVisibleSubmissionID = nil
+                if automaticStormSetupRunID != nil, manualStormSetupAttemptID == nil {
+                    isStormSetupRefreshInFlight = false
+                    automaticStormSetupRunID = nil
+                }
             }
         }
 
@@ -835,6 +862,9 @@ final class HomeRefreshPipeline {
             applyFinalSnapshotIfNeeded(snapshot, submissionID: submissionID)
             return snapshot
         } catch {
+            if latestVisibleSubmissionID == submissionID, automaticStormSetupRunID != nil {
+                stormSetupAttemptResult = .cancelled
+            }
             if latestVisibleSubmissionID == submissionID,
                acceptedCorePublication?.submissionID != submissionID {
                 lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
@@ -858,6 +888,23 @@ final class HomeRefreshPipeline {
         case .coreSuppressed:
             guard acceptedCorePublication?.submissionID != submissionID else { return }
             suppressedCoreSubmissionID = submissionID
+        case .stormSetupStarted(let refreshKey):
+            guard acceptsStormSetupUpdate(refreshKey, runID: publication.runID, submissionID: submissionID),
+                  manualStormSetupAttemptID == nil else { return }
+            automaticStormSetupRunID = publication.runID
+            isStormSetupRefreshInFlight = true
+        case .stormSetupFinished(let refreshKey, let decision):
+            guard acceptsStormSetupUpdate(refreshKey, runID: publication.runID, submissionID: submissionID),
+                  manualStormSetupAttemptID == nil else { return }
+            automaticStormSetupRunID = nil
+            isStormSetupRefreshInFlight = false
+            finishedStormSetupRunID = publication.runID
+            recordStormSetupResult(decision.result)
+            applyStormSetup(.init(snapshot: HomeSnapshot(
+                refreshKey: refreshKey,
+                stormSetup: decision.stormSetup,
+                stormSetupCurrentResponse: decision.currentResponse
+            )))
         case .enrichment(let enrichment):
             guard acceptedCorePublication == AcceptedCorePublication(
                 submissionID: submissionID,
@@ -866,8 +913,44 @@ final class HomeRefreshPipeline {
             ) else {
                 return
             }
-            applyEnrichment(enrichment)
+            if finishedStormSetupRunID != publication.runID, manualStormSetupAttemptID == nil,
+               environment?.locationSession.currentContext?.refreshKey == enrichment.refreshKey {
+                applyStormSetup(enrichment)
+            }
+            if case .replace(let response) = enrichment.airQualityOutcome {
+                airQuality = response
+                airQualityRefreshKey = enrichment.refreshKey
+            }
         }
+    }
+
+    private func acceptsStormSetupUpdate(
+        _ refreshKey: LocationContext.RefreshKey,
+        runID: UUID,
+        submissionID: UUID
+    ) -> Bool {
+        guard let accepted = acceptedCorePublication,
+              accepted.runID == runID, accepted.refreshKey == refreshKey,
+              environment?.locationSession.currentContext?.refreshKey == refreshKey else { return false }
+        // A later visible waiter can join after core/start were published. Adopt the already
+        // applied core only when the coordinator proves it belongs to that same run and context.
+        acceptedCorePublication = AcceptedCorePublication(
+            submissionID: submissionID, runID: runID, refreshKey: refreshKey
+        )
+        return true
+    }
+
+    private func resetStormSetupActivity() {
+        manualStormSetupAttemptID = nil
+        automaticStormSetupRunID = nil
+        finishedStormSetupRunID = nil
+        stormSetupAttemptResult = nil
+        isStormSetupRefreshInFlight = false
+    }
+
+    private func recordStormSetupResult(_ result: HomeStormSetupRefreshResult) {
+        // Backoff is not a new attempt; retain the previous terminal outcome for this context.
+        if result != .skipped { stormSetupAttemptResult = result }
     }
 
     private func applyFinalSnapshotIfNeeded(_ snapshot: HomeSnapshot, submissionID: UUID) {
@@ -876,6 +959,7 @@ final class HomeRefreshPipeline {
         guard suppressedCoreSubmissionID != submissionID else { return }
 
         applyCore(.init(snapshot: snapshot))
+        recordStormSetupResult(snapshot.stormSetupRefreshResult)
         applyEnrichment(.init(snapshot: snapshot))
     }
 
@@ -893,6 +977,7 @@ final class HomeRefreshPipeline {
                 fireRisk: core.fireRisk
             )
             if core.refreshKey != stormSetupRefreshKey {
+                resetStormSetupActivity()
                 stormSetup = nil
                 stormSetupCurrentResponse = nil
                 stormSetupRefreshKey = core.refreshKey

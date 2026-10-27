@@ -15,7 +15,7 @@ actor HomeStormSetupIngestion {
         case userInitiated
     }
 
-    struct RefreshDecision: Sendable {
+    struct RefreshDecision: Sendable, Equatable {
         let result: HomeStormSetupRefreshResult
         let currentResponse: StormSetupCurrentResponse?
         let stormSetup: StormSetupDTO?
@@ -34,6 +34,8 @@ actor HomeStormSetupIngestion {
         var task: Task<Void, Never>?
         var waiters: [UUID: CheckedContinuation<RefreshDecision, Never>]
         var pendingManual: [UUID: PendingManual]
+        var isFetching = false
+        var startHandlers: [UUID: @Sendable () async -> Void] = [:]
     }
 
     private struct PendingManual: Sendable {
@@ -42,9 +44,54 @@ actor HomeStormSetupIngestion {
         let plan: HomeIngestionPlan
         let executionMode: HTTPExecutionMode
         let continuation: CheckedContinuation<RefreshDecision, Never>
+        let onStarted: @Sendable () async -> Void
     }
 
     private struct QueryTimeoutError: Error {}
+
+    private actor ForegroundQueryRace {
+        private var continuation: CheckedContinuation<StormSetupCurrentResponse, Error>?
+        private var result: Result<StormSetupCurrentResponse, Error>?
+        private var queryTask: Task<Void, Never>?
+        private var deadlineTask: Task<Void, Never>?
+
+        func run(
+            timeout: TimeInterval,
+            sleep: @escaping @Sendable (TimeInterval) async throws -> Void,
+            now: @escaping @Sendable () -> ContinuousClock.Instant,
+            operation: @escaping @Sendable () async throws -> StormSetupCurrentResponse
+        ) async throws -> StormSetupCurrentResponse {
+            if let result { return try result.get() }
+            return try await withCheckedThrowingContinuation { continuation in
+                self.continuation = continuation
+                let deadline = now().advanced(by: .seconds(timeout))
+                queryTask = Task {
+                    do {
+                        let response = try await operation()
+                        self.finish(now() < deadline ? .success(response) : .failure(QueryTimeoutError()))
+                    } catch { self.finish(.failure(error)) }
+                }
+                deadlineTask = Task {
+                    do {
+                        try await sleep(timeout)
+                        try Task.checkCancellation()
+                        self.finish(.failure(QueryTimeoutError()))
+                    } catch { self.finish(.failure(error)) }
+                }
+            }
+        }
+
+        func finish(_ result: Result<StormSetupCurrentResponse, Error>) {
+            guard self.result == nil else { return }
+            self.result = result
+            queryTask?.cancel()
+            deadlineTask?.cancel()
+            queryTask = nil
+            deadlineTask = nil
+            continuation?.resume(with: result)
+            continuation = nil
+        }
+    }
 
     private enum AttemptOutcome {
         case success(StormSetupCurrentResponse)
@@ -61,6 +108,8 @@ actor HomeStormSetupIngestion {
     private let currentDate: @Sendable () -> Date
     private let foregroundTimeout: TimeInterval
     private let failedAttemptBackoff: TimeInterval
+    private let deadlineNow: @Sendable () -> ContinuousClock.Instant
+    private let sleepForDeadline: @Sendable (TimeInterval) async throws -> Void
 
     private var refreshStates: [String: RefreshState] = [:]
     private var activeRefreshes: [String: ActiveRefresh] = [:]
@@ -72,7 +121,11 @@ actor HomeStormSetupIngestion {
         preferencesReader: @escaping @Sendable () async -> StormSetupPreferences,
         currentDate: @escaping @Sendable () -> Date,
         foregroundTimeout: TimeInterval,
-        failedAttemptBackoff: TimeInterval
+        failedAttemptBackoff: TimeInterval,
+        deadlineNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
+        sleepForDeadline: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        }
     ) {
         self.logger = logger
         self.querying = querying
@@ -81,6 +134,8 @@ actor HomeStormSetupIngestion {
         self.currentDate = currentDate
         self.foregroundTimeout = foregroundTimeout
         self.failedAttemptBackoff = failedAttemptBackoff
+        self.sleepForDeadline = sleepForDeadline
+        self.deadlineNow = deadlineNow
     }
 
     func refresh(
@@ -88,7 +143,8 @@ actor HomeStormSetupIngestion {
         snapshot: HomeSnapshot,
         plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode,
-        intent: RefreshIntent = .automatic
+        intent: RefreshIntent = .automatic,
+        onStarted: @escaping @Sendable () async -> Void = {}
     ) async -> RefreshDecision {
         guard let context else {
             let startedAt = Date()
@@ -103,8 +159,14 @@ actor HomeStormSetupIngestion {
 
         let projectionKey = HomeProjection.projectionKey(for: context)
         let ownerID = UUID()
+        if activeRefreshes[projectionKey]?.isFetching == true {
+            await onStarted()
+        }
         return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
+            guard Task.isCancelled == false else {
+                return .init(result: .cancelled, currentResponse: nil, stormSetup: nil)
+            }
+            return await withCheckedContinuation { continuation in
                 if var activeRefresh = activeRefreshes[projectionKey] {
                     if intent == .userInitiated, activeRefresh.intent == .automatic {
                         activeRefresh.pendingManual[ownerID] = .init(
@@ -112,10 +174,14 @@ actor HomeStormSetupIngestion {
                             snapshot: snapshot,
                             plan: plan,
                             executionMode: executionMode,
-                            continuation: continuation
+                            continuation: continuation,
+                            onStarted: onStarted
                         )
                     } else {
                         activeRefresh.waiters[ownerID] = continuation
+                        if activeRefresh.isFetching == false {
+                            activeRefresh.startHandlers[ownerID] = onStarted
+                        }
                     }
                     activeRefreshes[projectionKey] = activeRefresh
                     return
@@ -128,7 +194,8 @@ actor HomeStormSetupIngestion {
                     intent: intent,
                     projectionKey: projectionKey,
                     waiterID: ownerID,
-                    continuation: continuation
+                    continuation: continuation,
+                    onStarted: onStarted
                 )
             }
         } onCancel: {
@@ -136,14 +203,25 @@ actor HomeStormSetupIngestion {
         }
     }
 
-    private func startRefresh(context: LocationContext, snapshot: HomeSnapshot, plan: HomeIngestionPlan, executionMode: HTTPExecutionMode, intent: RefreshIntent, projectionKey: String, waiterID: UUID, continuation: CheckedContinuation<RefreshDecision, Never>) {
+    private func startRefresh(context: LocationContext, snapshot: HomeSnapshot, plan: HomeIngestionPlan, executionMode: HTTPExecutionMode, intent: RefreshIntent, projectionKey: String, waiterID: UUID, continuation: CheckedContinuation<RefreshDecision, Never>, onStarted: @escaping @Sendable () async -> Void) {
         let refreshID = UUID()
-        activeRefreshes[projectionKey] = .init(id: refreshID, intent: intent, task: nil, waiters: [waiterID: continuation], pendingManual: [:])
+        activeRefreshes[projectionKey] = .init(id: refreshID, intent: intent, task: nil, waiters: [waiterID: continuation], pendingManual: [:], startHandlers: [waiterID: onStarted])
         let task = Task {
-            let decision = await self.performRefresh(context: context, snapshot: snapshot, plan: plan, executionMode: executionMode, intent: intent)
+            let decision = await self.performRefresh(context: context, snapshot: snapshot, plan: plan, executionMode: executionMode, intent: intent, onStarted: {
+                await self.notifyStarted(id: refreshID, for: projectionKey)
+            })
             self.finishRefresh(id: refreshID, for: projectionKey, decision: decision)
         }
         activeRefreshes[projectionKey]?.task = task
+    }
+
+    private func notifyStarted(id: UUID, for projectionKey: String) async {
+        guard var active = activeRefreshes[projectionKey], active.id == id else { return }
+        active.isFetching = true
+        let handlers = active.startHandlers.values
+        active.startHandlers = [:]
+        activeRefreshes[projectionKey] = active
+        for handler in handlers { await handler() }
     }
 
     private func cancelWaiter(_ waiterID: UUID, for projectionKey: String) {
@@ -151,18 +229,26 @@ actor HomeStormSetupIngestion {
         if let continuation = active.waiters.removeValue(forKey: waiterID) ?? active.pendingManual.removeValue(forKey: waiterID)?.continuation {
             continuation.resume(returning: .init(result: .cancelled, currentResponse: nil, stormSetup: nil))
         }
-        if active.waiters.isEmpty && active.pendingManual.isEmpty { active.task?.cancel() }
+        active.startHandlers[waiterID] = nil
+        if active.waiters.isEmpty && active.pendingManual.isEmpty {
+            active.task?.cancel()
+            activeRefreshes[projectionKey] = nil
+            return
+        }
         activeRefreshes[projectionKey] = active
     }
 
     private func finishRefresh(id: UUID, for projectionKey: String, decision: RefreshDecision) {
         guard let active = activeRefreshes[projectionKey], active.id == id else { return }
         active.waiters.values.forEach { $0.resume(returning: decision) }
-        if let next = active.pendingManual.values.first {
+        if let (nextID, next) = active.pendingManual.first {
             activeRefreshes[projectionKey] = nil
-            startRefresh(context: next.context, snapshot: next.snapshot, plan: next.plan, executionMode: next.executionMode, intent: .userInitiated, projectionKey: projectionKey, waiterID: UUID(), continuation: next.continuation)
+            startRefresh(context: next.context, snapshot: next.snapshot, plan: next.plan, executionMode: next.executionMode, intent: .userInitiated, projectionKey: projectionKey, waiterID: nextID, continuation: next.continuation, onStarted: next.onStarted)
             if var promoted = activeRefreshes[projectionKey] {
-                for (owner, pending) in active.pendingManual.dropFirst() { promoted.waiters[owner] = pending.continuation }
+                for (owner, pending) in active.pendingManual where owner != nextID {
+                    promoted.waiters[owner] = pending.continuation
+                    promoted.startHandlers[owner] = pending.onStarted
+                }
                 activeRefreshes[projectionKey] = promoted
             }
         } else { activeRefreshes[projectionKey] = nil }
@@ -173,7 +259,8 @@ actor HomeStormSetupIngestion {
         snapshot: HomeSnapshot,
         plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode,
-        intent: RefreshIntent
+        intent: RefreshIntent,
+        onStarted: @Sendable () async -> Void
     ) async -> RefreshDecision {
         let startedAt = Date()
         let now = currentDate()
@@ -191,7 +278,9 @@ actor HomeStormSetupIngestion {
         let preferences = await preferencesReader()
         let projectionKey = HomeProjection.projectionKey(for: context)
         let projection = try? await projectionStore.projection(for: context)
-        let cachedCurrentResponse = projection?.stormSetupCurrentResponse
+        let cachedCurrentResponse = projection?.stormSetupCurrentResponse.flatMap {
+            $0.setup.h3Cell == context.h3Cell ? $0 : nil
+        }
         let cachedStormSetup = cachedCurrentResponse.map(StormSetupDTO.init(response:))
         let freshCachedCurrentResponse = cachedCurrentResponse.flatMap {
             $0.setup.freshness.expiresAt > now ? $0 : nil
@@ -228,30 +317,29 @@ actor HomeStormSetupIngestion {
             return .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: resolvedStormSetup)
         }
 
-        async let primaryOutcome: AttemptOutcome = {
-            guard shouldFetchPrimary, let querying else {
-                return .skipped
-            }
+        let primaryOutcome: AttemptOutcome
+        if shouldBackOffPrimary {
+            primaryOutcome = .skipped
+        } else if Task.isCancelled {
+            primaryOutcome = .cancelled
+        } else if let querying {
+            await onStarted()
+            logOutcome(outcome: "started", reason: nil, startedAt: startedAt, executionMode: executionMode)
+            primaryOutcome = await performFetch(h3Cell: context.h3Cell, querying: querying, executionMode: executionMode)
+        } else {
+            primaryOutcome = .skipped
+        }
 
-            if shouldBackOffPrimary {
-                return .skipped
-            }
-
-            return await performFetch(
-                h3Cell: context.h3Cell,
-                querying: querying,
-                executionMode: executionMode
-            )
-        }()
-
+        let completedAt = currentDate()
+        let usableCache = freshCachedCurrentResponse.flatMap { $0.setup.freshness.expiresAt > completedAt ? $0 : nil }
         let resolvedPrimaryDecision = await handleOutcome(
-            primaryOutcome,
+            Task.isCancelled ? .cancelled : primaryOutcome,
             context: context,
             projectionKey: projectionKey,
             cachedCurrentResponse: cachedCurrentResponse,
-            freshCachedCurrentResponse: freshCachedCurrentResponse,
-            freshCachedStormSetup: freshCachedStormSetup,
-            now: now,
+            freshCachedCurrentResponse: usableCache,
+            freshCachedStormSetup: usableCache.map(StormSetupDTO.init(response:)),
+            now: completedAt,
             startedAt: startedAt,
             executionMode: executionMode
         )
@@ -273,6 +361,8 @@ actor HomeStormSetupIngestion {
             return .success(stormSetup)
         } catch is QueryTimeoutError {
             return .timeout
+        } catch let error as URLError where error.code == .timedOut {
+            return .timeout
         } catch is CancellationError {
             return .cancelled
         } catch {
@@ -286,28 +376,18 @@ actor HomeStormSetupIngestion {
         executionMode: HTTPExecutionMode
     ) async throws -> StormSetupCurrentResponse {
         if executionMode == .foreground {
-            let foregroundTimeout = foregroundTimeout
-            return try await withThrowingTaskGroup(of: StormSetupCurrentResponse.self) { group in
-                group.addTask {
+            // A task-group scope waits for cancelled children. This owned race releases the caller
+            // at the deadline even if a provider ignores cancellation; only its winner can return data.
+            let race = ForegroundQueryRace()
+            return try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                return try await race.run(timeout: foregroundTimeout, sleep: sleepForDeadline, now: deadlineNow) {
                     try await HTTPExecutionMode.$current.withValue(executionMode) {
                         try await querying.fetchCurrentStormSetup(h3Cell: h3Cell)
                     }
                 }
-                group.addTask {
-                    try await Task.sleep(for: .seconds(foregroundTimeout))
-                    throw QueryTimeoutError()
-                }
-
-                do {
-                    guard let stormSetup = try await group.next() else {
-                        throw CancellationError()
-                    }
-                    group.cancelAll()
-                    return stormSetup
-                } catch {
-                    group.cancelAll()
-                    throw error
-                }
+            } onCancel: {
+                Task { await race.finish(.failure(CancellationError())) }
             }
         }
 
@@ -354,11 +434,6 @@ actor HomeStormSetupIngestion {
             )
             return .init(result: .timeout, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         case .cancelled:
-            markAttemptFailed(
-                for: projectionKey,
-                refreshKey: context.refreshKey,
-                now: now
-            )
             logOutcome(
                 outcome: "cancelled",
                 reason: nil,
@@ -401,6 +476,9 @@ actor HomeStormSetupIngestion {
         startedAt: Date,
         executionMode: HTTPExecutionMode
     ) async -> RefreshDecision {
+        guard Task.isCancelled == false else {
+            return .init(result: .cancelled, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        }
         let legacyStormSetup = StormSetupDTO(response: stormSetup)
 
         guard legacyStormSetup.h3Cell == context.h3Cell else {

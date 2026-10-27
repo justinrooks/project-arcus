@@ -43,10 +43,10 @@ struct StormSetupPresentationTests {
                 stormRisk: .allClear,
                 assessmentOverall: nil
             ), .analysisNotNeeded),
-            ("eligible idle without guidance", makeStateInput(
+            ("eligible never attempted without guidance", makeStateInput(
                 assessmentOverall: nil,
                 isRefreshInFlight: false
-            ), .unavailable)
+            ), .notAnalyzed)
         ]
 
         for (_, input, expected) in cases {
@@ -63,10 +63,27 @@ struct StormSetupPresentationTests {
         }
     }
 
+    @Test("only a completed attempt without usable guidance is unavailable",
+          arguments: [HomeStormSetupRefreshResult.failure, .timeout, .h3Mismatch, .success, .cancelled, .skipped])
+    func summaryState_attemptOutcomes(result: HomeStormSetupRefreshResult) {
+        let failed = [HomeStormSetupRefreshResult.failure, .timeout, .h3Mismatch, .success].contains(result)
+        #expect(StormSetupSummaryState.select(makeStateInput(attemptResult: result)) == (failed ? .unavailable : .notAnalyzed))
+        #expect(StormSetupSummaryState.select(makeStateInput(isRefreshInFlight: true, attemptResult: result)) == .analyzing)
+        #expect(StormSetupSummaryState.select(makeStateInput(stormRisk: .allClear, attemptResult: result)) == .analysisNotNeeded)
+        #expect(StormSetupSummaryState.select(makeStateInput(
+            stormRisk: .allClear, isRefreshInFlight: true, attemptResult: result
+        )) == .analyzing)
+        #expect(StormSetupSummaryState.select(makeStateInput(assessmentOverall: .weak, attemptResult: result)) == .noNotableSetup)
+        #expect(StormSetupSummaryState.select(makeStateInput(
+            assessmentOverall: .supportive, hasDisplayableGuidance: true, isRefreshInFlight: true, attemptResult: result
+        )) == .guidance)
+    }
+
     @Test("compact status presentations keep state semantics distinct")
     func compactStatusPresentations_keepStateSemanticsDistinct() {
         let cases: [(StormSetupSummaryState, String, Bool)] = [
             (.analyzing, "Analyzing your storm setup", true),
+            (.notAnalyzed, "Storm Setup not analyzed", false),
             (.noNotableSetup, "No notable storm setup", false),
             (.analysisNotNeeded, "Analysis not needed", false),
             (.unavailable, "Storm Setup unavailable", false)
@@ -97,7 +114,7 @@ struct StormSetupPresentationTests {
         )
 
         #expect(StormSetupSummaryState.select(disabled) == .hidden)
-        #expect(StormSetupSummaryState.select(enabled) == .unavailable)
+        #expect(StormSetupSummaryState.select(enabled) == .notAnalyzed)
     }
 
     @Test("Detailed Ingredients transitions preserve the enabled Storm Setup section")
@@ -590,7 +607,8 @@ private func makeStateInput(
     hasDisplayableGuidance: Bool = false,
     isRefreshInFlight: Bool = false,
     isLocationUnavailable: Bool = false,
-    isForcedPresentation: Bool = false
+    isForcedPresentation: Bool = false,
+    attemptResult: HomeStormSetupRefreshResult? = nil
 ) -> StormSetupSummaryStateInput {
     let now = date("2026-06-01T18:00:00Z")
     let payloadExpiresAt = (hasFreshPayload ?? (assessmentOverall != nil))
@@ -615,7 +633,8 @@ private func makeStateInput(
         hasDisplayableGuidance: hasDisplayableGuidance,
         isRefreshInFlight: isRefreshInFlight,
         isLocationUnavailable: isLocationUnavailable,
-        isForcedPresentation: isForcedPresentation
+        isForcedPresentation: isForcedPresentation,
+        attemptResult: attemptResult
     )
 }
 

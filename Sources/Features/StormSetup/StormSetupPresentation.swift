@@ -38,6 +38,7 @@ enum SummaryStormSetupSlot: Sendable, Equatable {
 enum StormSetupSummaryState: Sendable, Equatable {
     case hidden
     case analyzing
+    case notAnalyzed
     case guidance
     case noNotableSetup
     case analysisNotNeeded
@@ -53,7 +54,7 @@ enum StormSetupSummaryState: Sendable, Equatable {
             .hidden
         case .guidance:
             .visible
-        case .analyzing, .noNotableSetup, .analysisNotNeeded, .unavailable:
+        case .analyzing, .notAnalyzed, .noNotableSetup, .analysisNotNeeded, .unavailable:
             .status
         }
     }
@@ -68,6 +69,12 @@ enum StormSetupSummaryState: Sendable, Equatable {
                 message: "Checking local ingredients and guidance for your area.",
                 symbolName: "cloud.bolt.fill",
                 showsProgress: true
+            )
+        case .notAnalyzed:
+            .init(
+                title: "Storm Setup not analyzed",
+                message: "No current analysis is available for your area.",
+                symbolName: "cloud.bolt"
             )
         case .noNotableSetup:
             .init(
@@ -111,11 +118,18 @@ enum StormSetupSummaryState: Sendable, Equatable {
             return .noNotableSetup
         }
 
-        if StormSetupFetchPolicy.shouldFetch(input.policyInput) {
-            return input.isRefreshInFlight ? .analyzing : .unavailable
+        if input.isRefreshInFlight { return .analyzing }
+
+        guard StormSetupFetchPolicy.shouldFetch(input.policyInput) else {
+            return .analysisNotNeeded
         }
 
-        return .analysisNotNeeded
+        switch input.attemptResult {
+        case .failure, .timeout, .h3Mismatch, .success:
+            return .unavailable
+        case nil, .skipped, .cancelled:
+            return .notAnalyzed
+        }
     }
 }
 
@@ -141,6 +155,7 @@ struct StormSetupSummaryStateInput: Sendable, Equatable {
     let policyInput: StormSetupPolicyInput
     let hasDisplayableGuidance: Bool
     let isRefreshInFlight: Bool
+    let attemptResult: HomeStormSetupRefreshResult?
     let isLocationUnavailable: Bool
     let isForcedPresentation: Bool
 
@@ -149,11 +164,13 @@ struct StormSetupSummaryStateInput: Sendable, Equatable {
         hasDisplayableGuidance: Bool,
         isRefreshInFlight: Bool,
         isLocationUnavailable: Bool,
-        isForcedPresentation: Bool = false
+        isForcedPresentation: Bool = false,
+        attemptResult: HomeStormSetupRefreshResult? = nil
     ) {
         self.policyInput = policyInput
         self.hasDisplayableGuidance = hasDisplayableGuidance
         self.isRefreshInFlight = isRefreshInFlight
+        self.attemptResult = attemptResult
         self.isLocationUnavailable = isLocationUnavailable
         self.isForcedPresentation = isForcedPresentation
     }

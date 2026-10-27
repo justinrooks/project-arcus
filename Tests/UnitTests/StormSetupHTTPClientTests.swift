@@ -64,6 +64,17 @@ private final class StormSetupMockHTTPClient: HTTPClient, @unchecked Sendable {
 
 @Suite("StormSetupHTTPClient")
 struct StormSetupHTTPClientTests {
+    @Test("Storm Setup permits a 30-second foreground response without stacking retries")
+    func foregroundPolicy_isEndpointSpecific() {
+        #expect(StormSetupHTTPClient.foregroundPolicy.requestTimeout == 30)
+        #expect(StormSetupHTTPClient.foregroundPolicy.resourceTimeout == 30)
+        #expect(StormSetupHTTPClient.foregroundPolicy.retryDelays.isEmpty)
+        #expect(HTTPRequestPolicy.foreground.requestTimeout == 10)
+        #expect(HTTPRequestPolicy.foreground.resourceTimeout == 15)
+        #expect(HTTPRequestPolicy.background.requestTimeout == 15)
+        #expect(HTTPRequestPolicy.background.resourceTimeout == 25)
+    }
+
     @Test("request construction uses canonical H3 query and Arcus headers")
     func requestConstructionUsesCanonicalH3QueryAndHeaders() async throws {
         let payload = try encodedStormSetupPayload(profileAnalysis: nil)

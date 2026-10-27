@@ -126,6 +126,8 @@ struct HomeIngestionPublication: Sendable, Equatable {
     enum Stage: Sendable, Equatable {
         case core(HomeIngestionCorePublication)
         case coreSuppressed
+        case stormSetupStarted(LocationContext.RefreshKey)
+        case stormSetupFinished(LocationContext.RefreshKey, HomeStormSetupIngestion.RefreshDecision)
         case enrichment(HomeIngestionEnrichmentPublication)
     }
 
@@ -299,6 +301,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         let stormSetupCurrentDate: @Sendable () -> Date
         let stormSetupForegroundTimeout: TimeInterval
         let stormSetupFailedAttemptBackoff: TimeInterval
+        let stormSetupDeadlineNow: @Sendable () -> ContinuousClock.Instant
+        let stormSetupDeadlineSleep: @Sendable (TimeInterval) async throws -> Void
 
         init(
             logger: Logger,
@@ -314,8 +318,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             airQualityQuerying: (any AirQualityQuerying)? = nil,
             stormSetupPreferencesReader: @escaping @Sendable () async -> StormSetupPreferences = { StormSetupPreferences() },
             stormSetupCurrentDate: @escaping @Sendable () -> Date = { Date() },
-            stormSetupForegroundTimeout: TimeInterval = 5,
-            stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
+            stormSetupForegroundTimeout: TimeInterval = StormSetupHTTPClient.foregroundTimeout,
+            stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60,
+            stormSetupDeadlineNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
+            stormSetupDeadlineSleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+                try await Task.sleep(for: .seconds($0))
+            }
         ) {
             self.logger = logger
             self.spcSync = spcSync
@@ -332,6 +340,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             self.stormSetupCurrentDate = stormSetupCurrentDate
             self.stormSetupForegroundTimeout = stormSetupForegroundTimeout
             self.stormSetupFailedAttemptBackoff = stormSetupFailedAttemptBackoff
+            self.stormSetupDeadlineNow = stormSetupDeadlineNow
+            self.stormSetupDeadlineSleep = stormSetupDeadlineSleep
         }
     }
 
@@ -363,7 +373,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             preferencesReader: environment.stormSetupPreferencesReader,
             currentDate: environment.stormSetupCurrentDate,
             foregroundTimeout: environment.stormSetupForegroundTimeout,
-            failedAttemptBackoff: environment.stormSetupFailedAttemptBackoff
+            failedAttemptBackoff: environment.stormSetupFailedAttemptBackoff,
+            deadlineNow: environment.stormSetupDeadlineNow,
+            sleepForDeadline: environment.stormSetupDeadlineSleep
         )
     }
 
@@ -624,11 +636,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         guard try await shouldAdmitStormSetupEnrichment(executionMode: executionMode) else {
             return coreSnapshot
         }
-        async let stormSetupRefreshTask = stormSetupIngestion.refresh(
+        async let stormSetupRefreshTask = refreshStormSetup(
             context: context,
             snapshot: coreSnapshot,
             plan: plan,
-            executionMode: executionMode
+            executionMode: executionMode,
+            progress: progress
         )
         async let airQualityTask = refreshAirQuality(
             context: context,
@@ -652,6 +665,29 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             "Completed home ingestion plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alerts=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
         )
         return snapshot
+    }
+
+    private func refreshStormSetup(
+        context: LocationContext?,
+        snapshot: HomeSnapshot,
+        plan: HomeIngestionPlan,
+        executionMode: HTTPExecutionMode,
+        progress: HomeIngestionRunProgress
+    ) async -> HomeStormSetupIngestion.RefreshDecision {
+        let decision = await stormSetupIngestion.refresh(
+            context: context,
+            snapshot: snapshot,
+            plan: plan,
+            executionMode: executionMode,
+            onStarted: {
+                guard executionMode == .foreground, let context else { return }
+                await progress.publish(.init(runID: progress.runID, stage: .stormSetupStarted(context.refreshKey)))
+            }
+        )
+        if executionMode == .foreground, let context {
+            await progress.publish(.init(runID: progress.runID, stage: .stormSetupFinished(context.refreshKey, decision)))
+        }
+        return decision
     }
 
     private func resolveContext(
@@ -1287,7 +1323,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         }
 
         let admission = executionContext.budget.admission(
-            for: .seconds(environment.stormSetupForegroundTimeout),
+            for: .seconds(5),
             at: ContinuousClock().now,
             isCancelled: Task.isCancelled
         )

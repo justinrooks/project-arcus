@@ -148,6 +148,7 @@ struct SummaryView: View {
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
+    let stormSetupAttemptResult: HomeStormSetupRefreshResult?
     let isStormSetupRefreshInFlight: Bool
     let showsOfflineToken: Bool
     let locationReliabilityRailState: LocationReliabilityRailState?
@@ -183,6 +184,7 @@ struct SummaryView: View {
         resolutionState: SummaryResolutionState,
         isRefreshInFlight: Bool = false,
         isStormSetupRefreshInFlight: Bool = false,
+        stormSetupAttemptResult: HomeStormSetupRefreshResult? = nil,
         showsOfflineToken: Bool,
         locationReliabilityRailState: LocationReliabilityRailState? = nil,
         onOpenMapLayer: @escaping (MapLayer) -> Void,
@@ -211,6 +213,7 @@ struct SummaryView: View {
         self.resolutionState = resolutionState
         self.isRefreshInFlight = isRefreshInFlight
         self.isStormSetupRefreshInFlight = isStormSetupRefreshInFlight
+        self.stormSetupAttemptResult = stormSetupAttemptResult
         self.showsOfflineToken = showsOfflineToken
         self.locationReliabilityRailState = locationReliabilityRailState
         self.onOpenMapLayer = onOpenMapLayer
@@ -614,7 +617,8 @@ struct SummaryView: View {
                 hasDisplayableGuidance: presentation != nil,
                 isRefreshInFlight: isStormSetupRefreshInFlight,
                 isLocationUnavailable: isLocationUnavailable,
-                isForcedPresentation: isForcedPresentation
+                isForcedPresentation: isForcedPresentation,
+                attemptResult: stormSetupAttemptResult
             )),
             presentation: presentation
         )
@@ -633,7 +637,7 @@ struct SummaryView: View {
             return .hidden
         case .guidance:
             return .status(.unavailable)
-        case .analyzing, .noNotableSetup, .analysisNotNeeded, .unavailable:
+        case .analyzing, .notAnalyzed, .noNotableSetup, .analysisNotNeeded, .unavailable:
             return .status(summaryState)
         }
     }
