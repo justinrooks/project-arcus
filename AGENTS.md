@@ -47,6 +47,7 @@
   `xcodebuild -resolvePackageDependencies -project SkyAware.xcodeproj`
 - Open in Xcode:
   `xed SkyAware.xcodeproj`
+- Always check if docker is running before attempting to install dependencies like postgres or redis. If docker is not running, start it and use the postgres and redis instance there.
 
 ## Platform and Architecture Constraints
 - Swift 6+, iOS 18+ only.

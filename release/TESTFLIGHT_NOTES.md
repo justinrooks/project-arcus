@@ -1,17 +1,14 @@
-SkyAware v1.5.0
+SkyAware v1.5.0(263)
 Highlights:
-- Browse SPC Days 1–3 outlook discussions and risk maps; confirm the selected forecast day stays selected when moving between Outlooks and Map.
-- Open NWS alerts from notifications and mesoscale discussion notifications; confirm the matching alert or discussion opens promptly.
-- Try the weather awareness Siri Shortcut and review the reported weather and active-alert coverage.
-- Refresh Map data and check the update indicator, stable legend, and warning geometry.
-- After successful Today refreshes, review requests may appear when eligible.
+- Review the pressure history chart and its observation statistics, location elevation, and CSV export.
+- Check rolling pressure tendency and restart pressure collection.
+- Keep Storm Setup open during a slow foreground refresh and confirm the analyzing state remains until a result or timeout is reported.
+- Refresh Home and widgets around overlapping updates and confirm newer accepted content is not replaced by stale snapshots.
 
 What to test:
-- Switch among SPC forecast days in Outlooks and Map, open a discussion, and navigate between the views; confirm each view reflects the selected day.
-- Tap NWS and mesoscale discussion notifications with cached and updated data; confirm the requested item opens and unavailable content is clearly identified.
-- Run the weather awareness Shortcut with current, stale, and unavailable data where available; confirm its summary reflects the accepted assessment and does not overstate alert status.
-- Refresh Map data and inspect the legend and warning polygons, including areas with interior holes.
-- Complete successful Today refreshes and confirm any review prompt appears only when eligible and does not interrupt the refresh.
+- Inspect pressure history, observation coverage, location elevation, and CSV export; restart collection and confirm the rolling tendency reflects the current observation window.
+- Exercise Storm Setup with fast, slow, failed, and timed-out foreground requests; confirm the interface remains in an analyzing state while work is pending and then shows the appropriate outcome.
+- Trigger overlapping Home refreshes and widget updates; confirm superseded callers complete and older publications do not replace newer accepted content.
 
 SkyAware v1.4.0(235)
 Highlights:

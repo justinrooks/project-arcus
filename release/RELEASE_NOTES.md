@@ -1,17 +1,16 @@
 # Release Notes
 
-## v1.5.0
+## v1.5.0(263)
 
 ## Overview
-This release adds forecast-day navigation across SPC Days 1–3 Outlooks and Map views, moves mesoscale discussions to Arcus Signal, improves notification opens and Map refresh behavior, and adds weather awareness through Siri Shortcuts.
+This build improves barometric pressure diagnostics, makes Storm Setup progress and timeout states more accurate during slow requests, and strengthens Home and widget refresh reliability.
 
 ## Highlights
-- Browse SPC Days 1–3 discussions and risk maps while keeping the selected forecast day through navigation.
-- Open NWS alerts from notifications without waiting for Home ingestion, and open typed mesoscale notifications directly to their discussion.
-- Siri Shortcuts can report accepted weather awareness and active-alert coverage.
-- Map updates now refresh affected sources, show update status, preserve warning polygon holes, and limit rendering work to changed or visible geometry.
-- SkyAware may request an App Store review after a successful Today refresh when eligible.
-- Regression coverage was expanded across these workflows, and the swiftyh3 dependency was updated.
+- Review retained pressure readings in a chart with observation statistics, location elevation, and CSV export.
+- Pressure tendency now uses a rolling observation window, and pressure collection sessions can be restarted.
+- Storm Setup stays in an analyzing state while a foreground request is pending and reports its terminal outcome accurately, including when the request times out.
+- Home and widgets prevent stale publications from replacing newer accepted state, and superseded Home refresh callers are completed.
+- Unit validation now separates regression tests from optional performance measurements and checks result coverage.
 
 ## v1.4.0(235)
 

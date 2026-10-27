@@ -1,34 +1,26 @@
 # Changelog
 
-## v1.5.0
+## v1.5.0(263)
 
 ### UI / UX
-- Outlooks and Map now support SPC Days 1–3, with forecast-day selection, day-specific risk scenes, discussion browsing, and navigation that preserves the selected forecast day.
-<!-- evidence: 4d5c734, b67368e, ad45a8b, b3545cc, 3b71e42, 9d704f6, d3b99de, c591839, d633fb7, 907a0a8 -->
-- Map refreshes now update only affected sources, show update status, keep the legend stable while data refreshes, and avoid rebuilding unchanged geometry; warning polygons retain interior holes and intensity hatching is bounded to the draw region.
-<!-- evidence: 6972eb9, 00872b6, 78237f7, b33f8e7, fe865f7 -->
-
-### Background & Notifications
-- NWS notification taps can open a cached alert immediately or fetch the requested revision directly, without waiting for Home ingestion; unavailable alerts have an explicit destination.
-<!-- evidence: 57ef8ad -->
-- Mesoscale discussions and notification preferences now use Arcus Signal as their source, including typed notification links that open the matching discussion; direct SPC mesoscale ingestion has been retired.
-<!-- evidence: 4735447, 7aa4a3c, 4e7798e, 0b08c1d, 446d956, 8eb0352, 467f8fd, 828b856 -->
-
-### Siri & Shortcuts
-- Weather awareness is available through a Siri Shortcut, using accepted weather snapshots and reporting active-alert coverage with iOS 18-compatible execution behavior.
-<!-- evidence: 0ef147a, 1a3ea62, e177585, 7df5407, 233b856, b36c696 -->
+- Barometric pressure diagnostics now chart retained station readings, summarize observation coverage and variability, show location elevation, and export retained samples as CSV.
+<!-- evidence: 9fb0091, 6508636, 685b1cc -->
+- Pressure tendency now rolls over its observation window correctly and supports restarting a collection session.
+<!-- evidence: d28c270 -->
 
 ### Reliability
-- SkyAware can request an App Store review after a successful Today refresh when eligible.
-<!-- evidence: bdd73e4 -->
+- Storm Setup remains in an analyzing state during slow foreground requests, reports timeout and unavailable outcomes accurately, and returns promptly when a request exceeds its 30-second foreground budget.
+<!-- evidence: 2cc6f1e -->
+- Home and widgets reject stale snapshot publications, and superseded Home ingestion requests complete their waiting callers.
+<!-- evidence: 508d0fd, 8460233 -->
 
 ### Tests / QA
-- Regression coverage was added or expanded for notification alert resolution, Arcus mesoscale reads and navigation, SPC Days 1–3 persistence and geometry, Map accepted-update behavior and rendering, review-request eligibility, and weather-awareness summaries and Shortcut execution.
-<!-- evidence: 57ef8ad, 4735447, 7aa4a3c, 4e7798e, 0b08c1d, 446d956, 8eb0352, 467f8fd, 828b856, 4d5c734, b67368e, ad45a8b, b3545cc, 3b71e42, 9d704f6, d3b99de, c591839, d633fb7, 907a0a8, 6972eb9, c83d137, 00872b6, 234be1f, 78237f7, b33f8e7, fe865f7, bdd73e4, 0ef147a, 1a3ea62, e177585, 7df5407, 233b856, b36c696 -->
+- Regression coverage was expanded for pressure observations, Storm Setup request outcomes, Home ingestion, and widget snapshot publication; the unit test lane now separates regression checks from opt-in performance measurements and verifies result coverage.
+<!-- evidence: 2cc6f1e, 508d0fd, 8460233, 685b1cc, 6508636, 9fb0091, d28c270, 842905f, 056d9c1, 4e62d5e, 82a9ae1, 7d42d5f, 29cbe1d -->
 
 ### Maintenance / Cleanup
-- Updated the swiftyh3 dependency and normalized Xcode test ordering to prevent recurring project-file changes.
-<!-- evidence: d4fc915, 0d73339 -->
+- Recorded a Build 238 unit CI baseline and classification, and documented the regression and performance lane contracts.
+<!-- evidence: 29cbe1d, 7d42d5f, 056d9c1, 4e62d5e -->
 
 ## v1.4.0(235)
 
