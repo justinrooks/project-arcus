@@ -279,7 +279,8 @@ struct HomeView: View {
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
         initialRefreshInFlight: Bool = false,
-        initialStormSetupRefreshInFlight: Bool = false
+        initialStormSetupRefreshInFlight: Bool = false,
+        initialStormSetupAttemptResult: HomeStormSetupRefreshResult? = nil
     ) {
         _refreshPipeline = State(
             initialValue: HomeRefreshPipeline(
@@ -295,7 +296,8 @@ struct HomeView: View {
                 initialOutlooks: initialOutlooks,
                 initialOutlook: initialOutlook,
                 initialRefreshInFlight: initialRefreshInFlight,
-                initialStormSetupRefreshInFlight: initialStormSetupRefreshInFlight
+                initialStormSetupRefreshInFlight: initialStormSetupRefreshInFlight,
+                initialStormSetupAttemptResult: initialStormSetupAttemptResult
             )
         )
     }
@@ -354,7 +356,10 @@ struct HomeView: View {
             readinessState: readinessState,
             resolutionState: refreshPipeline.resolutionState,
             isRefreshInFlight: refreshPipeline.isRefreshInFlight,
-            isStormSetupRefreshInFlight: refreshPipeline.isStormSetupRefreshInFlight,
+            isStormSetupRefreshInFlight: refreshPipeline.stormSetupRefreshKey == locationSession.currentContext?.refreshKey
+                && refreshPipeline.isStormSetupRefreshInFlight,
+            stormSetupAttemptResult: refreshPipeline.stormSetupRefreshKey == locationSession.currentContext?.refreshKey
+                ? refreshPipeline.stormSetupAttemptResult : nil,
             showsOfflineToken: runtimeConnectivityState.isOffline,
             locationReliabilityRailState: showsLocationReliabilityRail
                 ? SummaryView.LocationReliabilityRailState(

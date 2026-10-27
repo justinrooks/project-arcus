@@ -387,7 +387,7 @@ final class Dependencies: Sendable {
         )
         let stormSetupClient = StormSetupHTTPClient(
             baseURL: arcusBaseURL,
-            http: httpClient
+            http: URLSessionHTTPClient(observer: responseObserver, foregroundPolicy: StormSetupHTTPClient.foregroundPolicy)
         )
         let airQualityClient = AirQualityHTTPClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()

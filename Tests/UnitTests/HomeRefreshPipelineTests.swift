@@ -8,6 +8,43 @@ import ArcusCore
 @Suite("Home Refresh Pipeline", .serialized)
 @MainActor
 struct HomeRefreshPipelineTests {
+    @Test("Storm Setup activity accepts only the visible run and location", arguments: [false, true])
+    func stormSetupActivity_rejectsStaleContextOrRun(wrongRun: Bool) async throws {
+        let context = makeContext()
+        let moved = makeContext(h3Cell: 222_222, timestamp: 200)
+        let runID = UUID()
+        let gate = AsyncGate()
+        let activityPublished = AsyncGate()
+        let snapshot = HomeSnapshot(locationSnapshot: context.snapshot, refreshKey: context.refreshKey, stormRisk: .moderate)
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(runs: [.init(
+            core: .init(runID: runID, stage: .core(.init(snapshot: snapshot))),
+            enrichment: .init(runID: wrongRun ? UUID() : runID, stage: .stormSetupFinished(
+                context.refreshKey, .init(result: .failure, currentResponse: nil, stormSetup: nil)
+            )),
+            beforeGatePublications: [.init(runID: runID, stage: .stormSetupStarted(context.refreshKey))],
+            beforeGateAcknowledgement: activityPublished,
+            afterCoreGate: gate,
+            finalSnapshot: snapshot
+        )])
+        let session = FakeLocationSession(currentContext: context, preparedContext: context)
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: session)
+        let pipeline = HomeRefreshPipeline()
+        let task = Task { await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment) }
+        await activityPublished.wait()
+        #expect(pipeline.isStormSetupRefreshInFlight)
+        #expect(pipeline.stormRisk == .moderate)
+        if wrongRun == false {
+            session.currentContext = moved
+            // Reset activity even while the old visible run is still settling.
+            await pipeline.handleContextRefreshKeyChange(moved.refreshKey, scenePhase: .inactive, environment: environment)
+            #expect(pipeline.isStormSetupRefreshInFlight == false)
+        }
+        await gate.open()
+        await task.value
+        #expect(pipeline.isStormSetupRefreshInFlight == false)
+        #expect(pipeline.stormSetupAttemptResult != .failure)
+    }
+
     @Test("foreground cadence emits an independent refresh generation")
     func foregroundCadence_emitsRefreshGeneration() async throws {
         let context = makeContext()
@@ -5382,12 +5419,16 @@ private actor ScriptedStagedHomeIngestionCoordinator: HomeIngestionCoordinating 
         let core: HomeIngestionPublication
         let enrichment: HomeIngestionPublication?
         let afterCoreGate: AsyncGate?
+        let beforeGatePublications: [HomeIngestionPublication]
+        let beforeGateAcknowledgement: AsyncGate?
         let finalSnapshot: HomeSnapshot
         let waitsForCancellation: Bool
 
         init(
             core: HomeIngestionPublication,
             enrichment: HomeIngestionPublication? = nil,
+            beforeGatePublications: [HomeIngestionPublication] = [],
+            beforeGateAcknowledgement: AsyncGate? = nil,
             afterCoreGate: AsyncGate? = nil,
             finalSnapshot: HomeSnapshot,
             waitsForCancellation: Bool = false
@@ -5395,6 +5436,8 @@ private actor ScriptedStagedHomeIngestionCoordinator: HomeIngestionCoordinating 
             self.core = core
             self.enrichment = enrichment
             self.afterCoreGate = afterCoreGate
+            self.beforeGatePublications = beforeGatePublications
+            self.beforeGateAcknowledgement = beforeGateAcknowledgement
             self.finalSnapshot = finalSnapshot
             self.waitsForCancellation = waitsForCancellation
         }
@@ -5464,6 +5507,8 @@ private actor ScriptedStagedHomeIngestionCoordinator: HomeIngestionCoordinating 
         if run.waitsForCancellation {
             try await Task.sleep(for: .seconds(60))
         }
+        for update in run.beforeGatePublications { await publication?(update) }
+        await run.beforeGateAcknowledgement?.open()
         await run.afterCoreGate?.wait()
         if let enrichment = run.enrichment {
             await publication?(enrichment)

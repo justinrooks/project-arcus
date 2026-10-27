@@ -368,7 +368,8 @@ private extension SkyAwareApp {
                     initialAlerts: Self.uiTestLaunchWatches,
                     initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,
                     initialRefreshInFlight: fixture.isRefreshInFlight,
-                    initialStormSetupRefreshInFlight: fixture.isRefreshInFlight
+                    initialStormSetupRefreshInFlight: fixture.isRefreshInFlight,
+                    initialStormSetupAttemptResult: fixture.attemptResult
                 )
             } else {
                 HomeView(
@@ -734,6 +735,7 @@ private struct UITestStormSetupFixture {
     let profileAnalysis: AnvilAnalyzeProfileResponse?
     let stormRisk: StormRiskLevel?
     let isRefreshInFlight: Bool
+    var attemptResult: HomeStormSetupRefreshResult? = nil
 
     var currentResponse: StormSetupCurrentResponse? {
         stormSetup.map { $0.stormSetupCurrentResponse(profileAnalysis: profileAnalysis) }
@@ -892,7 +894,8 @@ private struct UITestStormSetupFixture {
         stormSetup: nil,
         profileAnalysis: nil,
         stormRisk: .marginal,
-        isRefreshInFlight: false
+        isRefreshInFlight: false,
+        attemptResult: .failure
     )
 
     static let analysisNotNeeded = UITestStormSetupFixture(

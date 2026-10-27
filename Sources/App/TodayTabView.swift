@@ -28,6 +28,7 @@ struct TodayTabView: View {
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
     let isStormSetupRefreshInFlight: Bool
+    var stormSetupAttemptResult: HomeStormSetupRefreshResult? = nil
     let showsOfflineToken: Bool
     let locationReliabilityRailState: SummaryView.LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
@@ -99,6 +100,7 @@ struct TodayTabView: View {
                         resolutionState: resolutionState,
                         isRefreshInFlight: isRefreshInFlight,
                         isStormSetupRefreshInFlight: isStormSetupRefreshInFlight,
+                        stormSetupAttemptResult: stormSetupAttemptResult,
                         showsOfflineToken: showsOfflineToken,
                         locationReliabilityRailState: locationReliabilityRailState,
                         onOpenMapLayer: onOpenMapLayer,
