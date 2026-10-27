@@ -120,11 +120,15 @@ enum StormSetupSummaryState: Sendable, Equatable {
 
         if input.isRefreshInFlight { return .analyzing }
 
+        guard StormSetupFetchPolicy.shouldFetch(input.policyInput) else {
+            return .analysisNotNeeded
+        }
+
         switch input.attemptResult {
         case .failure, .timeout, .h3Mismatch, .success:
             return .unavailable
         case nil, .skipped, .cancelled:
-            return StormSetupFetchPolicy.shouldFetch(input.policyInput) ? .notAnalyzed : .analysisNotNeeded
+            return .notAnalyzed
         }
     }
 }

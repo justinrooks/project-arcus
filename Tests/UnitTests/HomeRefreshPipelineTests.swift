@@ -8,6 +8,56 @@ import ArcusCore
 @Suite("Home Refresh Pipeline", .serialized)
 @MainActor
 struct HomeRefreshPipelineTests {
+    @Test("current eligibility overrides a retained terminal outcome after same-location skipped refreshes",
+          arguments: [HomeStormSetupRefreshResult.failure, .timeout])
+    func stormSetupPresentation_clearedEligibilitySupersedesRetainedFailure(result: HomeStormSetupRefreshResult) async {
+        let context = makeContext()
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(runs: [
+            (StormRiskLevel.moderate, result), (.moderate, .skipped), (.allClear, .skipped)
+        ].map { risk, outcome in
+            let runID = UUID()
+            let snapshot = HomeSnapshot(
+                locationSnapshot: context.snapshot, refreshKey: context.refreshKey,
+                stormSetupRefreshResult: outcome, stormRisk: risk, severeRisk: .allClear
+            )
+            return .init(
+                core: .init(runID: runID, stage: .core(.init(snapshot: snapshot))),
+                enrichment: .init(runID: runID, stage: .stormSetupFinished(
+                    context.refreshKey, .init(result: outcome, currentResponse: nil, stormSetup: nil)
+                )),
+                finalSnapshot: snapshot
+            )
+        })
+        let pipeline = HomeRefreshPipeline()
+        let session = FakeLocationSession(currentContext: context, preparedContext: context)
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: session)
+
+        func selectedState() -> StormSetupSummaryState {
+            .select(.init(
+                policyInput: .init(
+                    preferences: .init(stormSetupEnabled: true),
+                    stormRisk: pipeline.stormRisk, severeRisk: pipeline.severeRisk,
+                    hasQualifyingConvectiveAlert: false, hasActiveMeso: false,
+                    assessmentOverall: nil, payloadExpiresAt: nil, now: .now
+                ),
+                hasDisplayableGuidance: false, isRefreshInFlight: pipeline.isStormSetupRefreshInFlight,
+                isLocationUnavailable: false, attemptResult: pipeline.stormSetupAttemptResult
+            ))
+        }
+
+        for expected in [StormSetupSummaryState.unavailable, .unavailable, .analysisNotNeeded] {
+            await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+            #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+            #expect(pipeline.stormSetupAttemptResult == result)
+            #expect(pipeline.isStormSetupRefreshInFlight == false)
+            #expect(pipeline.stormSetup == nil)
+            #expect(pipeline.alerts.isEmpty && pipeline.mesos.isEmpty)
+            #expect(selectedState() == expected)
+        }
+        #expect(pipeline.stormRisk == .allClear)
+        #expect(pipeline.severeRisk == .allClear)
+    }
+
     @Test("Storm Setup activity accepts only the visible run and location", arguments: [false, true])
     func stormSetupActivity_rejectsStaleContextOrRun(wrongRun: Bool) async throws {
         let context = makeContext()

@@ -69,9 +69,11 @@ struct StormSetupPresentationTests {
         let failed = [HomeStormSetupRefreshResult.failure, .timeout, .h3Mismatch, .success].contains(result)
         #expect(StormSetupSummaryState.select(makeStateInput(attemptResult: result)) == (failed ? .unavailable : .notAnalyzed))
         #expect(StormSetupSummaryState.select(makeStateInput(isRefreshInFlight: true, attemptResult: result)) == .analyzing)
-        if failed {
-            #expect(StormSetupSummaryState.select(makeStateInput(stormRisk: .allClear, attemptResult: result)) == .unavailable)
-        }
+        #expect(StormSetupSummaryState.select(makeStateInput(stormRisk: .allClear, attemptResult: result)) == .analysisNotNeeded)
+        #expect(StormSetupSummaryState.select(makeStateInput(
+            stormRisk: .allClear, isRefreshInFlight: true, attemptResult: result
+        )) == .analyzing)
+        #expect(StormSetupSummaryState.select(makeStateInput(assessmentOverall: .weak, attemptResult: result)) == .noNotableSetup)
         #expect(StormSetupSummaryState.select(makeStateInput(
             assessmentOverall: .supportive, hasDisplayableGuidance: true, isRefreshInFlight: true, attemptResult: result
         )) == .guidance)
