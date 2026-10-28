@@ -1218,7 +1218,7 @@
 			repositoryURL = "https://github.com/justinrooks/ArcusCore.git";
 			requirement = {
 				kind = exactVersion;
-				version = 0.6.0;
+				version = 0.7.0;
 			};
 		};
 		D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {

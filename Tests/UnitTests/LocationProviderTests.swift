@@ -175,6 +175,8 @@ struct LocationProviderTests {
     }
 
     private actor GateableSnapshotUploader: LocationSnapshotUploading {
+        private let failFirst: Bool
+        init(failFirst: Bool = false) { self.failFirst = failFirst }
         private var payloads: [LocationSnapshotPushPayload] = []
         private var isBlocked = true
         private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
@@ -191,6 +193,7 @@ struct LocationProviderTests {
                     unblockContinuation = continuation
                 }
             }
+            if failFirst && payloads.count == 1 { throw LocationPushError.invalidResponseStatus(503) }
         }
 
         func waitForFirstAttempt() async {
@@ -261,6 +264,47 @@ struct LocationProviderTests {
         func attemptCount() -> Int {
             payloads.count
         }
+    }
+
+    private actor SteppedPreferenceUploader: DevicePreferenceSyncUploading {
+        private var payloads: [DevicePreferenceSyncPayload] = []
+        private var releases: [Int: CheckedContinuation<Void, Never>] = [:]
+
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+            payloads.append(payload)
+            let index = payloads.count
+            await withCheckedContinuation { releases[index] = $0 }
+        }
+
+        func waitForAttempt(_ count: Int) async -> Bool {
+            let deadline = ContinuousClock().now.advanced(by: .seconds(5))
+            while payloads.count < count, ContinuousClock().now < deadline {
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+            return payloads.count >= count
+        }
+
+        func release(_ index: Int) { releases.removeValue(forKey: index)?.resume() }
+        func subscriptions() -> [Bool] { payloads.map(\.isSubscribed) }
+    }
+
+    private actor RevokingSnapshotUploader: LocationSnapshotUploading {
+        let sharing: BoolBox
+        let status: Int
+        private var count = 0
+
+        init(sharing: BoolBox, status: Int) {
+            self.sharing = sharing
+            self.status = status
+        }
+
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            count += 1
+            sharing.set(false)
+            throw LocationPushError.invalidResponseStatus(status)
+        }
+
+        func attemptCount() -> Int { count }
     }
 
     private actor InMemoryUploadQueueStore: LocationUploadQueueStoring {
@@ -760,8 +804,10 @@ struct LocationProviderTests {
         let second = LocationSnapshotPusher(
             locationUploader: snapshots, preferenceUploader: preferences,
             apnsTokenProvider: { "new-token" },
+            subscriptionStatusProvider: { false },
             mesoNotificationEnabledProvider: { !enabled },
-            authorizationStatusProvider: { .denied },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0], queueStore: reopened
         )
         let outcome = await second.drainPendingUploads(
@@ -843,6 +889,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -864,6 +911,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -890,6 +938,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -924,6 +973,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -947,6 +997,203 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("reopened queues suppress revoked location on ordinary and bounded token drains",
+          arguments: [false, true], [false, true])
+    func consentReplay_revokedLocation(bounded: Bool, denied: Bool) async throws {
+        let suite = "revoked-reopen-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+            .savePendingRequests([persistedUploadRequest(requestedAt: .now)])
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let token = TokenBox("")
+        let locations = MockSnapshotUploader()
+        let preferences = MockPreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: locations, preferenceUploader: preferences,
+            apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { false }, locationUploadEnabledProvider: { denied },
+            authorizationStatusProvider: { denied ? .denied : .authorizedAlways },
+            retryDelaysSeconds: [0], queueStore: store
+        )
+        await pusher.drainPendingUploads()
+        #expect(await store.loadPendingRequests().count == 1)
+        token.set("new-token")
+        if bounded {
+            let outcome = await pusher.drainPendingUploads(using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(5))))
+            #expect(outcome == .drained)
+        } else {
+            await pusher.drainPendingUploads()
+        }
+        #expect(await locations.uploadedPayloads().isEmpty)
+        #expect(await store.loadPendingRequests().isEmpty)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "opt-out")
+        let payload = try #require(await preferences.uploadedPayloads().last)
+        #expect(payload.isSubscribed == false)
+        #expect(payload.apnsDeviceToken == "new-token")
+    }
+
+    @Test("queued preferences use current consent and permit later re-enablement")
+    func consentReplay_preferenceReenable() async throws {
+        let subscribed = BoolBox(true)
+        let token = TokenBox("")
+        let store = InMemoryUploadQueueStore()
+        let preferences = MockPreferenceUploader()
+        func reopened() -> LocationSnapshotPusher {
+            LocationSnapshotPusher(
+                locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
+                apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
+                subscriptionStatusProvider: { subscribed.value() }, mesoNotificationEnabledProvider: { false },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .denied },
+                retryDelaysSeconds: [0], queueStore: store
+            )
+        }
+        await reopened().enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                               forceUpload: true, detail: "old-opt-in")
+        subscribed.set(false)
+        token.set("current-token")
+        let pusher = reopened()
+        await pusher.drainPendingUploads()
+        let optOut = try #require(await preferences.uploadedPayloads().last)
+        #expect(optOut.isSubscribed == false)
+        #expect(optOut.auth == "denied")
+        #expect(optOut.mesoNotificationsEnabled == false)
+        subscribed.set(true)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "reenable", isSubscribedOverride: true)
+        #expect(await preferences.uploadedPayloads().last?.isSubscribed == true)
+    }
+
+    @Test("revocation after handoff prevents retries and legacy-source fallback", arguments: [503, 422])
+    func consentReplay_retryAndFallback(status: Int) async {
+        let sharing = BoolBox(true)
+        let uploader = RevokingSnapshotUploader(sharing: sharing, status: status)
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
+            apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true }, locationUploadEnabledProvider: { sharing.value() },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0, 1], queueStore: store
+        )
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        #expect(await uploader.attemptCount() == 1)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("an in-flight old location cannot cause a further transfer after opt-out")
+    func consentReplay_inFlightBoundary() async throws {
+        let sharing = BoolBox(true)
+        let subscribed = BoolBox(true)
+        let locations = GateableSnapshotUploader(failFirst: true)
+        let preferences = MockPreferenceUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: locations, preferenceUploader: preferences,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { sharing.value() },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+        )
+        let old = Task { await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved) }
+        await locations.waitForFirstAttempt()
+        sharing.set(false)
+        subscribed.set(false)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "opt-out", isSubscribedOverride: false)
+        await locations.unblock()
+        await old.value
+        await pusher.drainPendingUploads()
+        #expect(await locations.attemptCount() == 1)
+        #expect(await preferences.uploadedPayloads().last?.isSubscribed == false)
+        // The first request already crossed handoff. Signal #379 owns its commit ordering.
+    }
+
+    @Test("explicit subscription intent survives token delay and reversal with lagging defaults")
+    func consentReplay_delayedOverride() async throws {
+        let token = TokenBox("")
+        let preferences = MockPreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
+            apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+        )
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "opt-out", isSubscribedOverride: false)
+        token.set("token")
+        await pusher.drainPendingUploads()
+        #expect(await preferences.uploadedPayloads().last?.isSubscribed == false)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "reenable", isSubscribedOverride: true)
+        #expect(await preferences.uploadedPayloads().map(\.isSubscribed) == [false, true])
+    }
+
+    @Test("changed replay consent cannot coalesce away a newer opt-out", arguments: [false, true])
+    func consentReplay_preservesFollowup(bounded: Bool) async throws {
+        let subscribed = BoolBox(true)
+        let preferences = GateablePreferenceUploader()
+        let request = PersistedLocationUploadRequest(
+            source: .settingsPreference, reason: .preferenceChanged, forceUpload: true,
+            installationId: "install-abc-123", requestedAt: .distantPast, isSubscribed: false,
+            authorizationState: "always", apnsToken: "token", operation: .preferenceSync
+        )
+        let store = InMemoryUploadQueueStore(seed: [request])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+        )
+        let drain = Task {
+            if bounded {
+                _ = await pusher.drainPendingUploads(using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(5))))
+            } else {
+                await pusher.drainPendingUploads()
+            }
+        }
+        await preferences.waitForFirstAttempt()
+        subscribed.set(false)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "opt-out", isSubscribedOverride: false)
+        await preferences.unblock()
+        await drain.value
+        #expect(await store.waitForEmpty())
+        #expect(await preferences.uploadedPayloads().map(\.isSubscribed) == [true, false])
+    }
+
+    @Test("consent reversals during a follow-up cannot be deduped", arguments: [false, true])
+    func consentReplay_roundTrip(initial: Bool) async throws {
+        let subscribed = BoolBox(initial)
+        let preferences = SteppedPreferenceUploader()
+        let request = PersistedLocationUploadRequest(
+            source: .settingsPreference, reason: .preferenceChanged, forceUpload: true,
+            installationId: "install-abc-123", requestedAt: .distantPast, isSubscribed: !initial,
+            authorizationState: "always", apnsToken: "token", operation: .preferenceSync
+        )
+        let store = InMemoryUploadQueueStore(seed: [request])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+        )
+        let drain = Task { await pusher.drainPendingUploads() }
+        #expect(await preferences.waitForAttempt(1))
+        subscribed.set(!initial)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "reverse", isSubscribedOverride: !initial)
+        await preferences.release(1)
+        #expect(await preferences.waitForAttempt(2))
+        subscribed.set(initial)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "restore", isSubscribedOverride: initial)
+        await preferences.release(2)
+        #expect(await preferences.waitForAttempt(3))
+        await preferences.release(3)
+        await drain.value
+        #expect(await preferences.subscriptions() == [initial, !initial, initial])
+        #expect(await store.current().isEmpty)
+    }
+
     @Test("preference sync uses explicit subscription override instead of provider value")
     func preferenceSync_usesExplicitSubscriptionOverride() async throws {
         let locationUploader = MockSnapshotUploader()
@@ -957,6 +1204,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0]
         )
 
@@ -1013,6 +1261,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1034,6 +1283,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1056,6 +1306,7 @@ struct LocationProviderTests {
             preferenceUploader: AlwaysFailingPreferenceUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1083,6 +1334,7 @@ struct LocationProviderTests {
             preferenceUploader: CancellingPreferenceUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1111,6 +1363,7 @@ struct LocationProviderTests {
             preferenceUploader: AlwaysFailingPreferenceUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -1144,6 +1397,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -1167,6 +1421,7 @@ struct LocationProviderTests {
             preferenceUploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -1196,6 +1451,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -1230,6 +1486,7 @@ struct LocationProviderTests {
             preferenceUploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1248,6 +1505,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0, 1],
             queueStore: store
         )
@@ -1283,6 +1541,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1303,6 +1562,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1334,6 +1594,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1365,6 +1626,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1388,6 +1650,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1415,6 +1678,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0, 0],
             queueStore: store
         )
@@ -1441,6 +1705,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0, 5],
             queueStore: store
         )
@@ -1467,6 +1732,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0, 5],
             queueStore: store
         )
@@ -1600,6 +1866,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0]
         )
 
@@ -1615,7 +1882,7 @@ struct LocationProviderTests {
         #expect(payloads.isEmpty)
     }
 
-    @Test("snapshot pusher can force upload when location-to-signal is disabled")
+    @Test("forced snapshot cannot bypass revoked location sharing")
     func snapshotPusher_forceUploadWhenLocationSharingDisabled() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
@@ -1625,6 +1892,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0]
         )
 
@@ -1637,8 +1905,7 @@ struct LocationProviderTests {
         await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
 
         let payloads = await uploader.uploadedPayloads()
-        let payload = try #require(payloads.first)
-        #expect(payload.isSubscribed == false)
+        #expect(payloads.isEmpty)
     }
 
     @Test("snapshot pusher skips non-forced preference sync when location sharing is disabled")
@@ -1652,6 +1919,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0]
         )
 
@@ -1800,6 +2068,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1855,6 +2124,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )

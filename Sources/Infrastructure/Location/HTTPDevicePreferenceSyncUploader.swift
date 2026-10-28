@@ -5,6 +5,13 @@ import ArcusCore
 
 protocol DevicePreferenceSyncUploading: Sendable {
     func upload(_ payload: DevicePreferenceSyncPayload) async throws
+    func upload(installationId: String, preparing: @escaping @Sendable () async throws -> DevicePreferenceSyncPayload) async throws
+}
+
+extension DevicePreferenceSyncUploading {
+    func upload(installationId: String, preparing: @escaping @Sendable () async throws -> DevicePreferenceSyncPayload) async throws {
+        try await upload(preparing())
+    }
 }
 
 actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
@@ -43,11 +50,17 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
     }
 
     func upload(_ payload: DevicePreferenceSyncPayload) async throws {
-        let body = try encoder.encode(payload)
+        try await upload(installationId: payload.installationId, preparing: { payload })
+    }
+
+    func upload(installationId: String, preparing: @escaping @Sendable () async throws -> DevicePreferenceSyncPayload) async throws {
         let credential = try await enrollment.credential(
-            for: payload.installationId, baseURL: baseURL, http: http
+            for: installationId, baseURL: baseURL, http: http
         )
+        // Enrollment can suspend. Resolve current consent only after it completes.
+        let payload = try await preparing()
         try Task.checkCancellation()
+        let body = try encoder.encode(payload)
         var headers = requestHeaders
         headers["Authorization"] = "Bearer \(credential)"
         let response = try await http.post(endpoint, headers: headers, body: body)
