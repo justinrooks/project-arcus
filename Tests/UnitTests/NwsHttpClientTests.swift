@@ -392,7 +392,7 @@ struct HTTPLocationSnapshotUploaderTests {
         let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
         let uploader = HTTPLocationSnapshotUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http
+            http: http, enrollment: enrolledTestCoordinator()
         )
 
         let payload = LocationSnapshotPushPayload(
@@ -406,7 +406,7 @@ struct HTTPLocationSnapshotUploaderTests {
             zone: "COZ245",
             fireZone: "COZ245",
             apnsDeviceToken: "abc123",
-            installationId: "install-1",
+            installationId: "f0465f55-f0a2-48a0-aac0-6a5c48a95891",
             source: "unit-test",
             auth: "always",
             appVersion: "1.0",
@@ -437,7 +437,7 @@ struct HTTPLocationSnapshotUploaderTests {
 struct HTTPDevicePreferenceSyncUploaderTests {
     private func makePreferencePayload(isSubscribed: Bool, token: String) -> DevicePreferenceSyncPayload {
         DevicePreferenceSyncPayload(
-            installationId: "install-1",
+            installationId: "f0465f55-f0a2-48a0-aac0-6a5c48a95891",
             apnsDeviceToken: token,
             apnsEnvironment: "sandbox",
             platform: "iOS",
@@ -466,7 +466,7 @@ struct HTTPDevicePreferenceSyncUploaderTests {
             status: 202, headers: [:], data: try encoder.encode(response)
         ))
         let uploader = HTTPDevicePreferenceSyncUploader(
-            baseURL: URL(string: "https://arcus.example.com")!, http: http, defaultsSuiteName: suite
+            baseURL: URL(string: "https://arcus.example.com")!, http: http, enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
         )
         try await uploader.upload(makePreferencePayload(isSubscribed: true, token: "token"))
         #expect(UserDefaults(suiteName: suite)?.object(
@@ -477,7 +477,7 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         let legacy = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
             http: ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil)),
-            defaultsSuiteName: suite
+            enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
         )
         try await legacy.upload(makePreferencePayload(isSubscribed: true, token: "token"))
         #expect(UserDefaults(suiteName: suite)?.object(
@@ -512,7 +512,7 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
         let uploader = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http, defaultsSuiteName: suite
+            http: http, enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
         )
 
         let payload = makePreferencePayload(isSubscribed: true, token: "abc123")
@@ -537,7 +537,7 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         let http = ArcusMockHTTPClient(response: HTTPResponse(status: 500, headers: [:], data: nil))
         let uploader = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http, defaultsSuiteName: suite
+            http: http, enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
         )
         let payload = makePreferencePayload(isSubscribed: false, token: "super-secret-token")
 

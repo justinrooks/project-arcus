@@ -13,6 +13,8 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
     private let defaults: UserDefaults
     private let endpoint: URL
     private let http: HTTPClient
+    private let enrollment: InstallationEnrollmentCoordinator
+    private let baseURL: URL
     private let encoder = JSONEncoder()
     private let decoder: JSONDecoder
     private let logger = Logger.locationPushUploader
@@ -20,6 +22,7 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
     init(
         baseURL: URL,
         http: HTTPClient = URLSessionHTTPClient(),
+        enrollment: InstallationEnrollmentCoordinator = .shared,
         defaultsSuiteName: String = "com.justinrooks.skyaware"
     ) {
         self.defaults = UserDefaults(suiteName: defaultsSuiteName) ?? .standard
@@ -31,6 +34,8 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
         }
         self.endpoint = endpoint
         self.http = http
+        self.enrollment = enrollment
+        self.baseURL = baseURL
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -39,7 +44,13 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
 
     func upload(_ payload: DevicePreferenceSyncPayload) async throws {
         let body = try encoder.encode(payload)
-        let response = try await http.post(endpoint, headers: requestHeaders, body: body)
+        let credential = try await enrollment.credential(
+            for: payload.installationId, baseURL: baseURL, http: http
+        )
+        try Task.checkCancellation()
+        var headers = requestHeaders
+        headers["Authorization"] = "Bearer \(credential)"
+        let response = try await http.post(endpoint, headers: headers, body: body)
         guard (200...299).contains(response.status) else {
             throw LocationPushError.invalidResponseStatus(response.status)
         }

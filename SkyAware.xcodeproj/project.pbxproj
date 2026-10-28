@@ -129,6 +129,7 @@
 				UnitTests/HomeViewStateTests.swift,
 				UnitTests/HTTPDataDownloaderTests.swift,
 				UnitTests/IngestionDiagnosticsDataTests.swift,
+				UnitTests/InstallationEnrollmentTests.swift,
 				UnitTests/LaunchAndOnboardingStateTests.swift,
 				UnitTests/LayerPickerAdaptiveLayoutTests.swift,
 				UnitTests/LocationContextResolverTests.swift,
@@ -225,6 +226,7 @@
 				UnitTests/HomeViewStateTests.swift,
 				UnitTests/HTTPDataDownloaderTests.swift,
 				UnitTests/IngestionDiagnosticsDataTests.swift,
+				UnitTests/InstallationEnrollmentTests.swift,
 				UnitTests/LaunchAndOnboardingStateTests.swift,
 				UnitTests/LayerPickerAdaptiveLayoutTests.swift,
 				UnitTests/LocationContextResolverTests.swift,
@@ -1215,8 +1217,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/justinrooks/ArcusCore.git";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.5.0;
+				kind = exactVersion;
+				version = 0.6.0;
 			};
 		};
 		D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {

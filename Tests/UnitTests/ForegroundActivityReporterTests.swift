@@ -75,7 +75,8 @@ struct HTTPForegroundActivityUploaderTests {
         let http = ForegroundActivityMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
         let uploader = HTTPForegroundActivityUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http
+            http: http,
+            enrollment: enrolledTestCoordinator()
         )
 
         try await uploader.upload(installationId: "f0465f55-f0a2-48a0-aac0-6a5c48a95891")
