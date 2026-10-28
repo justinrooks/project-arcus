@@ -39,10 +39,13 @@ struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
     private let endpoint: URL
     private let http: HTTPClient
+    private let enrollment: InstallationEnrollmentCoordinator
+    private let baseURL: URL
     private let encoder: JSONEncoder
     private let logger = Logger.locationPushUploader
 
-    init(baseURL: URL, http: HTTPClient = URLSessionHTTPClient()) {
+    init(baseURL: URL, http: HTTPClient = URLSessionHTTPClient(),
+        enrollment: InstallationEnrollmentCoordinator = .shared) {
         guard let endpoint = ArcusSignalConfiguration.url(
             from: baseURL,
             path: ArcusSignalConfiguration.locationSnapshotsPath
@@ -51,6 +54,8 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
         }
         self.endpoint = endpoint
         self.http = http
+        self.enrollment = enrollment
+        self.baseURL = baseURL
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         self.encoder = encoder
@@ -58,7 +63,13 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
 
     func upload(_ payload: LocationSnapshotPushPayload) async throws {
         let body = try encoder.encode(payload)
-        let response = try await http.post(endpoint, headers: requestHeaders, body: body)
+        let credential = try await enrollment.credential(
+            for: payload.installationId, baseURL: baseURL, http: http
+        )
+        try Task.checkCancellation()
+        var headers = requestHeaders
+        headers["Authorization"] = "Bearer \(credential)"
+        let response = try await http.post(endpoint, headers: headers, body: body)
         guard (200...299).contains(response.status) else {
             throw LocationPushError.invalidResponseStatus(response.status)
         }

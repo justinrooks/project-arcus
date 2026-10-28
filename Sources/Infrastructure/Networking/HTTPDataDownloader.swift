@@ -718,8 +718,30 @@ public final class URLSessionHTTPClient: HTTPClient {
     }
 }
 
-private final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
+enum InstallationRequestRedirectPolicy {
+    static func allowsRedirect(for request: URLRequest) -> Bool {
+        guard request.httpMethod == "POST", let path = request.url?.path else { return true }
+        return !path.hasPrefix("/v2/devices/") && !path.hasPrefix("/api/v2/devices/")
+    }
+}
+
+final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
     private let storedMetrics = Mutex<URLSessionTaskMetrics?>(nil)
+
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        // Enrollment bodies contain a permanent secret. Never forward installation writes,
+        // including same-origin redirects, to another endpoint or protocol.
+        guard let original = task.originalRequest,
+              InstallationRequestRedirectPolicy.allowsRedirect(for: original) else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
 
     var metrics: URLSessionTaskMetrics? {
         storedMetrics.withLock { $0 }

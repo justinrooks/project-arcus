@@ -57,9 +57,12 @@ actor HTTPForegroundActivityUploader: ForegroundActivityUploading {
 
     private let endpoint: URL
     private let http: HTTPClient
+    private let enrollment: InstallationEnrollmentCoordinator
+    private let baseURL: URL
     private let encoder = JSONEncoder()
 
-    init(baseURL: URL = ArcusSignalConfiguration.baseURL(), http: HTTPClient = URLSessionHTTPClient()) {
+    init(baseURL: URL = ArcusSignalConfiguration.baseURL(), http: HTTPClient = URLSessionHTTPClient(),
+        enrollment: InstallationEnrollmentCoordinator = .shared) {
         guard let endpoint = ArcusSignalConfiguration.url(
             from: baseURL,
             path: ArcusSignalConfiguration.foregroundActivityPath
@@ -68,11 +71,19 @@ actor HTTPForegroundActivityUploader: ForegroundActivityUploading {
         }
         self.endpoint = endpoint
         self.http = http
+        self.enrollment = enrollment
+        self.baseURL = baseURL
     }
 
     func upload(installationId: String) async throws {
         let body = try encoder.encode(RequestBody(installationId: installationId))
-        let response = try await http.post(endpoint, headers: requestHeaders, body: body)
+        let credential = try await enrollment.credential(
+            for: installationId, baseURL: baseURL, http: http
+        )
+        try Task.checkCancellation()
+        var headers = requestHeaders
+        headers["Authorization"] = "Bearer \(credential)"
+        let response = try await http.post(endpoint, headers: headers, body: body)
         guard (200...299).contains(response.status) else {
             throw ForegroundActivityError.invalidResponseStatus(response.status)
         }

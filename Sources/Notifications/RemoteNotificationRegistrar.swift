@@ -181,6 +181,13 @@ actor InstallationIdentityStore {
         return generated
     }
 
+    /// Authenticated writes require a durable identity; never enroll a volatile UUID.
+    func durableInstallationId() throws -> String {
+        let value = installationId()
+        guard readInstallationId() == value else { throw InstallationEnrollmentError.persistenceUnavailable }
+        return value
+    }
+
     nonisolated private static func readFromKeychain(service: String, account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
