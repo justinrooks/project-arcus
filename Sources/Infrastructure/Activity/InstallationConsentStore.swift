@@ -25,6 +25,7 @@ actor InstallationConsentStore {
     private let createMarker: @Sendable () throws -> Void
     private let flush: (@Sendable () -> Bool)?
     private var restrictiveSubscription: Bool?
+    private var latestOwnershipRequest: UUID?
 
     init(
         suiteName: String = "com.justinrooks.skyaware",
@@ -44,7 +45,17 @@ actor InstallationConsentStore {
         restrictiveSubscription = !settings().isSubscribed
     }
 
+    /// Captured synchronously from AppStorage writes, then delivered in user-intent order.
+    func acceptSubscriptionIntent(installationId: String, enabled: Bool) throws {
+        restrictiveSubscription = nil
+        _ = try reconcile(installationId: installationId, subscriptionIntent: enabled)
+    }
+
     func current(installationId: String) throws -> Record {
+        try reconcile(installationId: installationId, subscriptionIntent: nil)
+    }
+
+    private func reconcile(installationId: String, subscriptionIntent: Bool?) throws -> Record {
         guard UUID(uuidString: installationId) != nil else { throw Failure.identityMismatch }
         let raw = settings()
         var subscribed = raw.isSubscribed
@@ -58,7 +69,7 @@ actor InstallationConsentStore {
             }
         }
         let consent = DeviceConsentSnapshotV3(
-            isSubscribed: subscribed, mesoNotificationsEnabled: raw.mesoNotificationsEnabled,
+            isSubscribed: subscriptionIntent ?? subscribed, mesoNotificationsEnabled: raw.mesoNotificationsEnabled,
             locationSharingEnabled: raw.locationSharingEnabled, locationAuthorization: raw.locationAuthorization
         )
         let previous: Record?
@@ -107,6 +118,8 @@ actor InstallationConsentStore {
                 buildNumber: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
             )
             let url = ArcusSignalConfiguration.url(from: baseURL, path: ArcusSignalConfiguration.devicePreferencesPath)!
+            let ownershipRequest = UUID()
+            latestOwnershipRequest = ownershipRequest
             let response = try await http.post(url, headers: [
                 "Authorization": "Bearer \(credential)", "Content-Type": "application/json",
                 "Accept": "application/json", "User-Agent": HTTPRequestHeaders.userAgent()
@@ -124,6 +137,7 @@ actor InstallationConsentStore {
             guard ack.status != .stale, ack.acceptedConsentRevision == latest.revision else {
                 throw Failure.inconsistentAcknowledgment
             }
+            guard latestOwnershipRequest == ownershipRequest else { return }
             defaults.set(ack.serverOwnsMesoNotificationDelivery, forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey)
             return
         }

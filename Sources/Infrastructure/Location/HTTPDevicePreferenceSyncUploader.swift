@@ -4,12 +4,14 @@ import ArcusCore
 protocol DevicePreferenceSyncUploading: Sendable {
     func upload(_ payload: DevicePreferenceSyncPayload) async throws
     func restrictSubscription() async
+    func acceptSubscriptionIntent(installationId: String, enabled: Bool) async throws
     func reconcileConsent(installationId: String) async throws
     func upload(installationId: String, preparing: @escaping @Sendable () async throws -> DevicePreferenceSyncPayload) async throws
 }
 
 extension DevicePreferenceSyncUploading {
     func restrictSubscription() async {}
+    func acceptSubscriptionIntent(installationId: String, enabled: Bool) async throws {}
     func reconcileConsent(installationId: String) async throws {}
     func upload(installationId: String, preparing: @escaping @Sendable () async throws -> DevicePreferenceSyncPayload) async throws {
         try await upload(preparing())
@@ -52,6 +54,11 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
 
     func restrictSubscription() async {
         await consent.restrictSubscription()
+    }
+
+    func acceptSubscriptionIntent(installationId: String, enabled: Bool) async throws {
+        try await enrollment.validateIdentity(for: installationId)
+        try await consent.acceptSubscriptionIntent(installationId: installationId, enabled: enabled)
     }
 
     func reconcileConsent(installationId: String) async throws {

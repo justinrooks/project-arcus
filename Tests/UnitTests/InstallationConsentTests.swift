@@ -101,12 +101,14 @@ actor ConsentHTTP: HTTPClient {
     private var rejection: Int?
     private var stale = false
     private var presenceStatus = "accepted"
+    private var tokenDeterminesOwnership = false
 
     func pause() { paused = true }
     func pauseFirst() { paused = true; firstOnly = true }
     func reject(_ status: Int) { rejection = status }
     func reportStale() { stale = true }
     func presenceResponse(_ status: String) { presenceStatus = status }
+    func ownershipDependsOnToken() { tokenDeterminesOwnership = true }
     func release() {
         paused = false
         let pending = waiters
@@ -128,7 +130,7 @@ actor ConsentHTTP: HTTPClient {
             if failNext { failNext = false; throw URLError(.networkConnectionLost) }
             let ack = try DevicePreferencesV3AcceptedResponse(status: stale ? .stale : .accepted,
                 acceptedConsentRevision: request.consentRevision + (ahead ? 1 : 0), receivedAt: Date(),
-                serverOwnsMesoNotificationDelivery: request.consent.isSubscribed)
+                serverOwnsMesoNotificationDelivery: request.consent.isSubscribed && (!tokenDeterminesOwnership || request.apnsDeviceToken != nil))
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             return HTTPResponse(status: 200, headers: [:], data: try encoder.encode(ack))
@@ -331,5 +333,60 @@ extension InstallationConsentTests {
         let payload = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: request.body!)
         #expect(payload.apnsDeviceToken == "B")
         #expect(payload.consentRevision == 1)
+    }
+}
+
+extension InstallationConsentTests {
+    @Test("revocation during consent admission sends higher-revision opt-out before suppressing presence")
+    func revokedConsentStillSynchronizes() async throws {
+        let suite = "consent-revoked-admission-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let sharing = Mutex(true)
+        let store = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                  locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .always)
+        }, markerExists: { false }, createMarker: {})
+        let http = ConsentHTTP()
+        await http.pauseFirst()
+        let uploader = HTTPLocationSnapshotUploader(baseURL: URL(string: "https://arcus.example.com")!,
+            http: http, enrollment: enrolledTestCoordinator(), consent: store)
+        let task = Task {
+            try await uploader.upload(installationId: id, checking: { try Task.checkCancellation() }) {
+                Issue.record("Revoked presence must never be prepared for transmission")
+                throw CancellationError()
+            }
+        }
+        while await http.recorded().isEmpty { await Task.yield() }
+        sharing.withLock { $0 = false }
+        await http.release()
+        await #expect(throws: LocationPushError.self) { try await task.value }
+        let requests = await http.recorded()
+        #expect(requests.map(\.path) == ["/v3/devices/preferences", "/v3/devices/preferences"])
+        let payloads = try requests.map { try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: $0.body!) }
+        #expect(payloads.map(\.consentRevision) == [1, 2])
+        #expect(payloads.map { $0.consent.locationSharingEnabled } == [true, false])
+    }
+
+    @Test("earlier same-revision tokenless ownership cannot overwrite a newer bound acknowledgment")
+    func sameRevisionOwnershipOrder() async throws {
+        let suite = "consent-binding-ack-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = isolatedConsentStore(suiteName: suite)
+        let http = ConsentHTTP()
+        await http.pauseFirst()
+        await http.ownershipDependsOnToken()
+        let base = URL(string: "https://arcus.example.com")!
+        let old = Task {
+            try await store.synchronize(installationId: id, baseURL: base, http: http, credential: "test", token: "")
+        }
+        while await http.recorded().isEmpty { await Task.yield() }
+        try await store.synchronize(installationId: id, baseURL: base, http: http, credential: "test", token: "bound")
+        #expect(UserDefaults(suiteName: suite)?.bool(forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey) == true)
+        await http.release()
+        try await old.value
+        #expect(UserDefaults(suiteName: suite)?.bool(forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey) == true)
+        let requests = try await http.recorded().map { try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: $0.body!) }
+        #expect(requests.map(\.consentRevision) == [1, 1])
+        #expect(requests.map(\.apnsDeviceToken) == [nil, "bound"])
     }
 }

@@ -10,11 +10,19 @@ import OSLog
 import ArcusCore
 
 protocol LocationSnapshotUploading: Sendable {
+    func upload(installationId: String, checking: @escaping @Sendable () async throws -> Void,
+                preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws
     func upload(_ payload: LocationSnapshotPushPayload) async throws
     func upload(installationId: String, preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws
 }
 
 extension LocationSnapshotUploading {
+    func upload(installationId: String, checking: @escaping @Sendable () async throws -> Void,
+                preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws {
+        try await checking()
+        try await upload(installationId: installationId, preparing: preparing)
+    }
+
     func upload(installationId: String, preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws {
         try await upload(preparing())
     }
@@ -76,12 +84,18 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
     }
 
     func upload(installationId: String, preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws {
+        try await upload(installationId: installationId, checking: { try Task.checkCancellation() }, preparing: preparing)
+    }
+
+    func upload(installationId: String, checking: @escaping @Sendable () async throws -> Void,
+                preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws {
         let credential = try await enrollment.credential(
             for: installationId, baseURL: baseURL, http: http
         )
         try await consent.synchronize(installationId: installationId, baseURL: baseURL,
                                       http: http, credential: credential,
-                                      checking: { _ = try await preparing(); return nil })
+                                      checking: { try await checking(); return nil })
+        try await checking()
         let current = try await consent.current(installationId: installationId).consent
         guard current.locationSharingEnabled,
               current.locationAuthorization == .always || current.locationAuthorization == .whenInUse else {

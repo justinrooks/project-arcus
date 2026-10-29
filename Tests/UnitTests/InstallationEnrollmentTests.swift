@@ -126,7 +126,7 @@ struct InstallationEnrollmentTests {
                 }
             }
         }
-        #expect(await http.state.allRequests().map(\.url.path) == ["/v2/devices/enroll"])
+        #expect(await http.state.allRequests().map(\.url.path) == (preferences ? ["/v2/devices/enroll"] : ["/v2/devices/enroll", "/v3/devices/preferences"]))
     }
 
     @Test("fresh and legacy installations persist before enrollment and enroll without APNs")
@@ -491,5 +491,24 @@ extension InstallationEnrollmentTests {
         }
         #expect(UserDefaults(suiteName: suite)?.data(forKey: InstallationConsentStore.recordKey) == nil)
         #expect(await http.state.allRequests().isEmpty)
+    }
+}
+
+extension InstallationEnrollmentTests {
+    @Test("location consent admission honors the caller budget after delayed enrollment")
+    func locationAdmissionBudgetAfterEnrollment() async throws {
+        let expired = Mutex(false)
+        let http = EnrollmentHTTPClient([200], beforePost: { expired.withLock { $0 = true } })
+        let uploader = HTTPLocationSnapshotUploader(baseURL: baseURL, http: http,
+            enrollment: EnrollmentMemoryStore().coordinator(), consent: isolatedConsentStore())
+        await #expect(throws: CancellationError.self) {
+            try await uploader.upload(installationId: enrollmentTestID, checking: {
+                if expired.withLock({ $0 }) { throw CancellationError() }
+            }) {
+                Issue.record("Expired admission must not reach location preparation")
+                throw CancellationError()
+            }
+        }
+        #expect(await http.state.allRequests().map(\.url.path) == ["/v2/devices/enroll"])
     }
 }

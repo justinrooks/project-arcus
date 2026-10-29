@@ -40,6 +40,7 @@ protocol PendingLocationUploadDraining: Sendable {
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
+    func acceptSubscriptionIntent(enabled: Bool) async
     func enqueue(
         _ context: LocationContext,
         source: LocationUploadSource,
@@ -56,6 +57,7 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 }
 
 extension LocationUploadCoordinating {
+    func acceptSubscriptionIntent(enabled: Bool) async {}
     func enqueuePreferenceSync(
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
@@ -246,6 +248,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
         guard !isProcessing else { return }
         await processQueue()
+    }
+
+    func acceptSubscriptionIntent(enabled: Bool) async {
+        let installationId = await installationIdProvider()
+        do {
+            try await preferenceUploader.acceptSubscriptionIntent(installationId: installationId, enabled: enabled)
+            subscriptionOverride = nil
+        } catch {
+            logger.error("Subscription intent persistence unavailable; device sync deferred")
+        }
     }
 
     func enqueuePreferenceSync(
@@ -581,7 +593,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 switch workItem.request.operation {
                 case .locationSnapshot:
                     do {
-                        try await locationUploader.upload(installationId: workItem.request.installationId) {
+                        try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
+                            try await self.checkTransfer(deadline: deadline)
+                        }) {
                             try await self.currentLocationPayload(for: workItem.request, deadline: deadline)
                         }
                     } catch let error as LocationPushError {
@@ -589,7 +603,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                               status == 400 || status == 422,
                               workItem.source != "unknown" else { throw error }
                         // A second transfer needs a fresh check, including after enrollment.
-                        try await locationUploader.upload(installationId: workItem.request.installationId) {
+                        try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
+                            try await self.checkTransfer(deadline: deadline)
+                        }) {
                             try await self.currentLocationPayload(for: workItem.request, deadline: deadline, legacy: true)
                         }
                     }

@@ -2811,3 +2811,45 @@ extension LocationProviderTests {
         #expect(await pending.current().isEmpty)
     }
 }
+
+extension LocationProviderTests {
+    @MainActor
+    @Test("captured settings intents preserve rapid reversal despite inverted transport callbacks",
+          arguments: [true, false])
+    func orderedNotificationIntents(finalEnabled: Bool) async throws {
+        let suite = "ordered-subscription-intents-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        // Model both defaults writes completing before either async callback can sample
+        // the intermediate value. Only the synchronous captures retain intent order.
+        let consent = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: finalEnabled, mesoNotificationsEnabled: true,
+                  locationSharingEnabled: true, locationAuthorization: .always)
+        }, markerExists: { false }, createMarker: {})
+        #expect(try await consent.current(installationId: id).revision == 1)
+        let http = ConsentHTTP()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, enrollment: enrolledTestCoordinator(), consent: consent),
+            apnsTokenProvider: { "" }, installationIdProvider: { id },
+            subscriptionStatusProvider: { finalEnabled }, mesoNotificationEnabledProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+        )
+        let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
+        let session = LocationSession(locationClient: makeLocationClient(provider: provider),
+            locationManager: LocationManager(onUpdate: { _ in }), locationContextResolver: UnavailableContextResolver(),
+            locationUploadCoordinator: pusher)
+        let older = session.captureNotificationPreferenceChange(enabled: !finalEnabled)
+        let newer = session.captureNotificationPreferenceChange(enabled: finalEnabled)
+        await session.syncNotificationPreference(after: newer)
+        await session.syncNotificationPreference(after: older)
+        let current = try await consent.current(installationId: id)
+        #expect(current.revision == 3)
+        #expect(current.consent.isSubscribed == finalEnabled)
+        let sent = try await http.recorded().map { try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: $0.body!) }
+        #expect(!sent.isEmpty)
+        #expect(sent.allSatisfy { $0.consentRevision == 3 && $0.consent.isSubscribed == finalEnabled })
+    }
+}
