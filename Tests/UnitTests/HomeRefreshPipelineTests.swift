@@ -439,6 +439,8 @@ struct HomeRefreshPipelineTests {
         await followUpGate.open()
         await pipeline.waitForIdle()
 
+        // Idle can precede the separately scheduled deferred movement task.
+        try #require(await waitUntil { await coordinator.requestCount() == 4 })
         let requests = await coordinator.requests()
         #expect(requests.map(\.trigger) == [
             .foregroundPrime,
