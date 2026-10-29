@@ -49,7 +49,7 @@ The app retrieves public weather information from:
 
 This data does not contain personal information.
 
-When AirNow processing is enabled by the service and its AQI cache has no usable result, SkyAware services may request air-quality data from AirNow using a geographic centroid derived from the requested coarse H3 cell. This is derived location, not the device's measured precise coordinates; the described request does not include the app installation identifier or APNs token. AirNow is an independent service provider for that request and handles request information under its own practices. AirNow processing may be unavailable when it is not configured.
+When AirNow processing is enabled and no unexpired AQI cache entry exists, SkyAware services may request air-quality data from AirNow using a geographic centroid derived from the requested coarse H3 cell. This is derived location, not the device's measured precise coordinates; the described request does not include the app installation identifier or APNs token. AirNow is an independent service provider for that request and handles request information under its own practices. AirNow processing may be unavailable when it is not configured.
 
 ---
 
@@ -90,7 +90,7 @@ SkyAware does not store precise latitude or longitude on our server for notifica
 
 Server-side device and location-context records support notification delivery, reliability, duplicate prevention, and troubleshooting. Current implementation and operational evidence do not establish a single retention period across current-presence records, delivery and heartbeat diagnostics, daily activity facts, logs, and backups. An inactive installation may be eligible for deletion after 30 days, but this is conditional and is not a guarantee that every related record is deleted at that time. Disabling notifications or location sharing stops the corresponding use for notification targeting when the service receives and applies the change; it does not promise immediate deletion of previously stored records. Applicable retention periods and deletion behavior remain subject to operational policy and review.
 
-If you disable server notifications or location sharing in the app, SkyAware stops using your device for server-side notification targeting. Some previously stored operational records may remain temporarily for reliability, abuse prevention, debugging, and audit purposes, but are not sold, shared for advertising, or used to build profiles.
+If you disable server notifications or location sharing in the app, SkyAware stops using your device for server-side notification targeting when the service receives and applies the change. Previously stored operational records may remain under operational retention and deletion practices whose exact periods are still being verified. They are not sold or used for advertising or profile building.
 
 Public weather alert data may be retained separately. Aggregate operational metrics may also be retained; installation-linked daily activity facts are not described as anonymous aggregate data here.
 
@@ -98,7 +98,7 @@ Public weather alert data may be retained separately. Aggregate operational metr
 
 ## Children’s Privacy
 
-SkyAware does not collect personal information and does not knowingly collect data from children.
+SkyAware does not require user accounts and does not knowingly collect names, email addresses, or account-based profile information from children. The limited device, usage, and derived-location information described in this policy may still be processed when the app is used.
 
 ---
 
@@ -114,31 +114,5 @@ For questions about this Privacy Policy, contact:
 _support@skyaware.app_
 
 ---
-
-## Draft review appendix (not part of the approved public policy)
-
-The following evidence map and checklist are for policy review. They do not establish legal compliance or approve publication.
-
-### Policy-to-evidence matrix
-
-| Policy statement | Evidence basis | Boundary or open question |
-| --- | --- | --- |
-| Foreground activity is linked to an installation and recorded daily for usage metrics | SkyAware `ForegroundActivityReporter` sends the installation identifier on foreground activation; Signal stores daily installation activity facts | Confirm product purpose, applicable disclosure purpose, and whether this report should have a separate user control before adoption |
-| Precise coordinates are used on device; derived location context is sent for notification features | SkyAware location upload payload and Signal device/presence handling use H3 and related geographic fields | Derived fields remain linkable; this statement does not promise anonymity |
-| AirNow may receive a centroid derived from a requested H3 cell on a cache miss when configured | Signal AirQualityProvider, AirNow client, and runtime configuration | Confirm provider terms/role and exact deployed configuration and cache behavior before publication |
-| Operational diagnostics and activity records have no uniform deletion period established here | Signal #375 investigation found no general inactive-installation purge in repository source and assigned operational retention/log controls to that work | Production log, backup, and operator procedures need owner confirmation; no source-only conclusion establishes deployed retention |
-| Inactive installations may be eligible for deletion after 30 days | Existing policy wording and conditional inactivity behavior | Do not state this as a hard deadline or as deletion of all linked records without operational evidence |
-| Website policy currently makes broader hosting-provider and data-use statements | Public website policy at `https://skyaware.app/privacy/`, accessed 2026-10-28 | Website is a separate published surface; synchronize only after owner review and verify the deployed page after publication |
-| Public App Store listing discloses coarse location, device identifiers, and product interaction | Public listing snapshot reviewed during #790 on 2026-10-27 | Snapshot is not App Store Connect configuration or binary verification; confirm purpose selections against current behavior |
-
-### Publication checklist
-
-- [ ] Human review approves the final policy wording and each material privacy commitment.
-- [ ] Confirm the purpose and user-control decision for installation-linked foreground usage measurement.
-- [ ] Signal #375 owner confirms current-presence, heartbeat/delivery diagnostics, daily activity, log, and backup retention/deletion behavior and any user-facing timeframe.
-- [ ] Confirm AirNow provider disclosure, configuration, and deployed cache-miss behavior with the service owner.
-- [ ] Reconcile and separately review the website policy before updating its published copy; verify the live page after an authorized publication.
-- [ ] Review App Store privacy purposes against current behavior in App Store Connect; do not infer configuration from the public listing snapshot.
-- [ ] Confirm the released app and deployed service behavior still match this draft at publication time.
 
 https://www.skyaware.app
