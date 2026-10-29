@@ -1,6 +1,6 @@
 # Installation enrollment
 
-SkyAware consumes ArcusCore **0.6.0** (`d648e2c91c687511daf9a1f7cecaf9c52b283713`) for Signal installation enrollment. This development change must not be installed on devices or released until the compatible Signal v2 server from Signal #386 / PR #388 is deployed. Server deployment is a separate operation.
+SkyAware consumes ArcusCore **0.7.0** for Signal installation enrollment. This development change must not be installed on devices or released until the compatible Signal v2 server from Signal #386 / PR #388 is deployed. Server deployment is a separate operation.
 
 ## Credential lifetime
 
@@ -16,7 +16,9 @@ Concurrent callers share one enrollment operation. Cancellation prevents a waiti
 
 The durable upload queue and its format remain unchanged. Rehydrated work, retries, and legacy source-value fallback all reach the authenticated v2 uploaders. The queued installation UUID must match the current durable identity; mismatches remain unsent rather than being reassigned. Payloads contain no credentials, and failed enrollment does not acknowledge or remove queued work.
 
-SkyAware #794 owns the existing pre-send consent/replay correction and remains a separate open issue. Signal #379 owns server ordering of in-flight consent changes. Authentication does not establish either consent invariant, and enrollment introduces a wait before the protected HTTP handoff that #794 must account for. This integration does not claim to prevent stale queued preferences or recall already-started requests. Legacy v1 retirement remains Signal #387. After an installation is claimed, downgrading to a v1-only app cannot restore device writes; rollback must preserve a compatible authenticated client/server pair or use a separately reviewed continuity plan.
+SkyAware #794 resolves current subscription, Core Location authorization, APNs token and meso preference for each transfer, after enrollment and retry backoff. Revoked sharing or non-granted authorization discards pending location work, including forced uploads and legacy-source fallback; preference sync remains available without a location. An explicit subscription opt-out can restrict uploads while the defaults write catches up. Opt-in requires the setting provider to report enabled; an asynchronous enable callback cannot override a current disabled setting. An outstanding opt-out restriction clears only after a sync/upload observes defaults confirm disabled. A later enable then follows the setting provider. A rapid disable/enable whose intermediate disabled value is never observed remains conservatively disabled for that coordinator lifetime; Boolean callbacks alone cannot prove their user-intent order. Reopened queues use current settings rather than persisted consent metadata. The durable queue format is unchanged.
+
+A request already handed to HTTP cannot be recalled. An old request can still commit after newer consent at Signal; client sequencing and these tests do not prove server commit order or recall of accepted APNs deliveries. Signal #379 owns that ordering correction. ArcusCore 0.7.0 is the contract baseline; adopting its v3 DTOs, revision authority and all v3 device routes belongs to SkyAware #798. Legacy v1 retirement remains Signal #387. No release or production validation is implied by this client change.
 
 ## Validation boundaries
 

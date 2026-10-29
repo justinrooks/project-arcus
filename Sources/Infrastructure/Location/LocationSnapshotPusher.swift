@@ -105,11 +105,18 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
     private var queue: [QueuedUpload] = []
     private var isProcessing = false
-    private var lastObservedMesoPreference: Bool?
+    private var lastObservedConsent: DeviceConsentSnapshotV3?
     private var lastUploadBySemanticKey: [DeduplicationKey: Date] = [:]
     private var pendingByCoalescingKey: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var queuedOrActiveCoalescingKeys: Set<PendingCoalescingKey> = []
+    private var preparedKeys: [PendingCoalescingKey: DeduplicationKey] = [:]
     private var hasLoadedPersistedPending = false
+    // An opt-out may restrict lagging defaults. An opt-in requires confirmation
+    // from the setting provider: asynchronous callbacks can arrive out of order.
+    private var subscriptionOverride: (value: Bool, baseline: Bool)?
+
+    private enum TransferSuppressed: Error { case obsolete }
+    private enum UploadOutcome { case uploaded, discarded, pending }
 
     init(
         locationUploader: any LocationSnapshotUploading,
@@ -165,6 +172,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
         )
         guard forceUpload || locationUploadEnabledProvider() else {
+            observeConsent(subscribed: currentSubscription(), authorization: authorizationStatusProvider())
             logger.notice(
                 "Location upload request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
@@ -174,14 +182,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        let isSubscribed = subscriptionStatusProvider()
+        let isSubscribed = currentSubscription()
         let authorizationStatus = authorizationStatusProvider()
         let now = nowProvider()
         let mesoNotificationsEnabled = mesoNotificationEnabledProvider()
-        if lastObservedMesoPreference != mesoNotificationsEnabled {
-            lastUploadBySemanticKey.removeAll()
-            lastObservedMesoPreference = mesoNotificationsEnabled
-        }
+        observeConsent(subscribed: isSubscribed, authorization: authorizationStatus)
         let persisted = PersistedLocationUploadRequest(
             source: source,
             reason: reason,
@@ -250,10 +255,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         detail: String,
         isSubscribedOverride: Bool?
     ) async {
+        if isSubscribedOverride == false {
+            subscriptionOverride = (false, subscriptionStatusProvider())
+        }
         logger.info(
             "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
         )
         guard forceUpload || locationUploadEnabledProvider() else {
+            observeConsent(subscribed: currentSubscription(), authorization: authorizationStatusProvider())
             logger.notice(
                 "Preference sync request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
             )
@@ -263,14 +272,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        let isSubscribed = isSubscribedOverride ?? subscriptionStatusProvider()
+        let isSubscribed = currentSubscription()
         let authorizationStatus = authorizationStatusProvider()
         let now = nowProvider()
         let mesoNotificationsEnabled = mesoNotificationEnabledProvider()
-        if lastObservedMesoPreference != mesoNotificationsEnabled {
-            lastUploadBySemanticKey.removeAll()
-            lastObservedMesoPreference = mesoNotificationsEnabled
-        }
+        observeConsent(subscribed: isSubscribed, authorization: authorizationStatus)
         let persisted = PersistedLocationUploadRequest(
             source: source,
             reason: requestReason,
@@ -354,7 +360,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 authorizationState: pending.authorizationState,
                 forceUpload: pending.forceUpload
             )
-            if shouldDedupeRequest(for: dedupeKey, now: now) {
+            if consentMatchesRequest(pending), shouldDedupeRequest(for: dedupeKey, now: now) {
                 dedupedCount += 1
                 pendingByCoalescingKey.removeValue(forKey: coalescingKey(for: pending))
                 await persistPendingState()
@@ -422,7 +428,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 authorizationState: pending.authorizationState,
                 forceUpload: pending.forceUpload
             )
-            if shouldDedupeRequest(for: dedupeKey, now: now) {
+            if consentMatchesRequest(pending), shouldDedupeRequest(for: dedupeKey, now: now) {
                 pendingByCoalescingKey.removeValue(forKey: coalescingKey)
                 await persistPendingState()
                 continue
@@ -437,13 +443,19 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             )
 
             guard queuedOrActiveCoalescingKeys.insert(coalescingKey).inserted else { continue }
-            defer { queuedOrActiveCoalescingKeys.remove(coalescingKey) }
+            defer {
+                queuedOrActiveCoalescingKeys.remove(coalescingKey)
+                preparedKeys.removeValue(forKey: coalescingKey)
+            }
 
-            if await uploadWithRetry(workItem, deadline: budget.deadline) {
-                if let semanticDedupeKey = workItem.semanticDedupeKey {
+            let outcome = await uploadWithRetry(workItem, deadline: budget.deadline)
+            if outcome != .pending {
+                if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
                     lastUploadBySemanticKey[semanticDedupeKey] = nowProvider()
                 }
-                pendingByCoalescingKey.removeValue(forKey: coalescingKey)
+                if !queue.contains(where: { $0.coalescingKey == coalescingKey }) {
+                    pendingByCoalescingKey.removeValue(forKey: coalescingKey)
+                }
                 await persistPendingState()
             }
 
@@ -497,16 +509,22 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return
             }
             let workItem = queue.removeFirst()
-            defer { queuedOrActiveCoalescingKeys.remove(workItem.coalescingKey) }
-            let didUpload = await uploadWithRetry(workItem)
-            if didUpload {
+            queuedOrActiveCoalescingKeys.insert(workItem.coalescingKey)
+            defer {
+                queuedOrActiveCoalescingKeys.remove(workItem.coalescingKey)
+                preparedKeys.removeValue(forKey: workItem.coalescingKey)
+            }
+            let outcome = await uploadWithRetry(workItem)
+            if outcome != .pending {
                 logger.notice(
-                    "Location upload succeeded source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
+                    "Location upload work completed source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
-                if let semanticDedupeKey = workItem.semanticDedupeKey {
+                if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
                     lastUploadBySemanticKey[semanticDedupeKey] = nowProvider()
                 }
-                pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
+                if !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) {
+                    pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
+                }
                 await persistPendingState()
             } else {
                 logger.error(
@@ -522,7 +540,13 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
     private func enqueueIfNotQueuedOrActive(_ workItem: QueuedUpload) -> Bool {
         let inserted = queuedOrActiveCoalescingKeys.insert(workItem.coalescingKey).inserted
-        guard inserted else { return false }
+        if !inserted {
+            // A replay may have prepared different consent from its historical key.
+            // Keep one durable follow-up when current intent differs from the active transfer.
+            guard let prepared = preparedKeys[workItem.coalescingKey],
+                  prepared != workItem.semanticDedupeKey,
+                  !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) else { return false }
+        }
         queue.append(workItem)
         return true
     }
@@ -530,20 +554,21 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private func uploadWithRetry(
         _ workItem: QueuedUpload,
         deadline: ContinuousClock.Instant? = nil
-    ) async -> Bool {
+    ) async -> UploadOutcome {
+        preparedKeys.removeValue(forKey: workItem.coalescingKey)
         for (index, delay) in retryDelaysSeconds.enumerated() {
             do {
                 try Task.checkCancellation()
             } catch is CancellationError {
                 logger.notice("Location upload cancelled before attempt source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
-                return false
+                return .pending
             } catch {
-                return false
+                return .pending
             }
 
             if let deadline, !shouldContinueDraining(before: deadline) {
                 logger.notice("Location upload deadline reached before attempt source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
-                return false
+                return .pending
             }
 
             if delay > 0 {
@@ -554,7 +579,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                         try await clock.sleep(until: min(retryAt, deadline))
                         guard shouldContinueDraining(before: deadline) else {
                             logger.notice("Location upload deadline reached during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
-                            return false
+                            return .pending
                         }
                     } else {
                         try await Task.sleep(for: .seconds(Int(delay)))
@@ -562,36 +587,35 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     try Task.checkCancellation()
                 } catch is CancellationError {
                     logger.notice("Location upload cancelled during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
-                    return false
+                    return .pending
                 } catch {
-                    return false
+                    return .pending
                 }
             }
             do {
-                let request = workItem.request
-                let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !token.isEmpty else { return false }
-                switch request.operation {
+                switch workItem.request.operation {
                 case .locationSnapshot:
-                    let payload = await makeLocationPayload(
-                        from: request, apnsToken: token, isSubscribed: request.isSubscribed,
-                        authorizationState: request.authorizationState, now: nowProvider()
-                    )
                     do {
-                        try await locationUploader.upload(payload)
+                        try await locationUploader.upload(installationId: workItem.request.installationId) {
+                            try await self.currentLocationPayload(for: workItem.request, deadline: deadline)
+                        }
                     } catch let error as LocationPushError {
-                        guard await uploadWithLegacySourceFallbackIfNeeded(for: payload, error: error) else {
-                            throw error
+                        guard case .invalidResponseStatus(let status) = error,
+                              status == 400 || status == 422,
+                              workItem.source != "unknown" else { throw error }
+                        // A second transfer needs a fresh check, including after enrollment.
+                        try await locationUploader.upload(installationId: workItem.request.installationId) {
+                            try await self.currentLocationPayload(for: workItem.request, deadline: deadline, legacy: true)
                         }
                     }
                 case .preferenceSync:
-                    let payload = await makePreferencePayload(
-                        from: request, apnsToken: token, isSubscribed: request.isSubscribed,
-                        authorizationState: request.authorizationState
-                    )
-                    try await preferenceUploader.upload(payload)
+                    try await preferenceUploader.upload(installationId: workItem.request.installationId) {
+                        try await self.currentPreferencePayload(for: workItem.request, deadline: deadline)
+                    }
                 }
-                return true
+                return .uploaded
+            } catch is TransferSuppressed {
+                return .discarded
             } catch let error as LocationPushError {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
@@ -601,7 +625,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 }
             } catch is CancellationError {
                 logger.notice("Location upload cancelled source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
-                return false
+                return .pending
             } catch {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
@@ -612,49 +636,92 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             }
         }
 
-        return false
+        return .pending
     }
 
-    private func uploadWithLegacySourceFallbackIfNeeded(
-        for payload: LocationSnapshotPushPayload,
-        error: LocationPushError
-    ) async -> Bool {
-        guard case .invalidResponseStatus(let status) = error else { return false }
-        guard status == 400 || status == 422 else { return false }
-        guard payload.source != "unknown" else { return false }
+    private func consentMatchesRequest(_ request: PersistedLocationUploadRequest) -> Bool {
+        request.isSubscribed == currentSubscription()
+            && request.authorizationState == Self.authorizationName(for: authorizationStatusProvider())
+    }
 
-        let fallbackPayload = LocationSnapshotPushPayload(
-            capturedAt: payload.capturedAt,
-            locationAgeSeconds: payload.locationAgeSeconds,
-            horizontalAccuracyMeters: payload.horizontalAccuracyMeters,
-            cellScheme: payload.cellScheme,
-            h3Cell: payload.h3Cell,
-            h3Resolution: payload.h3Resolution,
-            county: payload.county,
-            zone: payload.zone,
-            fireZone: payload.fireZone,
-            apnsDeviceToken: payload.apnsDeviceToken,
-            installationId: payload.installationId,
-            source: "unknown",
-            auth: payload.auth,
-            appVersion: payload.appVersion,
-            buildNumber: payload.buildNumber,
-            platform: payload.platform,
-            osVersion: payload.osVersion,
-            apnsEnvironment: payload.apnsEnvironment,
-            countyLabel: payload.countyLabel,
-            fireZoneLabel: payload.fireZoneLabel,
-            isSubscribed: payload.isSubscribed,
-            mesoNotificationsEnabled: payload.mesoNotificationsEnabled
+    private func recordPreparedKey(
+        _ request: PersistedLocationUploadRequest, token: String, subscribed: Bool, authorization: CLAuthorizationStatus
+    ) {
+        observeConsent(subscribed: subscribed, authorization: authorization)
+        preparedKeys[coalescingKey(for: request)] = DeduplicationKey(
+            installationId: request.installationId, apnsToken: token,
+            operation: request.operation.deduplicationOperation, isSubscribed: subscribed,
+            mesoNotificationsEnabled: mesoNotificationEnabledProvider(),
+            authorizationState: Self.authorizationName(for: authorization), forceUpload: request.forceUpload
         )
+    }
 
-        do {
-            try await locationUploader.upload(fallbackPayload)
-            logger.notice("Location snapshot upload succeeded with legacy source fallback")
-            return true
-        } catch {
-            return false
+    private func observeConsent(subscribed: Bool, authorization: CLAuthorizationStatus) {
+        let consent = DeviceConsentSnapshotV3(
+            isSubscribed: subscribed, mesoNotificationsEnabled: mesoNotificationEnabledProvider(),
+            locationSharingEnabled: locationUploadEnabledProvider(),
+            locationAuthorization: .init(rawValue: Self.authorizationName(for: authorization)) ?? .unknown
+        )
+        if lastObservedConsent != consent {
+            lastUploadBySemanticKey.removeAll()
+            lastObservedConsent = consent
         }
+    }
+
+    private func currentSubscription() -> Bool {
+        let current = subscriptionStatusProvider()
+        guard let override = subscriptionOverride else { return current }
+        if current != override.baseline || current == override.value {
+            subscriptionOverride = nil
+            return current
+        }
+        return override.value
+    }
+
+    private func checkTransfer(deadline: ContinuousClock.Instant?) throws {
+        try Task.checkCancellation()
+        if let deadline, !shouldContinueDraining(before: deadline) { throw CancellationError() }
+    }
+
+    private func currentLocationPayload(
+        for request: PersistedLocationUploadRequest,
+        deadline: ContinuousClock.Instant?,
+        legacy: Bool = false
+    ) async throws -> LocationSnapshotPushPayload {
+        let osVersion = await UIDevice.current.systemVersion
+        try checkTransfer(deadline: deadline)
+        let authorization = authorizationStatusProvider()
+        observeConsent(subscribed: currentSubscription(), authorization: authorization)
+        guard locationUploadEnabledProvider(),
+              authorization == .authorizedAlways || authorization == .authorizedWhenInUse else {
+            throw TransferSuppressed.obsolete
+        }
+        let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { throw LocationPushError.invalidResponseStatus(503) }
+        let subscribed = currentSubscription()
+        recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)
+        return makeLocationPayload(
+            from: request, apnsToken: token, isSubscribed: subscribed,
+            authorizationState: Self.authorizationName(for: authorization), now: nowProvider(),
+            osVersion: osVersion, legacy: legacy
+        )
+    }
+
+    private func currentPreferencePayload(
+        for request: PersistedLocationUploadRequest,
+        deadline: ContinuousClock.Instant?
+    ) async throws -> DevicePreferenceSyncPayload {
+        let osVersion = await UIDevice.current.systemVersion
+        try checkTransfer(deadline: deadline)
+        let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { throw LocationPushError.invalidResponseStatus(503) }
+        let subscribed = currentSubscription()
+        let authorization = authorizationStatusProvider()
+        recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)
+        return makePreferencePayload(
+            from: request, apnsToken: token, isSubscribed: subscribed,
+            authorizationState: Self.authorizationName(for: authorization), osVersion: osVersion
+        )
     }
 
     private func makeLocationPayload(
@@ -662,8 +729,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         apnsToken: String,
         isSubscribed: Bool,
         authorizationState: String,
-        now: Date
-    ) async -> LocationSnapshotPushPayload {
+        now: Date,
+        osVersion: String,
+        legacy: Bool
+    ) -> LocationSnapshotPushPayload {
         guard case .locationSnapshot(let context) = request.operation else {
             preconditionFailure("Location payload requested for non-location operation")
         }
@@ -684,12 +753,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             fireZone: context.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: request.installationId,
-            source: request.source.rawValue,
+            source: legacy ? "unknown" : request.source.rawValue,
             auth: authorizationState,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
             buildNumber: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
             platform: "iOS",
-            osVersion: await UIDevice.current.systemVersion,
+            osVersion: osVersion,
             apnsEnvironment: {
                 #if DEBUG
                 return "sandbox"
@@ -708,8 +777,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         from request: PersistedLocationUploadRequest,
         apnsToken: String,
         isSubscribed: Bool,
-        authorizationState: String
-    ) async -> DevicePreferenceSyncPayload {
+        authorizationState: String,
+        osVersion: String
+    ) -> DevicePreferenceSyncPayload {
         // Pending requests preserve their snapshot; delivery uses the current preference.
         DevicePreferenceSyncPayload(
             installationId: request.installationId,
@@ -722,7 +792,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 #endif
             }(),
             platform: "iOS",
-            osVersion: await UIDevice.current.systemVersion,
+            osVersion: osVersion,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
             buildNumber: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
             auth: authorizationState,

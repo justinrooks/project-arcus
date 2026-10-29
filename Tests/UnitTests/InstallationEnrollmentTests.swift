@@ -87,6 +87,35 @@ private final class EnrollmentHTTPClient: HTTPClient, Sendable {
 struct InstallationEnrollmentTests {
     let baseURL = URL(string: "https://arcus.example.com")!
 
+    @Test("privacy preparation runs after enrollment and can suppress protected handoff", arguments: [false, true])
+    func privacyAfterEnrollment(preferences: Bool) async throws {
+        let store = EnrollmentMemoryStore()
+        let revoked = Mutex(false)
+        let http = EnrollmentHTTPClient([200], beforePost: {
+            revoked.withLock { $0 = true }
+        })
+        let coordinator = store.coordinator()
+        await #expect(throws: CancellationError.self) {
+            if preferences {
+                let uploader = HTTPDevicePreferenceSyncUploader(baseURL: baseURL, http: http, enrollment: coordinator,
+                    defaultsSuiteName: "privacy-test-\(UUID())")
+                try await uploader.upload(installationId: enrollmentTestID) {
+                    #expect(revoked.withLock { $0 })
+                    #expect(store.record.withLock { $0?.enrolledOrigin } != nil)
+                    throw CancellationError()
+                }
+            } else {
+                let uploader = HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: coordinator)
+                try await uploader.upload(installationId: enrollmentTestID) {
+                    #expect(revoked.withLock { $0 })
+                    #expect(store.record.withLock { $0?.enrolledOrigin } != nil)
+                    throw CancellationError()
+                }
+            }
+        }
+        #expect(await http.state.allRequests().map(\.url.path) == ["/v2/devices/enroll"])
+    }
+
     @Test("fresh and legacy installations persist before enrollment and enroll without APNs")
     func persistBeforeEnroll() async throws {
         let store = EnrollmentMemoryStore()

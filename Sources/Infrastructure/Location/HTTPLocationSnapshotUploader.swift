@@ -11,6 +11,13 @@ import ArcusCore
 
 protocol LocationSnapshotUploading: Sendable {
     func upload(_ payload: LocationSnapshotPushPayload) async throws
+    func upload(installationId: String, preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws
+}
+
+extension LocationSnapshotUploading {
+    func upload(installationId: String, preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws {
+        try await upload(preparing())
+    }
 }
 
 struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
@@ -62,11 +69,17 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
     }
 
     func upload(_ payload: LocationSnapshotPushPayload) async throws {
-        let body = try encoder.encode(payload)
+        try await upload(installationId: payload.installationId, preparing: { payload })
+    }
+
+    func upload(installationId: String, preparing: @escaping @Sendable () async throws -> LocationSnapshotPushPayload) async throws {
         let credential = try await enrollment.credential(
-            for: payload.installationId, baseURL: baseURL, http: http
+            for: installationId, baseURL: baseURL, http: http
         )
+        // Enrollment can suspend. Resolve current consent only after it completes.
+        let payload = try await preparing()
         try Task.checkCancellation()
+        let body = try encoder.encode(payload)
         var headers = requestHeaders
         headers["Authorization"] = "Bearer \(credential)"
         let response = try await http.post(endpoint, headers: headers, body: body)
