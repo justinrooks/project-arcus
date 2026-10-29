@@ -111,7 +111,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private var queuedOrActiveCoalescingKeys: Set<PendingCoalescingKey> = []
     private var preparedKeys: [PendingCoalescingKey: DeduplicationKey] = [:]
     private var hasLoadedPersistedPending = false
-    // Explicit settings intent wins while its defaults write is still catching up.
+    // An opt-out may restrict lagging defaults. An opt-in requires confirmation
+    // from the setting provider: asynchronous callbacks can arrive out of order.
     private var subscriptionOverride: (value: Bool, baseline: Bool)?
 
     private enum TransferSuppressed: Error { case obsolete }
@@ -254,8 +255,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         detail: String,
         isSubscribedOverride: Bool?
     ) async {
-        if let isSubscribedOverride {
-            subscriptionOverride = (isSubscribedOverride, subscriptionStatusProvider())
+        if isSubscribedOverride == false {
+            subscriptionOverride = (false, subscriptionStatusProvider())
         }
         logger.info(
             "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"

@@ -1110,11 +1110,12 @@ struct LocationProviderTests {
     @Test("explicit subscription intent survives token delay and reversal with lagging defaults")
     func consentReplay_delayedOverride() async throws {
         let token = TokenBox("")
+        let subscribed = BoolBox(true)
         let preferences = MockPreferenceUploader()
         let pusher = LocationSnapshotPusher(
             locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
             apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
-            subscriptionStatusProvider: { true }, locationUploadEnabledProvider: { true },
+            subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
             authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
         )
         await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
@@ -1122,6 +1123,10 @@ struct LocationProviderTests {
         token.set("token")
         await pusher.drainPendingUploads()
         #expect(await preferences.uploadedPayloads().last?.isSubscribed == false)
+        subscribed.set(false)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "defaults-caught-up")
+        subscribed.set(true)
         await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
                                            forceUpload: true, detail: "reenable", isSubscribedOverride: true)
         #expect(await preferences.uploadedPayloads().map(\.isSubscribed) == [false, true])
@@ -1192,6 +1197,49 @@ struct LocationProviderTests {
         await drain.value
         #expect(await preferences.subscriptions() == [initial, !initial, initial])
         #expect(await store.current().isEmpty)
+    }
+
+    @Test("a delayed enable callback cannot override the current opt-out", arguments: [false, true], [false, true])
+    func consentReplay_outOfOrderSettingsCallbacks(delayedToken: Bool, laggingDefaults: Bool) async throws {
+        let subscribed = BoolBox(laggingDefaults)
+        let token = TokenBox(delayedToken ? "" : "token")
+        let locations = MockSnapshotUploader()
+        let preferences = MockPreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: locations, preferenceUploader: preferences,
+            apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+        )
+        // The user enabled, then disabled. Deliver the newer disable callback first.
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "new-disable", isSubscribedOverride: false)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "old-enable", isSubscribedOverride: true)
+        token.set("token")
+        await pusher.drainPendingUploads()
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        let sentPreferences = await preferences.uploadedPayloads()
+        let sentLocations = await locations.uploadedPayloads()
+        #expect(!sentPreferences.isEmpty)
+        #expect(!sentLocations.isEmpty)
+        #expect(sentPreferences.allSatisfy { !$0.isSubscribed })
+        #expect(sentLocations.allSatisfy { $0.isSubscribed == false })
+
+        // A genuine enable may also precede its defaults write. Stay opted out
+        // until the authoritative setting catches up, including future uploads.
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "lagging-enable", isSubscribedOverride: true)
+        #expect(await preferences.uploadedPayloads().allSatisfy { !$0.isSubscribed })
+        subscribed.set(false)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "confirmed-disable")
+        subscribed.set(true)
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "confirmed-enable", isSubscribedOverride: true)
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        #expect(await preferences.uploadedPayloads().last?.isSubscribed == true)
+        #expect(await locations.uploadedPayloads().last?.isSubscribed == true)
     }
 
     @Test("preference sync uses explicit subscription override instead of provider value")
