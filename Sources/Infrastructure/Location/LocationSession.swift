@@ -354,6 +354,9 @@ final class LocationSession: Sendable {
 
         if hadAuthorizationChange {
             authorizationStatus = status
+            Task { [weak self] in
+                await self?.syncMesoNotificationPreference()
+            }
         }
         if hadAccuracyChange {
             accuracyAuthorization = accuracy

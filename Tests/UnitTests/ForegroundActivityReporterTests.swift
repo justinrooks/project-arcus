@@ -1,3 +1,4 @@
+import ArcusCore
 import Foundation
 import SwiftUI
 import Testing
@@ -72,11 +73,12 @@ struct ForegroundActivityReporterTests {
 struct HTTPForegroundActivityUploaderTests {
     @Test("upload sends only the installation ID to the foreground activity endpoint")
     func uploadSendsMinimalRequest() async throws {
-        let http = ForegroundActivityMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
+        let http = ForegroundActivityMockHTTPClient(response: HTTPResponse(status: 204, headers: [:], data: nil))
         let uploader = HTTPForegroundActivityUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
             http: http,
-            enrollment: enrolledTestCoordinator()
+            enrollment: enrolledTestCoordinator(),
+            consent: isolatedConsentStore()
         )
 
         try await uploader.upload(installationId: "f0465f55-f0a2-48a0-aac0-6a5c48a95891")
@@ -143,6 +145,14 @@ private final class ForegroundActivityMockHTTPClient: HTTPClient, @unchecked Sen
     }
 
     func post(_ url: URL, headers: [String: String], body: Data?) async throws -> HTTPResponse {
+        if url.path == ArcusSignalConfiguration.devicePreferencesPath {
+            let payload = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: body!)
+            let ack = try DevicePreferencesV3AcceptedResponse(status: .accepted, acceptedConsentRevision: payload.consentRevision,
+                receivedAt: Date(), serverOwnsMesoNotificationDelivery: false)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return HTTPResponse(status: 200, headers: [:], data: try encoder.encode(ack))
+        }
         await state.record(method: "POST", url: url, headers: headers, body: body)
         return response
     }

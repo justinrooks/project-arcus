@@ -58,9 +58,22 @@ private actor EnrollmentHTTPState {
     }
     func post(_ url: URL, headers: [String: String], body: Data?) throws -> HTTPResponse {
         requests.append(Request(url: url, headers: headers, body: body))
+        if url.path == "/v3/devices/preferences" {
+            let payload = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: body!)
+            let ack = try DevicePreferencesV3AcceptedResponse(status: .accepted,
+                acceptedConsentRevision: payload.consentRevision, receivedAt: Date(),
+                serverOwnsMesoNotificationDelivery: false)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return HTTPResponse(status: 200, headers: [:], data: try encoder.encode(ack))
+        }
         let status = responses.removeFirst()
         if status == -1 { throw URLError(.networkConnectionLost) }
-        return HTTPResponse(status: status, headers: [:], data: acknowledgment)
+        if url.path == "/v3/devices/location-snapshots", (200...299).contains(status) {
+            return HTTPResponse(status: 200, headers: [:], data: Data("{\"status\":\"accepted\",\"receivedAt\":\"2026-10-29T00:00:00Z\"}".utf8))
+        }
+        return HTTPResponse(status: url.path == "/v3/devices/foreground-activity" && status == 202 ? 204 : status,
+                            headers: [:], data: acknowledgment)
     }
     func allRequests() -> [Request] { requests }
 }
@@ -98,14 +111,14 @@ struct InstallationEnrollmentTests {
         await #expect(throws: CancellationError.self) {
             if preferences {
                 let uploader = HTTPDevicePreferenceSyncUploader(baseURL: baseURL, http: http, enrollment: coordinator,
-                    defaultsSuiteName: "privacy-test-\(UUID())")
+                    consent: isolatedConsentStore())
                 try await uploader.upload(installationId: enrollmentTestID) {
                     #expect(revoked.withLock { $0 })
                     #expect(store.record.withLock { $0?.enrolledOrigin } != nil)
                     throw CancellationError()
                 }
             } else {
-                let uploader = HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: coordinator)
+                let uploader = HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: coordinator, consent: isolatedConsentStore())
                 try await uploader.upload(installationId: enrollmentTestID) {
                     #expect(revoked.withLock { $0 })
                     #expect(store.record.withLock { $0?.enrolledOrigin } != nil)
@@ -155,11 +168,11 @@ struct InstallationEnrollmentTests {
         let store = EnrollmentMemoryStore()
         let http = EnrollmentHTTPClient([200, 202, 202])
         for _ in 0..<2 {
-            let uploader = HTTPForegroundActivityUploader(baseURL: baseURL, http: http, enrollment: store.coordinator())
+            let uploader = HTTPForegroundActivityUploader(baseURL: baseURL, http: http, enrollment: store.coordinator(), consent: isolatedConsentStore())
             try await uploader.upload(installationId: enrollmentTestID)
         }
         let requests = await http.state.allRequests()
-        #expect(requests.map(\.url.path) == ["/v2/devices/enroll", "/v2/devices/foreground-activity", "/v2/devices/foreground-activity"])
+        #expect(requests.map(\.url.path) == ["/v2/devices/enroll", "/v3/devices/preferences", "/v3/devices/foreground-activity", "/v3/devices/preferences", "/v3/devices/foreground-activity"])
         #expect(requests.dropFirst().allSatisfy { $0.headers["Authorization"] == "Bearer \(enrollmentTestSecret)" })
     }
 
@@ -213,11 +226,11 @@ struct InstallationEnrollmentTests {
         let store = EnrollmentMemoryStore()
         let coordinator = store.coordinator()
         let http = EnrollmentHTTPClient([200, 202, 202])
-        let location = HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: coordinator)
+        let location = HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: coordinator, consent: isolatedConsentStore())
         let suite = "enrollment-\(UUID())"
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let preferences = HTTPDevicePreferenceSyncUploader(baseURL: baseURL, http: http,
-                                                          enrollment: coordinator, defaultsSuiteName: suite)
+                                                          enrollment: coordinator, consent: isolatedConsentStore())
         try await location.upload(LocationSnapshotPushPayload(
             capturedAt: Date(timeIntervalSince1970: 1), locationAgeSeconds: 0, horizontalAccuracyMeters: 10,
             cellScheme: "h3", h3Cell: nil, h3Resolution: nil, county: nil, zone: nil, fireZone: nil,
@@ -231,7 +244,7 @@ struct InstallationEnrollmentTests {
             isSubscribed: false, source: "unknown", reason: "opt-out", mesoNotificationsEnabled: false
         ))
         let requests = await http.state.allRequests()
-        #expect(requests.map(\.url.path) == ["/v2/devices/enroll", "/v2/devices/location-snapshots", "/v2/devices/preferences"])
+        #expect(requests.map(\.url.path) == ["/v2/devices/enroll", "/v3/devices/preferences", "/v3/devices/location-snapshots", "/v3/devices/preferences"])
         for request in requests.dropFirst() {
             #expect(request.headers["Authorization"] == "Bearer \(enrollmentTestSecret)")
             let body = try #require(request.body)
@@ -239,21 +252,21 @@ struct InstallationEnrollmentTests {
             #expect(json["credential"] == nil)
         }
         let last = try #require(requests.last?.body)
-        let payload = try JSONDecoder().decode(DevicePreferenceSyncPayload.self, from: last)
-        #expect(payload.isSubscribed == false)
-        #expect(payload.mesoNotificationsEnabled == false)
+        let payload = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: last)
+        #expect(payload.consent.isSubscribed == true)
+        #expect(payload.consent.mesoNotificationsEnabled == true)
     }
 
     @Test("invalid protected-write proof fails without reenrollment or v1 fallback")
     func invalidWriteProof() async {
         let http = EnrollmentHTTPClient([401, 401])
-        let uploader = HTTPForegroundActivityUploader(baseURL: baseURL, http: http, enrollment: enrolledTestCoordinator())
+        let uploader = HTTPForegroundActivityUploader(baseURL: baseURL, http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore())
         for _ in 0..<2 {
             await #expect(throws: ForegroundActivityError.invalidResponseStatus(401)) {
                 try await uploader.upload(installationId: enrollmentTestID)
             }
         }
-        #expect(await http.state.allRequests().map(\.url.path) == ["/v2/devices/foreground-activity", "/v2/devices/foreground-activity"])
+        #expect(await http.state.allRequests().map(\.url.path) == ["/v3/devices/preferences", "/v3/devices/foreground-activity", "/v3/devices/preferences", "/v3/devices/foreground-activity"])
     }
 
     @Test("enrollment only accepts the exact success response", arguments: [201, 202, 400])
@@ -339,7 +352,7 @@ extension InstallationEnrollmentTests {
         })
         let joined = Mutex(false)
         let coordinator = store.coordinator(enrollmentWaiterDidJoin: { joined.withLock { $0 = true } })
-        let uploader = HTTPForegroundActivityUploader(baseURL: baseURL, http: http, enrollment: coordinator)
+        let uploader = HTTPForegroundActivityUploader(baseURL: baseURL, http: http, enrollment: coordinator, consent: isolatedConsentStore())
         let canceled = Task { try await uploader.upload(installationId: enrollmentTestID) }
         while await !gate.hasStarted() { await Task.yield() }
         canceled.cancel()
@@ -349,7 +362,7 @@ extension InstallationEnrollmentTests {
         await gate.open()
         await #expect(throws: CancellationError.self) { try await canceled.value }
         try await survivor.value
-        #expect(await http.state.allRequests().map(\.url.path) == ["/v2/devices/enroll", "/v2/devices/foreground-activity"])
+        #expect(await http.state.allRequests().map(\.url.path) == ["/v2/devices/enroll", "/v3/devices/preferences", "/v3/devices/foreground-activity"])
     }
 
     @Test("reopened queues retain work across enrollment failure and remove only authenticated success",
@@ -361,17 +374,19 @@ extension InstallationEnrollmentTests {
         let request = PersistedLocationUploadRequest(
             source: .settingsPreference, reason: .preferenceChanged, forceUpload: true,
             installationId: mismatchedIdentity ? UUID().uuidString : enrollmentTestID,
-            requestedAt: Date(timeIntervalSince1970: 1000), isSubscribed: false, authorizationState: "denied",
-            apnsToken: "token", operation: .preferenceSync, mesoNotificationsEnabled: false
+            requestedAt: Date(timeIntervalSince1970: 1000), isSubscribed: true, authorizationState: "always",
+            apnsToken: "token", operation: .preferenceSync, mesoNotificationsEnabled: true
         )
         await queue.savePendingRequests([request])
         let store = EnrollmentMemoryStore()
         let http = EnrollmentHTTPClient(mismatchedIdentity ? [] : [-1, 200, 202])
         func reopened() -> LocationSnapshotPusher {
-            LocationSnapshotPusher(
-                locationUploader: HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: store.coordinator()),
+            let consent = isolatedConsentStore(suiteName: suite, consent: .init(isSubscribed: false,
+                mesoNotificationsEnabled: false, locationSharingEnabled: false, locationAuthorization: .denied))
+            return LocationSnapshotPusher(
+                locationUploader: HTTPLocationSnapshotUploader(baseURL: baseURL, http: http, enrollment: store.coordinator(), consent: consent),
                 preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: baseURL, http: http,
-                    enrollment: store.coordinator(), defaultsSuiteName: suite),
+                    enrollment: store.coordinator(), consent: consent),
                 apnsTokenProvider: { "token" }, installationIdProvider: { enrollmentTestID },
                 subscriptionStatusProvider: { false }, mesoNotificationEnabledProvider: { false },
                 authorizationStatusProvider: { .denied }, retryDelaysSeconds: [0],
@@ -387,9 +402,13 @@ extension InstallationEnrollmentTests {
         } else {
             #expect(await queue.loadPendingRequests().isEmpty)
             let requests = await http.state.allRequests()
-            #expect(requests.map(\.url.path) == ["/v2/devices/enroll", "/v2/devices/enroll", "/v2/devices/preferences"])
+            #expect(requests.map(\.url.path) == ["/v2/devices/enroll", "/v2/devices/enroll", "/v3/devices/preferences"])
             #expect(try enrollmentPayload(requests[0]) == enrollmentPayload(requests[1]))
             #expect(requests[2].headers["Authorization"] == "Bearer \(enrollmentTestSecret)")
+            let sent = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: requests[2].body!)
+            #expect(sent.consentRevision == 1)
+            #expect(!sent.consent.isSubscribed && !sent.consent.mesoNotificationsEnabled && !sent.consent.locationSharingEnabled)
+            #expect(sent.consent.locationAuthorization == .denied)
         }
     }
 
@@ -430,7 +449,7 @@ extension InstallationEnrollmentTests {
 
     @Test("installation redirects are refused by the URLSession delegate", arguments: [307, 308])
     func redirectConfinement(status: Int) throws {
-        for path in ["/v2/devices/enroll", "/v2/devices/preferences", "/api/v2/devices/location-snapshots", "/v2/devices/foreground-activity"] {
+        for path in ["/v2/devices/enroll", "/v3/devices/preferences", "/api/v2/devices/location-snapshots", "/v3/devices/foreground-activity"] {
             for destination in ["https://outside.example.com/leak", "https://arcus.example.com/v1/mesos", "http://arcus.example.com/leak"] {
                 var original = URLRequest(url: baseURL.appendingPathComponent(path))
                 original.httpMethod = "POST"
@@ -453,5 +472,24 @@ extension InstallationEnrollmentTests {
         var weather = URLRequest(url: baseURL.appendingPathComponent("/v1/mesos"))
         weather.httpMethod = "GET"
         #expect(InstallationRequestRedirectPolicy.allowsRedirect(for: weather))
+    }
+}
+
+extension InstallationEnrollmentTests {
+    @Test("volatile identity cannot initialize durable v3 consent bookkeeping")
+    func consentRequiresDurableIdentity() async throws {
+        let suite = "consent-identity-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let http = EnrollmentHTTPClient([])
+        let enrollment = InstallationEnrollmentCoordinator(installationId: {
+            throw InstallationEnrollmentError.persistenceUnavailable
+        })
+        let uploader = HTTPDevicePreferenceSyncUploader(baseURL: baseURL, http: http,
+            enrollment: enrollment, consent: isolatedConsentStore(suiteName: suite))
+        await #expect(throws: InstallationEnrollmentError.persistenceUnavailable) {
+            try await uploader.reconcileConsent(installationId: enrollmentTestID)
+        }
+        #expect(UserDefaults(suiteName: suite)?.data(forKey: InstallationConsentStore.recordKey) == nil)
+        #expect(await http.state.allRequests().isEmpty)
     }
 }

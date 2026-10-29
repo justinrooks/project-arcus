@@ -389,10 +389,10 @@ struct RuntimeConnectivityStateTests {
 struct HTTPLocationSnapshotUploaderTests {
     @Test("upload builds location snapshot endpoint from Arcus signal base URL")
     func upload_buildsLocationSnapshotsURL() async throws {
-        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
+        let http = ConsentHTTP()
         let uploader = HTTPLocationSnapshotUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http, enrollment: enrolledTestCoordinator()
+            http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore()
         )
 
         let payload = LocationSnapshotPushPayload(
@@ -421,7 +421,7 @@ struct HTTPLocationSnapshotUploaderTests {
 
         try await uploader.upload(payload)
 
-        let request = try #require(await http.firstRequest())
+        let request = try #require(await http.recorded().last)
         #expect(request.method == "POST")
         #expect(request.url.scheme == "https")
         #expect(request.url.host == "arcus.example.com")
@@ -451,22 +451,22 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         )
     }
 
-    @Test("ownership acknowledgment persists across defaults reopen and clears for older servers",
+    @Test("ownership acknowledgment persists and malformed v3 responses cannot replace it",
           arguments: [false, true])
     func ownershipAcknowledgment_isDurable(ownsDelivery: Bool) async throws {
         let suite = "meso-ownership-\(UUID().uuidString)"
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-        let response = DevicePreferenceSyncAcceptedResponse(
-            status: "accepted", receivedAt: Date(timeIntervalSince1970: 1_780_358_400),
+        let response = try DevicePreferencesV3AcceptedResponse(
+            status: .accepted, acceptedConsentRevision: 1, receivedAt: Date(timeIntervalSince1970: 1_780_358_400),
             serverOwnsMesoNotificationDelivery: ownsDelivery
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let http = ArcusMockHTTPClient(response: HTTPResponse(
-            status: 202, headers: [:], data: try encoder.encode(response)
+            status: 200, headers: [:], data: try encoder.encode(response)
         ))
         let uploader = HTTPDevicePreferenceSyncUploader(
-            baseURL: URL(string: "https://arcus.example.com")!, http: http, enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
+            baseURL: URL(string: "https://arcus.example.com")!, http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore(suiteName: suite)
         )
         try await uploader.upload(makePreferencePayload(isSubscribed: true, token: "token"))
         #expect(UserDefaults(suiteName: suite)?.object(
@@ -476,14 +476,16 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         #expect(await backgroundSettings.current().serverOwnsMesoNotificationDelivery == ownsDelivery)
         let legacy = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil)),
-            enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
+            http: ArcusMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: nil)),
+            enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore(suiteName: suite)
         )
-        try await legacy.upload(makePreferencePayload(isSubscribed: true, token: "token"))
+        await #expect(throws: InstallationConsentStore.Failure.inconsistentAcknowledgment) {
+            try await legacy.upload(makePreferencePayload(isSubscribed: true, token: "token"))
+        }
         #expect(UserDefaults(suiteName: suite)?.object(
             forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey
-        ) == nil)
-        #expect(await backgroundSettings.current().serverOwnsMesoNotificationDelivery == false)
+        ) as? Bool == ownsDelivery)
+        #expect(await backgroundSettings.current().serverOwnsMesoNotificationDelivery == ownsDelivery)
     }
 
     @Test("Background settings require an explicit ownership acknowledgment",
@@ -509,10 +511,14 @@ struct HTTPDevicePreferenceSyncUploaderTests {
     func upload_buildsPreferencesURL() async throws {
         let suite = "meso-http-\(UUID().uuidString)"
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
+        let ack = try DevicePreferencesV3AcceptedResponse(status: .accepted, acceptedConsentRevision: 1,
+            receivedAt: Date(), serverOwnsMesoNotificationDelivery: false)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: try encoder.encode(ack)))
         let uploader = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http, enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
+            http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore(suiteName: suite)
         )
 
         let payload = makePreferencePayload(isSubscribed: true, token: "abc123")
@@ -537,11 +543,11 @@ struct HTTPDevicePreferenceSyncUploaderTests {
         let http = ArcusMockHTTPClient(response: HTTPResponse(status: 500, headers: [:], data: nil))
         let uploader = HTTPDevicePreferenceSyncUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http, enrollment: enrolledTestCoordinator(), defaultsSuiteName: suite
+            http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore(suiteName: suite)
         )
         let payload = makePreferencePayload(isSubscribed: false, token: "super-secret-token")
 
-        await #expect(throws: LocationPushError.self) {
+        await #expect(throws: InstallationConsentStore.Failure.rejected(500)) {
             try await uploader.upload(payload)
         }
     }

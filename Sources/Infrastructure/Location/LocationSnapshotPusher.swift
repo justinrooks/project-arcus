@@ -74,6 +74,7 @@ extension LocationUploadCoordinating {
 
 enum LocationPushError: Error {
     case invalidResponseStatus(Int)
+    case presenceNotAccepted
 }
 
 actor LocationSnapshotPusher: LocationUploadCoordinating {
@@ -181,6 +182,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
+        do {
+            try await preferenceUploader.reconcileConsent(installationId: installationId)
+        } catch {
+            logger.error("Consent persistence unavailable; device sync deferred")
+            return
+        }
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let isSubscribed = currentSubscription()
         let authorizationStatus = authorizationStatusProvider()
@@ -200,13 +207,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             mesoNotificationsEnabled: mesoNotificationsEnabled
         )
 
-        guard !apnsToken.isEmpty else {
-            logger.notice(
-                "Location upload request persisted persistReason=missingToken source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
-            )
-            await upsertPending(persisted)
-            return
-        }
         let dedupeKey = DeduplicationKey(
             installationId: installationId,
             apnsToken: apnsToken,
@@ -257,20 +257,20 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     ) async {
         if isSubscribedOverride == false {
             subscriptionOverride = (false, subscriptionStatusProvider())
+            await preferenceUploader.restrictSubscription()
         }
         logger.info(
             "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
         )
-        guard forceUpload || locationUploadEnabledProvider() else {
-            observeConsent(subscribed: currentSubscription(), authorization: authorizationStatusProvider())
-            logger.notice(
-                "Preference sync request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
-            )
-            return
-        }
 
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
+        do {
+            try await preferenceUploader.reconcileConsent(installationId: installationId)
+        } catch {
+            logger.error("Consent persistence unavailable; device sync deferred")
+            return
+        }
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let isSubscribed = currentSubscription()
         let authorizationStatus = authorizationStatusProvider()
@@ -290,13 +290,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             mesoNotificationsEnabled: mesoNotificationsEnabled
         )
 
-        guard !apnsToken.isEmpty else {
-            logger.notice(
-                "Preference sync request persisted persistReason=missingToken source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
-            )
-            await upsertPending(persisted)
-            return
-        }
 
         let dedupeKey = DeduplicationKey(
             installationId: installationId,
@@ -342,10 +335,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         logger.info("Location upload drain started pendingCount=\(self.pendingByCoalescingKey.count, privacy: .public)")
 
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apnsToken.isEmpty else {
-            logger.notice("Location upload drain skipped reason=missingToken")
-            return
-        }
 
         var enqueuedCount = 0
         var dedupedCount = 0
@@ -399,10 +388,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         }
 
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apnsToken.isEmpty else {
-            logger.notice("Location upload drain skipped reason=missingToken")
-            return .remaining
-        }
 
         isProcessing = true
         defer {
@@ -616,6 +601,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return .uploaded
             } catch is TransferSuppressed {
                 return .discarded
+            } catch InstallationConsentStore.Failure.rejected(let status) where [400, 401, 409].contains(status) {
+                return .pending
+            } catch LocationPushError.presenceNotAccepted {
+                return .discarded
             } catch let error as LocationPushError {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
@@ -697,7 +686,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             throw TransferSuppressed.obsolete
         }
         let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { throw LocationPushError.invalidResponseStatus(503) }
         let subscribed = currentSubscription()
         recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)
         return makeLocationPayload(
@@ -714,7 +702,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let osVersion = await UIDevice.current.systemVersion
         try checkTransfer(deadline: deadline)
         let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { throw LocationPushError.invalidResponseStatus(503) }
         let subscribed = currentSubscription()
         let authorization = authorizationStatusProvider()
         recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)
