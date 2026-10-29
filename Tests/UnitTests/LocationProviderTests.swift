@@ -2853,3 +2853,44 @@ extension LocationProviderTests {
         #expect(sent.allSatisfy { $0.consentRevision == 3 && $0.consent.isSubscribed == finalEnabled })
     }
 }
+
+extension LocationProviderTests {
+    @Test("v3 consent conflict preserves queued work and blocks ordinary/budgeted replay across reopen",
+          arguments: [false, true])
+    func consentConflictBlocksAutomaticReplay(bounded: Bool) async throws {
+        let suite = "consent-conflict-queue-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let http = ConsentHTTP()
+        await http.reject(409)
+        let queue = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        func reopened() -> LocationSnapshotPusher {
+            let consent = isolatedConsentStore(suiteName: suite)
+            let base = URL(string: "https://arcus.example.com")!
+            let enrollment = enrolledTestCoordinator()
+            return LocationSnapshotPusher(
+                locationUploader: HTTPLocationSnapshotUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
+                preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
+                apnsTokenProvider: { "" }, installationIdProvider: { id },
+                subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse },
+                retryDelaysSeconds: [0, 0, 0], queueStore: queue
+            )
+        }
+        let pusher = reopened()
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "initial-consent")
+        let original = await queue.loadPendingRequests()
+        #expect(original.count == 1)
+        for coordinator in [pusher, reopened()] {
+            if bounded {
+                let outcome = await coordinator.drainPendingUploads(using: .init(uploadQuota: 3, deadline: .now.advanced(by: .seconds(5))))
+                #expect(outcome == .remaining)
+            } else {
+                await coordinator.drainPendingUploads()
+            }
+            #expect(await queue.loadPendingRequests() == original)
+        }
+        #expect(await http.recorded().map(\.path) == ["/v3/devices/preferences"])
+    }
+}

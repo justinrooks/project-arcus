@@ -617,7 +617,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return .uploaded
             } catch is TransferSuppressed {
                 return .discarded
-            } catch InstallationConsentStore.Failure.rejected(let status) where [400, 401, 409].contains(status) {
+            } catch InstallationConsentStore.Failure.consentConflictRequiresRecovery {
+                return .pending
+            } catch InstallationConsentStore.Failure.rejected(let status) where [400, 401].contains(status) {
                 return .pending
             } catch LocationPushError.presenceNotAccepted {
                 return .discarded

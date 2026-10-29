@@ -390,3 +390,62 @@ extension InstallationConsentTests {
         #expect(requests.map(\.apnsDeviceToken) == [nil, "bound"])
     }
 }
+
+extension InstallationConsentTests {
+    @Test("consent conflict persists explicit-recovery state without advancing or resetting the revision")
+    func conflictPersistsUntilRecovery() async throws {
+        let suite = "consent-terminal-conflict-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let http = ConsentHTTP()
+        await http.reject(409)
+        let store = isolatedConsentStore(suiteName: suite)
+        await #expect(throws: InstallationConsentStore.Failure.consentConflictRequiresRecovery) {
+            try await store.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                                        http: http, credential: "test")
+        }
+        let data = try #require(UserDefaults(suiteName: suite)?.data(forKey: InstallationConsentStore.recordKey))
+        let record = try JSONDecoder().decode(InstallationConsentStore.Record.self, from: data)
+        #expect(record.revision == 1)
+        #expect(record.conflictRequiresRecovery == true)
+        let reopened = isolatedConsentStore(suiteName: suite, consent: .init(isSubscribed: false,
+            mesoNotificationsEnabled: false, locationSharingEnabled: false, locationAuthorization: .denied))
+        for consent in [store, reopened] {
+            await #expect(throws: InstallationConsentStore.Failure.consentConflictRequiresRecovery) {
+                try await consent.acceptSubscriptionIntent(installationId: id, enabled: false)
+            }
+            await #expect(throws: InstallationConsentStore.Failure.consentConflictRequiresRecovery) {
+                try await consent.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                                            http: http, credential: "test")
+            }
+        }
+        #expect(await http.recorded().count == 1)
+        #expect(UserDefaults(suiteName: suite)?.data(forKey: InstallationConsentStore.recordKey) == data)
+    }
+
+    @Test("conflict persistence failure still blocks further in-process handoffs")
+    func conflictFlushFailure() async throws {
+        let suite = "consent-conflict-flush-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let flushSucceeds = Mutex(true)
+        let store = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: true, mesoNotificationsEnabled: true, locationSharingEnabled: true, locationAuthorization: .always)
+        }, markerExists: { false }, createMarker: {}, flush: { flushSucceeds.withLock { $0 } })
+        _ = try await store.current(installationId: id)
+        let http = ConsentHTTP()
+        await http.pauseFirst()
+        await http.reject(409)
+        let first = Task {
+            try await store.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                                        http: http, credential: "test")
+        }
+        while await http.recorded().isEmpty { await Task.yield() }
+        flushSucceeds.withLock { $0 = false }
+        await http.release()
+        await #expect(throws: InstallationConsentStore.Failure.unavailable) { try await first.value }
+        await #expect(throws: InstallationConsentStore.Failure.consentConflictRequiresRecovery) {
+            try await store.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                                        http: http, credential: "test")
+        }
+        #expect(await http.recorded().count == 1)
+    }
+}

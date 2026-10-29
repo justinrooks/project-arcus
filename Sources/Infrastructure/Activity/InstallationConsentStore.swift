@@ -1,6 +1,7 @@
 import ArcusCore
 import CoreLocation
 import Foundation
+import OSLog
 import Security
 import UIKit
 
@@ -13,10 +14,11 @@ actor InstallationConsentStore {
         let installationId: String
         let revision: Int64
         let consent: DeviceConsentSnapshotV3
+        var conflictRequiresRecovery: Bool?
     }
 
     enum Failure: Error, Equatable {
-        case unavailable, identityMismatch, overflow, inconsistentAcknowledgment, rejected(Int)
+        case unavailable, identityMismatch, overflow, inconsistentAcknowledgment, consentConflictRequiresRecovery, rejected(Int)
     }
 
     private let defaults: UserDefaults
@@ -26,6 +28,7 @@ actor InstallationConsentStore {
     private let flush: (@Sendable () -> Bool)?
     private var restrictiveSubscription: Bool?
     private var latestOwnershipRequest: UUID?
+    private var consentConflictDetected = false
 
     init(
         suiteName: String = "com.justinrooks.skyaware",
@@ -56,6 +59,7 @@ actor InstallationConsentStore {
     }
 
     private func reconcile(installationId: String, subscriptionIntent: Bool?) throws -> Record {
+        guard !consentConflictDetected else { throw Failure.consentConflictRequiresRecovery }
         guard UUID(uuidString: installationId) != nil else { throw Failure.identityMismatch }
         let raw = settings()
         var subscribed = raw.isSubscribed
@@ -78,6 +82,10 @@ actor InstallationConsentStore {
                 throw Failure.unavailable
             }
             guard decoded.installationId == installationId else { throw Failure.identityMismatch }
+            guard decoded.conflictRequiresRecovery != true else {
+                consentConflictDetected = true
+                throw Failure.consentConflictRequiresRecovery
+            }
             previous = decoded
         } else {
             guard defaults.object(forKey: Self.recordKey) == nil, try !markerExists() else { throw Failure.unavailable }
@@ -90,12 +98,31 @@ actor InstallationConsentStore {
         }
         guard previous?.revision != Int64.max else { throw Failure.overflow }
         let record = Record(installationId: installationId, revision: (previous?.revision ?? 0) + 1, consent: consent)
-        let data = try JSONEncoder().encode(record)
-        defaults.set(data, forKey: Self.recordKey)
-        guard flush?() ?? defaults.synchronize(), defaults.data(forKey: Self.recordKey) == data else { throw Failure.unavailable }
+        try persist(record)
         // Written before any v3 handoff, including requests whose acknowledgment is lost.
         try createMarker()
         return record
+    }
+
+    private func persist(_ record: Record) throws {
+        let data = try JSONEncoder().encode(record)
+        defaults.set(data, forKey: Self.recordKey)
+        guard flush?() ?? defaults.synchronize(), defaults.data(forKey: Self.recordKey) == data else {
+            throw Failure.unavailable
+        }
+    }
+
+    private func recordConsentConflict(installationId: String) throws {
+        // Latch before persistence: even a failed flush must block this process.
+        consentConflictDetected = true
+        Logger.locationPushUploader.error("V3 consent conflict status=409; automatic device sync suspended pending explicit recovery")
+        guard let data = defaults.data(forKey: Self.recordKey),
+              var record = try? JSONDecoder().decode(Record.self, from: data),
+              record.installationId == installationId, record.revision > 0 else {
+            throw Failure.unavailable
+        }
+        record.conflictRequiresRecovery = true
+        try persist(record)
     }
 
     /// Every admitted writer reconciles settings, including OS changes on foreground/background.
@@ -124,6 +151,10 @@ actor InstallationConsentStore {
                 "Authorization": "Bearer \(credential)", "Content-Type": "application/json",
                 "Accept": "application/json", "User-Agent": HTTPRequestHeaders.userAgent()
             ], body: JSONEncoder().encode(payload))
+            if response.status == 409 {
+                try recordConsentConflict(installationId: installationId)
+                throw Failure.consentConflictRequiresRecovery
+            }
             guard response.status == 200 else { throw Failure.rejected(response.status) }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
