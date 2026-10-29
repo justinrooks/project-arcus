@@ -39,6 +39,8 @@ final class LocationSession: Sendable {
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
     @ObservationIgnored
+    private var subscriptionIntentTask: Task<Void, Never>?
+    @ObservationIgnored
     private var contextRefreshTask: Task<Void, Never>?
     @ObservationIgnored
     private var locationResolutionGeneration: UInt64 = 0
@@ -264,6 +266,24 @@ final class LocationSession: Sendable {
         }
     }
 
+    /// Called synchronously at the settings write. Only bookkeeping is chained;
+    /// transport callbacks can execute in any order and always sync current consent.
+    func captureNotificationPreferenceChange(enabled: Bool) -> Task<Void, Never> {
+        let previous = subscriptionIntentTask
+        let coordinator = locationUploadCoordinator
+        let task = Task {
+            await previous?.value
+            await coordinator.acceptSubscriptionIntent(enabled: enabled)
+        }
+        subscriptionIntentTask = task
+        return task
+    }
+
+    func syncNotificationPreference(after intent: Task<Void, Never>) async {
+        await intent.value
+        await syncPreference(forceUpload: true, reason: "notification")
+    }
+
     func syncNotificationPreference(enabled: Bool) async {
         await syncPreference(forceUpload: true, reason: "notification", isSubscribedOverride: enabled)
     }
@@ -354,6 +374,9 @@ final class LocationSession: Sendable {
 
         if hadAuthorizationChange {
             authorizationStatus = status
+            Task { [weak self] in
+                await self?.syncMesoNotificationPreference()
+            }
         }
         if hadAccuracyChange {
             accuracyAuthorization = accuracy

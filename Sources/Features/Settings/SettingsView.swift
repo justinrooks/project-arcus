@@ -46,7 +46,6 @@ struct SettingsView: View {
     private let logger = Logger.uiSettings
     private let locationReliabilityLogger = Logger.uiLocationReliability
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
-    @State private var suppressNextServerNotificationSync = false
     
     // MARK: Notification Settings
     @AppStorage(
@@ -161,21 +160,10 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Local Severe-Weather Alerts", isOn: $serverNotificationEnabled)
-                            .onChange(of: serverNotificationEnabled) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Local Severe-Weather Alerts")
-                                if suppressNextServerNotificationSync {
-                                    suppressNextServerNotificationSync = false
-                                    return
-                                }
-                                if newValue, sendL8nToSignal == false {
-                                    sendL8nToSignal = true
-                                    return
-                                }
-                                Task {
-                                    await locationSession.syncNotificationPreference(enabled: newValue)
-                                }
-                            }
+                        Toggle("Local Severe-Weather Alerts", isOn: Binding(
+                            get: { serverNotificationEnabled },
+                            set: { setServerNotificationPreference($0) }
+                        ))
                         Text("Get local severe-weather alerts relevant to your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -232,25 +220,10 @@ struct SettingsView: View {
 
                 sectionCard(title: "Location", symbol: "location", accent: .primary) {
                     VStack() {
-                        Toggle("Share Approximate Location for Alerts", isOn: $sendL8nToSignal)
-                            .onChange(of: sendL8nToSignal) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Share Approximate Location for Alerts")
-                                if newValue {
-                                    Task {
-                                        await locationSession.updateLocationSharingPreference(enabled: true)
-                                    }
-                                } else {
-                                    let wasSubscribed = serverNotificationEnabled
-                                    suppressNextServerNotificationSync = wasSubscribed
-                                    serverNotificationEnabled = false
-                                    Task {
-                                        await locationSession.updateLocationSharingPreference(enabled: false)
-                                        if wasSubscribed {
-                                            await locationSession.syncNotificationPreference(enabled: false)
-                                        }
-                                    }
-                                }
-                            }
+                        Toggle("Share Approximate Location for Alerts", isOn: Binding(
+                            get: { sendL8nToSignal },
+                            set: { setLocationSharingPreference($0) }
+                        ))
                         Text("Share an approximate location so SkyAware can match alerts to your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -343,6 +316,29 @@ struct SettingsView: View {
             guard newPhase == .active else { return }
             Task {
                 await refreshNotificationAuthorizationStatus()
+            }
+        }
+    }
+
+    private func setServerNotificationPreference(_ enabled: Bool) {
+        serverNotificationEnabled = enabled
+        handleNotificationToggle(enabled, for: "Local Severe-Weather Alerts")
+        let intent = locationSession.captureNotificationPreferenceChange(enabled: enabled)
+        if enabled, !sendL8nToSignal { setLocationSharingPreference(true) }
+        Task { await locationSession.syncNotificationPreference(after: intent) }
+    }
+
+    private func setLocationSharingPreference(_ enabled: Bool) {
+        sendL8nToSignal = enabled
+        handleNotificationToggle(enabled, for: "Share Approximate Location for Alerts")
+        if enabled {
+            Task { await locationSession.updateLocationSharingPreference(enabled: true) }
+        } else {
+            serverNotificationEnabled = false
+            let intent = locationSession.captureNotificationPreferenceChange(enabled: false)
+            Task {
+                await locationSession.syncNotificationPreference(after: intent)
+                await locationSession.updateLocationSharingPreference(enabled: false)
             }
         }
     }

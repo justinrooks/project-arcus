@@ -46,6 +46,12 @@ actor InstallationEnrollmentCoordinator {
         self.enrollmentWaiterDidJoin = enrollmentWaiterDidJoin
     }
 
+    func validateIdentity(for requestedId: String) async throws {
+        guard try await installationId() == requestedId else {
+            throw InstallationEnrollmentError.invalidIdentity
+        }
+    }
+
     func credential(for requestedId: String, baseURL: URL, http: HTTPClient) async throws -> String {
         try Task.checkCancellation()
         guard baseURL.scheme?.lowercased() == "https", let host = baseURL.host,

@@ -4,6 +4,13 @@ import Testing
 import ArcusCore
 @testable import SkyAware
 
+private struct OfflineSnapshotUploader: LocationSnapshotUploading {
+    func upload(_ payload: LocationSnapshotPushPayload) async throws { throw URLError(.notConnectedToInternet) }
+}
+private struct OfflinePreferenceUploader: DevicePreferenceSyncUploading {
+    func upload(_ payload: DevicePreferenceSyncPayload) async throws { throw URLError(.notConnectedToInternet) }
+}
+
 @Suite("LocationProvider")
 struct LocationProviderTests {
     private let sampleH3Cell: Int64 = 0x872681364FFFFFF
@@ -698,8 +705,8 @@ struct LocationProviderTests {
             locationContextResolver: UnavailableContextResolver(), locationUploadCoordinator: pusher
         )
         await session.drainPendingLocationUploads()
-        #expect(await store.current().count == 1)
-        #expect(await preferences.uploadedPayloads().isEmpty)
+        #expect(await store.current().isEmpty)
+        #expect(await preferences.uploadedPayloads().count == 1)
         token.set("token")
         await session.drainPendingLocationUploads()
         let payload = try #require(await preferences.uploadedPayloads().last)
@@ -749,7 +756,7 @@ struct LocationProviderTests {
         await store.savePendingRequests([persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10))])
         let state = TokenBox("true")
         let first = LocationSnapshotPusher(
-            locationUploader: MockSnapshotUploader(), preferenceUploader: MockPreferenceUploader(),
+            locationUploader: OfflineSnapshotUploader(), preferenceUploader: OfflinePreferenceUploader(),
             apnsTokenProvider: { "" }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             mesoNotificationEnabledProvider: { state.value() == "true" },
@@ -779,14 +786,14 @@ struct LocationProviderTests {
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
         let first = LocationSnapshotPusher(
-            locationUploader: MockSnapshotUploader(),
-            preferenceUploader: MockPreferenceUploader(),
+            locationUploader: OfflineSnapshotUploader(),
+            preferenceUploader: OfflinePreferenceUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "meso-install" },
             subscriptionStatusProvider: { false },
             mesoNotificationEnabledProvider: { enabled },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .denied },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -880,7 +887,7 @@ struct LocationProviderTests {
         #expect(payload.auth == "always")
     }
 
-    @Test("location context pusher skips upload when APNs token is missing")
+    @Test("location context pusher permits upload without APNs")
     func locationContextPusher_skipsUploadWithoutApnsToken() async {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
@@ -897,11 +904,11 @@ struct LocationProviderTests {
         await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
 
         let payloads = await uploader.uploadedPayloads()
-        #expect(payloads.isEmpty)
-        #expect(await store.current().count == 1)
+        #expect(payloads.count == 1)
+        #expect(await store.current().isEmpty)
     }
 
-    @Test("missing APNs token persists and later drains after token arrives")
+    @Test("location sends without an APNs token")
     func locationContextPusher_missingTokenPersistsAndDrainsOnRetry() async throws {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
@@ -918,7 +925,7 @@ struct LocationProviderTests {
         let context = makeContext()
 
         await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
-        #expect(await store.current().count == 1)
+        #expect(await store.current().isEmpty)
         tokenState.set("apns-token-123")
         await pusher.drainPendingUploads()
 
@@ -926,7 +933,7 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
-    @Test("opt-out preference sync without location context persists when APNs token is missing")
+    @Test("opt-out preference sync sends without location or APNs")
     func locationContextPusher_preferenceSyncWithoutContext_missingTokenPersists() async throws {
         let locationUploader = MockSnapshotUploader()
         let preferenceUploader = MockPreferenceUploader()
@@ -951,13 +958,10 @@ struct LocationProviderTests {
         )
 
         #expect(await locationUploader.uploadedPayloads().isEmpty)
-        #expect(await preferenceUploader.uploadedPayloads().isEmpty)
-        #expect(await store.current().count == 1)
-        let persisted = try #require(await store.current().first)
-        #expect(persisted.operation == .preferenceSync)
-        #expect(persisted.reason == .preferenceChanged)
-        #expect(persisted.isSubscribed == false)
-        #expect(persisted.forceUpload == true)
+        let payload = try #require(await preferenceUploader.uploadedPayloads().first)
+        #expect(payload.isSubscribed == false)
+        #expect(payload.apnsDeviceToken.isEmpty)
+        #expect(await store.current().isEmpty)
     }
 
     @Test("opt-out preference sync without location context drains when APNs token arrives")
@@ -984,7 +988,7 @@ struct LocationProviderTests {
             forceUpload: true,
             detail: "notification"
         )
-        #expect(await store.current().count == 1)
+        #expect(await store.current().isEmpty)
 
         tokenState.set("apns-token-123")
         await pusher.drainPendingUploads()
@@ -1016,7 +1020,7 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0], queueStore: store
         )
         await pusher.drainPendingUploads()
-        #expect(await store.loadPendingRequests().count == 1)
+        #expect(await store.loadPendingRequests().isEmpty)
         token.set("new-token")
         if bounded {
             let outcome = await pusher.drainPendingUploads(using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(5))))
@@ -1050,6 +1054,10 @@ struct LocationProviderTests {
         }
         await reopened().enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
                                                forceUpload: true, detail: "old-opt-in")
+        await store.savePendingRequests([PersistedLocationUploadRequest(
+            source: .settingsPreference, reason: .preferenceChanged, forceUpload: true,
+            installationId: "install-abc-123", requestedAt: .distantPast, isSubscribed: true,
+            authorizationState: "always", apnsToken: "", operation: .preferenceSync)])
         subscribed.set(false)
         token.set("current-token")
         let pusher = reopened()
@@ -1129,7 +1137,7 @@ struct LocationProviderTests {
         subscribed.set(true)
         await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
                                            forceUpload: true, detail: "reenable", isSubscribedOverride: true)
-        #expect(await preferences.uploadedPayloads().map(\.isSubscribed) == [false, true])
+        #expect(await preferences.uploadedPayloads().map(\.isSubscribed) == [false, false, true])
     }
 
     @Test("changed replay consent cannot coalesce away a newer opt-out", arguments: [false, true])
@@ -1285,7 +1293,7 @@ struct LocationProviderTests {
         )
 
         await pusher.enqueue(makeContext(), source: .onboarding, reason: .locationResolved)
-        #expect(await store.current().count == 1)
+        #expect(await store.current().isEmpty)
 
         tokenState.set("apns-token-123")
         await pusher.drainPendingUploads()
@@ -1688,7 +1696,7 @@ struct LocationProviderTests {
         #expect(await store.current() == [pending])
     }
 
-    @Test("bounded drain retains pending work when APNs token is unavailable")
+    @Test("bounded drain permits work without APNs")
     func snapshotPusher_boundedDrainMissingTokenReportsRemaining() async {
         let uploader = MockSnapshotUploader()
         let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
@@ -1707,9 +1715,9 @@ struct LocationProviderTests {
             using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
         )
 
-        #expect(outcome == .remaining)
-        #expect(await uploader.uploadedPayloads().isEmpty)
-        #expect(await store.current() == [pending])
+        #expect(outcome == .drained)
+        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
     }
 
     @Test("bounded drain retains retry exhaustion and reports remaining")
@@ -1956,7 +1964,7 @@ struct LocationProviderTests {
         #expect(payloads.isEmpty)
     }
 
-    @Test("snapshot pusher skips non-forced preference sync when location sharing is disabled")
+    @Test("snapshot pusher syncs consent while location sharing is disabled")
     func snapshotPusher_skipsNonForcedPreferenceSyncWhenLocationSharingDisabled() async throws {
         let locationUploader = MockSnapshotUploader()
         let preferenceUploader = MockPreferenceUploader()
@@ -1979,7 +1987,7 @@ struct LocationProviderTests {
         )
 
         #expect(await locationUploader.uploadedPayloads().isEmpty)
-        #expect(await preferenceUploader.uploadedPayloads().isEmpty)
+        #expect(await preferenceUploader.uploadedPayloads().count == 1)
     }
 
     @Test("snapshot pusher dedupes identical non-forced uploads inside the dedupe window")
@@ -2109,7 +2117,7 @@ struct LocationProviderTests {
 
     @Test("pending queue coalesces duplicate semantic keys deterministically")
     func snapshotPusher_pendingQueueCoalescesDuplicates() async throws {
-        let uploader = MockSnapshotUploader()
+        let uploader = OfflineSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
             locationUploader: uploader,
@@ -2165,7 +2173,7 @@ struct LocationProviderTests {
 
     @Test("pending queue preserves distinct semantic keys")
     func snapshotPusher_pendingQueuePreservesDistinctKeys() async throws {
-        let uploader = MockSnapshotUploader()
+        let uploader = OfflineSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
             locationUploader: uploader,
@@ -2774,4 +2782,115 @@ private func waitUntilLocationSnapshot(
         try? await Task.sleep(for: interval)
     }
     return await condition()
+}
+
+extension LocationProviderTests {
+    @Test("nonaccepted v3 presence clears pending work without successful-transfer deduplication",
+          arguments: ["accepted", "ignored", "stale"])
+    func v3PresenceAcknowledgment(status: String) async throws {
+        let http = ConsentHTTP()
+        await http.presenceResponse(status)
+        let consent = isolatedConsentStore()
+        let enrollment = enrolledTestCoordinator()
+        let base = URL(string: "https://arcus.example.com")!
+        let pending = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: HTTPLocationSnapshotUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
+            apnsTokenProvider: { "" }, installationIdProvider: { "f0465f55-f0a2-48a0-aac0-6a5c48a95891" },
+            subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse },
+            retryDelaysSeconds: [0], dedupeWindowSeconds: 60, queueStore: pending
+        )
+        let context = makeContext()
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
+        #expect(await pending.current().isEmpty)
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
+        let presence = await http.recorded().filter { $0.path == "/v3/devices/location-snapshots" }
+        #expect(presence.count == (status == "accepted" ? 1 : 2))
+        #expect(await pending.current().isEmpty)
+    }
+}
+
+extension LocationProviderTests {
+    @MainActor
+    @Test("captured settings intents preserve rapid reversal despite inverted transport callbacks",
+          arguments: [true, false])
+    func orderedNotificationIntents(finalEnabled: Bool) async throws {
+        let suite = "ordered-subscription-intents-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        // Model both defaults writes completing before either async callback can sample
+        // the intermediate value. Only the synchronous captures retain intent order.
+        let consent = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: finalEnabled, mesoNotificationsEnabled: true,
+                  locationSharingEnabled: true, locationAuthorization: .always)
+        }, markerExists: { false }, createMarker: {})
+        #expect(try await consent.current(installationId: id).revision == 1)
+        let http = ConsentHTTP()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, enrollment: enrolledTestCoordinator(), consent: consent),
+            apnsTokenProvider: { "" }, installationIdProvider: { id },
+            subscriptionStatusProvider: { finalEnabled }, mesoNotificationEnabledProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+        )
+        let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
+        let session = LocationSession(locationClient: makeLocationClient(provider: provider),
+            locationManager: LocationManager(onUpdate: { _ in }), locationContextResolver: UnavailableContextResolver(),
+            locationUploadCoordinator: pusher)
+        let older = session.captureNotificationPreferenceChange(enabled: !finalEnabled)
+        let newer = session.captureNotificationPreferenceChange(enabled: finalEnabled)
+        await session.syncNotificationPreference(after: newer)
+        await session.syncNotificationPreference(after: older)
+        let current = try await consent.current(installationId: id)
+        #expect(current.revision == 3)
+        #expect(current.consent.isSubscribed == finalEnabled)
+        let sent = try await http.recorded().map { try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: $0.body!) }
+        #expect(!sent.isEmpty)
+        #expect(sent.allSatisfy { $0.consentRevision == 3 && $0.consent.isSubscribed == finalEnabled })
+    }
+}
+
+extension LocationProviderTests {
+    @Test("v3 consent conflict preserves queued work and blocks ordinary/budgeted replay across reopen",
+          arguments: [false, true])
+    func consentConflictBlocksAutomaticReplay(bounded: Bool) async throws {
+        let suite = "consent-conflict-queue-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let http = ConsentHTTP()
+        await http.reject(409)
+        let queue = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        func reopened() -> LocationSnapshotPusher {
+            let consent = isolatedConsentStore(suiteName: suite)
+            let base = URL(string: "https://arcus.example.com")!
+            let enrollment = enrolledTestCoordinator()
+            return LocationSnapshotPusher(
+                locationUploader: HTTPLocationSnapshotUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
+                preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
+                apnsTokenProvider: { "" }, installationIdProvider: { id },
+                subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse },
+                retryDelaysSeconds: [0, 0, 0], queueStore: queue
+            )
+        }
+        let pusher = reopened()
+        await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
+                                           forceUpload: true, detail: "initial-consent")
+        let original = await queue.loadPendingRequests()
+        #expect(original.count == 1)
+        for coordinator in [pusher, reopened()] {
+            if bounded {
+                let outcome = await coordinator.drainPendingUploads(using: .init(uploadQuota: 3, deadline: .now.advanced(by: .seconds(5))))
+                #expect(outcome == .remaining)
+            } else {
+                await coordinator.drainPendingUploads()
+            }
+            #expect(await queue.loadPendingRequests() == original)
+        }
+        #expect(await http.recorded().map(\.path) == ["/v3/devices/preferences"])
+    }
 }

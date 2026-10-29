@@ -40,6 +40,7 @@ protocol PendingLocationUploadDraining: Sendable {
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
+    func acceptSubscriptionIntent(enabled: Bool) async
     func enqueue(
         _ context: LocationContext,
         source: LocationUploadSource,
@@ -56,6 +57,7 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 }
 
 extension LocationUploadCoordinating {
+    func acceptSubscriptionIntent(enabled: Bool) async {}
     func enqueuePreferenceSync(
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
@@ -74,6 +76,7 @@ extension LocationUploadCoordinating {
 
 enum LocationPushError: Error {
     case invalidResponseStatus(Int)
+    case presenceNotAccepted
 }
 
 actor LocationSnapshotPusher: LocationUploadCoordinating {
@@ -181,6 +184,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
+        do {
+            try await preferenceUploader.reconcileConsent(installationId: installationId)
+        } catch {
+            logger.error("Consent persistence unavailable; device sync deferred")
+            return
+        }
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let isSubscribed = currentSubscription()
         let authorizationStatus = authorizationStatusProvider()
@@ -200,13 +209,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             mesoNotificationsEnabled: mesoNotificationsEnabled
         )
 
-        guard !apnsToken.isEmpty else {
-            logger.notice(
-                "Location upload request persisted persistReason=missingToken source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
-            )
-            await upsertPending(persisted)
-            return
-        }
         let dedupeKey = DeduplicationKey(
             installationId: installationId,
             apnsToken: apnsToken,
@@ -248,6 +250,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await processQueue()
     }
 
+    func acceptSubscriptionIntent(enabled: Bool) async {
+        let installationId = await installationIdProvider()
+        do {
+            try await preferenceUploader.acceptSubscriptionIntent(installationId: installationId, enabled: enabled)
+            subscriptionOverride = nil
+        } catch {
+            logger.error("Subscription intent persistence unavailable; device sync deferred")
+        }
+    }
+
     func enqueuePreferenceSync(
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
@@ -257,20 +269,20 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     ) async {
         if isSubscribedOverride == false {
             subscriptionOverride = (false, subscriptionStatusProvider())
+            await preferenceUploader.restrictSubscription()
         }
         logger.info(
             "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
         )
-        guard forceUpload || locationUploadEnabledProvider() else {
-            observeConsent(subscribed: currentSubscription(), authorization: authorizationStatusProvider())
-            logger.notice(
-                "Preference sync request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
-            )
-            return
-        }
 
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
+        do {
+            try await preferenceUploader.reconcileConsent(installationId: installationId)
+        } catch {
+            logger.error("Consent persistence unavailable; device sync deferred")
+            return
+        }
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let isSubscribed = currentSubscription()
         let authorizationStatus = authorizationStatusProvider()
@@ -290,13 +302,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             mesoNotificationsEnabled: mesoNotificationsEnabled
         )
 
-        guard !apnsToken.isEmpty else {
-            logger.notice(
-                "Preference sync request persisted persistReason=missingToken source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
-            )
-            await upsertPending(persisted)
-            return
-        }
 
         let dedupeKey = DeduplicationKey(
             installationId: installationId,
@@ -342,10 +347,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         logger.info("Location upload drain started pendingCount=\(self.pendingByCoalescingKey.count, privacy: .public)")
 
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apnsToken.isEmpty else {
-            logger.notice("Location upload drain skipped reason=missingToken")
-            return
-        }
 
         var enqueuedCount = 0
         var dedupedCount = 0
@@ -399,10 +400,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         }
 
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apnsToken.isEmpty else {
-            logger.notice("Location upload drain skipped reason=missingToken")
-            return .remaining
-        }
 
         isProcessing = true
         defer {
@@ -596,7 +593,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 switch workItem.request.operation {
                 case .locationSnapshot:
                     do {
-                        try await locationUploader.upload(installationId: workItem.request.installationId) {
+                        try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
+                            try await self.checkTransfer(deadline: deadline)
+                        }) {
                             try await self.currentLocationPayload(for: workItem.request, deadline: deadline)
                         }
                     } catch let error as LocationPushError {
@@ -604,7 +603,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                               status == 400 || status == 422,
                               workItem.source != "unknown" else { throw error }
                         // A second transfer needs a fresh check, including after enrollment.
-                        try await locationUploader.upload(installationId: workItem.request.installationId) {
+                        try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
+                            try await self.checkTransfer(deadline: deadline)
+                        }) {
                             try await self.currentLocationPayload(for: workItem.request, deadline: deadline, legacy: true)
                         }
                     }
@@ -615,6 +616,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 }
                 return .uploaded
             } catch is TransferSuppressed {
+                return .discarded
+            } catch InstallationConsentStore.Failure.consentConflictRequiresRecovery {
+                return .pending
+            } catch InstallationConsentStore.Failure.rejected(let status) where [400, 401].contains(status) {
+                return .pending
+            } catch LocationPushError.presenceNotAccepted {
                 return .discarded
             } catch let error as LocationPushError {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
@@ -697,7 +704,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             throw TransferSuppressed.obsolete
         }
         let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { throw LocationPushError.invalidResponseStatus(503) }
         let subscribed = currentSubscription()
         recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)
         return makeLocationPayload(
@@ -714,7 +720,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let osVersion = await UIDevice.current.systemVersion
         try checkTransfer(deadline: deadline)
         let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { throw LocationPushError.invalidResponseStatus(503) }
         let subscribed = currentSubscription()
         let authorization = authorizationStatusProvider()
         recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)

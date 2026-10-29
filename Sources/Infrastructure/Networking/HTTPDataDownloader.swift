@@ -721,7 +721,7 @@ public final class URLSessionHTTPClient: HTTPClient {
 enum InstallationRequestRedirectPolicy {
     static func allowsRedirect(for request: URLRequest) -> Bool {
         guard request.httpMethod == "POST", let path = request.url?.path else { return true }
-        return !path.hasPrefix("/v2/devices/") && !path.hasPrefix("/api/v2/devices/")
+        return !["/v2/devices/", "/api/v2/devices/", "/v3/devices/", "/api/v3/devices/"].contains { path.hasPrefix($0) }
     }
 }
 

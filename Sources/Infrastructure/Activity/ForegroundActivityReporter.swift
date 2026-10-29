@@ -55,6 +55,7 @@ actor HTTPForegroundActivityUploader: ForegroundActivityUploading {
         let installationId: String
     }
 
+    private let consent: InstallationConsentStore
     private let endpoint: URL
     private let http: HTTPClient
     private let enrollment: InstallationEnrollmentCoordinator
@@ -62,13 +63,15 @@ actor HTTPForegroundActivityUploader: ForegroundActivityUploading {
     private let encoder = JSONEncoder()
 
     init(baseURL: URL = ArcusSignalConfiguration.baseURL(), http: HTTPClient = URLSessionHTTPClient(),
-        enrollment: InstallationEnrollmentCoordinator = .shared) {
+        enrollment: InstallationEnrollmentCoordinator = .shared,
+        consent: InstallationConsentStore = .shared) {
         guard let endpoint = ArcusSignalConfiguration.url(
             from: baseURL,
             path: ArcusSignalConfiguration.foregroundActivityPath
         ) else {
             preconditionFailure("Invalid Arcus signal base URL")
         }
+        self.consent = consent
         self.endpoint = endpoint
         self.http = http
         self.enrollment = enrollment
@@ -80,11 +83,13 @@ actor HTTPForegroundActivityUploader: ForegroundActivityUploading {
         let credential = try await enrollment.credential(
             for: installationId, baseURL: baseURL, http: http
         )
+        try await consent.synchronize(installationId: installationId, baseURL: baseURL,
+                                      http: http, credential: credential)
         try Task.checkCancellation()
         var headers = requestHeaders
         headers["Authorization"] = "Bearer \(credential)"
         let response = try await http.post(endpoint, headers: headers, body: body)
-        guard (200...299).contains(response.status) else {
+        guard response.status == 204 else {
             throw ForegroundActivityError.invalidResponseStatus(response.status)
         }
     }
