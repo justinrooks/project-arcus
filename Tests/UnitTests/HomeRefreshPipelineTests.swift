@@ -119,6 +119,32 @@ struct HomeRefreshPipelineTests {
         #expect(didSubmitTimer)
     }
 
+    @Test("a sleeping foreground timer does not retain a discarded pipeline")
+    func foregroundCadence_releasesOwnerWhileSleeping() async {
+        let sleeping = AsyncGate()
+        let releaseSleep = AsyncGate()
+        let context = makeContext()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+        )
+        var pipeline: HomeRefreshPipeline? = HomeRefreshPipeline(foregroundTimerSleep: { _ in
+            await sleeping.open()
+            await releaseSleep.wait()
+        })
+        weak var owner = pipeline
+        await pipeline?.handleScenePhaseChange(.active, environment: environment)
+        await sleeping.wait()
+        await pipeline?.waitForIdle()
+
+        pipeline = nil
+        #expect(owner == nil)
+        await owner?.handleScenePhaseChange(.inactive, environment: environment)
+        await releaseSleep.open()
+        #expect(await coordinator.requests().contains { $0.trigger == .sessionTick } == false)
+    }
+
     @Test("mesoscale cadence refresh replaces only nationwide meso state")
     func mesoscaleCadence_refreshesNationwideMesoOnly() async {
         let model = MapFeatureModel()
@@ -281,6 +307,7 @@ struct HomeRefreshPipelineTests {
         #expect(requests[0].locationContext == nil)
         #expect(requests[1].trigger == .foregroundActivate)
         #expect(requests[1].locationContext == movedContext)
+        await pipeline.handleScenePhaseChange(.inactive, environment: environment)
     }
 
     @Test("context change forwards the current resolved context to the unified queue")
@@ -450,6 +477,7 @@ struct HomeRefreshPipelineTests {
         ])
         #expect(requests[1].locationContext == initialContext)
         #expect(requests[3].locationContext == movedContext)
+        await pipeline.handleScenePhaseChange(.inactive, environment: environment)
     }
 
     @Test("a superseded Home follow-up releases activity and admits deferred movement")
@@ -1490,6 +1518,10 @@ struct HomeRefreshPipelineTests {
         await followUpGate.open()
         await refreshTask.value
         await pipeline.waitForIdle()
+        await pipeline.handleScenePhaseChange(
+            .inactive,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        )
     }
 
     @Test("visible alert commits update ownership and failures retain the prior visible alerts")
@@ -2940,6 +2972,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.fireRisk == .critical)
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
         #expect(pipeline.resolutionState.isRefreshing == false)
+        await pipeline.handleScenePhaseChange(.inactive, environment: environment)
     }
 
     @Test("explicit hot prime updates accepted alerts without risk pinball before the full revision")
