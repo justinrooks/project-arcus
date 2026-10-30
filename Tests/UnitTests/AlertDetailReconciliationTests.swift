@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SkyAware
 
-@Suite("Alert detail reconciliation")
+@Suite("Alert detail reconciliation", .timeLimit(.minutes(1)))
 @MainActor
 struct AlertDetailReconciliationTests {
     private let initial = makeAlert(id: "alert-1", revision: 100, headline: "Initial headline")
@@ -26,10 +26,9 @@ struct AlertDetailReconciliationTests {
             }
         }
 
-        await Task.yield()
         continuation.yield(.init(feedID: "arcus.alerts", generation: 2))
-        await waitUntil { model.alert == revised }
-        observer.cancel()
+        continuation.finish()
+        await observer.value
 
         #expect(model.alert == revised)
         #expect(await recorder.ids == [initial.id])
@@ -46,12 +45,12 @@ struct AlertDetailReconciliationTests {
             }
         }
 
-        await Task.yield()
         continuation.yield(.init(feedID: "arcus.alerts", generation: 3))
-        await waitUntil { await recorder.ids.count == 1 }
-        observer.cancel()
+        continuation.finish()
+        await observer.value
 
         #expect(model.alert == initial)
+        #expect(await recorder.ids == [initial.id])
     }
 
     @Test("initial reconciliation adopts an already accepted newer revision")
@@ -75,12 +74,12 @@ struct AlertDetailReconciliationTests {
             }
         }
 
-        await Task.yield()
         continuation.yield(.init(feedID: "arcus.alert", generation: 1))
-        await waitUntil { await recorder.ids.count == 1 }
-        observer.cancel()
+        continuation.finish()
+        await observer.value
 
         #expect(model.alert == initial)
+        #expect(await recorder.ids == [initial.id])
     }
 
     @Test("unaccepted and unavailable updates leave detail unchanged")
@@ -94,16 +93,13 @@ struct AlertDetailReconciliationTests {
             }
         }
 
-        await Task.yield()
         continuation.yield(.init(feedID: "spc.outlook", generation: 1))
-        await Task.yield()
-        #expect(await recorder.ids.isEmpty)
-
         continuation.yield(.init(feedID: "arcus.alerts", generation: 1))
-        await waitUntil { await recorder.ids.count == 1 }
-        observer.cancel()
+        continuation.finish()
+        await observer.value
 
         #expect(model.alert == initial)
+        #expect(await recorder.ids == [initial.id])
     }
 
     @Test("cancelling detail observation prevents later reloads")
@@ -111,16 +107,23 @@ struct AlertDetailReconciliationTests {
         let model = AlertDetailReconciliationModel(seed: initial)
         let (updates, continuation) = AsyncStream<FeedStateGenerationUpdate>.makeStream()
         let recorder = AlertDetailReloadRecorder(result: makeAlert(id: "alert-1", revision: 200, headline: "Revised headline"))
+        let (started, startup) = AsyncStream<Void>.makeStream()
         let observer = Task { @MainActor in
+            startup.yield(())
+            startup.finish()
             await model.observe(acceptedUpdates: updates) { id in
                 await recorder.reload(id: id)
             }
         }
 
-        await Task.yield()
+        // Both tasks run on MainActor: observation reaches its first suspension
+        // before this acknowledgment can resume the test.
+        for await _ in started {}
         observer.cancel()
         continuation.yield(.init(feedID: "arcus.alerts", generation: 1))
-        await Task.yield()
+
+        continuation.finish()
+        await observer.value
 
         #expect(model.alert == initial)
         #expect(await recorder.ids.isEmpty)
@@ -142,14 +145,6 @@ struct AlertDetailReconciliationTests {
         await observer.value
 
         #expect(model.alert == initial)
-    }
-
-    private func waitUntil(
-        _ condition: @escaping @MainActor () async -> Bool
-    ) async {
-        while await condition() == false {
-            await Task.yield()
-        }
     }
 }
 
