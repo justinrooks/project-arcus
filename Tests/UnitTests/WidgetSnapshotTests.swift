@@ -4,20 +4,51 @@ import Testing
 
 @Suite("WidgetSnapshot")
 struct WidgetSnapshotTests {
-    @Test("accessory risk availability distinguishes missing from accepted quiet risk")
-    func accessoryAvailability_isScopedToEachRisk() {
-        let snapshot = WidgetSnapshot(
+    @Test("accessory availability preserves per-risk, snapshot, quiet, and elevated states")
+    func accessoryAvailability_preservesRiskStateMatrix() {
+        let quiet = WidgetRiskDisplayState(label: "No Active Threats", severity: 0)
+        let elevatedStorm = WidgetRiskDisplayState(label: "Enhanced Risk", severity: 4)
+        let elevatedSevere = WidgetRiskDisplayState(label: "Tornado", severity: 3)
+
+        let stormMissing = accessorySnapshot(storm: .placeholder, severe: quiet)
+        #expect(stormMissing.isUnavailableForAccessoryRisk(stormMissing.stormRisk))
+        #expect(stormMissing.isUnavailableForAccessoryRisk(stormMissing.severeRisk) == false)
+
+        let severeMissing = accessorySnapshot(storm: elevatedStorm, severe: .placeholder)
+        #expect(severeMissing.isUnavailableForAccessoryRisk(severeMissing.stormRisk) == false)
+        #expect(severeMissing.isUnavailableForAccessoryRisk(severeMissing.severeRisk))
+
+        let globallyUnavailable = accessorySnapshot(
+            storm: elevatedStorm,
+            severe: elevatedSevere,
+            availability: .unavailable(message: WidgetSnapshot.unavailableMessage)
+        )
+        #expect(globallyUnavailable.isUnavailableForAccessoryRisk(globallyUnavailable.stormRisk))
+        #expect(globallyUnavailable.isUnavailableForAccessoryRisk(globallyUnavailable.severeRisk))
+
+        let acceptedQuiet = accessorySnapshot(storm: quiet, severe: quiet)
+        #expect(acceptedQuiet.isUnavailableForAccessoryRisk(acceptedQuiet.stormRisk) == false)
+        #expect(acceptedQuiet.isUnavailableForAccessoryRisk(acceptedQuiet.severeRisk) == false)
+
+        let elevated = accessorySnapshot(storm: elevatedStorm, severe: elevatedSevere)
+        #expect(elevated.isUnavailableForAccessoryRisk(elevated.stormRisk) == false)
+        #expect(elevated.isUnavailableForAccessoryRisk(elevated.severeRisk) == false)
+    }
+
+    private func accessorySnapshot(
+        storm: WidgetRiskDisplayState,
+        severe: WidgetRiskDisplayState,
+        availability: WidgetAvailabilityState = .available
+    ) -> WidgetSnapshot {
+        WidgetSnapshot(
             generatedAt: iso("2026-05-01T12:00:00Z"),
-            stormRisk: .placeholder,
-            severeRisk: .init(label: "No Active Threats", severity: 0),
+            stormRisk: storm,
+            severeRisk: severe,
             selectedAlert: nil,
             hiddenAlertCount: 0,
             freshness: .from(timestamp: iso("2026-05-01T11:55:00Z"), now: iso("2026-05-01T12:00:00Z")),
-            availability: .available
+            availability: availability
         )
-
-        #expect(snapshot.isUnavailableForAccessoryRisk(snapshot.stormRisk))
-        #expect(snapshot.isUnavailableForAccessoryRisk(snapshot.severeRisk) == false)
     }
 
     @Test("encodes and decodes snapshot deterministically")
