@@ -187,7 +187,7 @@ final class LocationSession: Sendable {
             return context
         } catch {
             guard isCurrentLocationResolution(generation) else { return nil }
-            if await processPendingSnapshot(generation: generation) { return nil }
+            if await processPendingSnapshot(generation: generation, requiresReplacement: true) { return nil }
             startupState = .failed(Self.failureCode(for: error))
             await publishCurrentContext(nil)
             return nil
@@ -486,15 +486,22 @@ final class LocationSession: Sendable {
                 return
             } catch {
                 guard self.isCurrentLocationResolution(generation) else { return }
-                if await self.processPendingSnapshot(generation: generation) { return }
+                if await self.processPendingSnapshot(generation: generation, requiresReplacement: true) { return }
                 self.startupState = .failed(Self.failureCode(for: error))
                 await self.publishCurrentContext(nil)
             }
         }
     }
 
-    private func processPendingSnapshot(generation: UInt64) async -> Bool {
+    private func processPendingSnapshot(generation: UInt64, requiresReplacement: Bool = false) async -> Bool {
         guard isCurrentLocationResolution(generation), let pending = pendingResolutionSnapshot else { return false }
+        if requiresReplacement {
+            guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized else { return false }
+            guard shouldRefreshContext(for: pending) else {
+                pendingResolutionSnapshot = nil
+                return false
+            }
+        }
         startupState = currentContext == nil ? .failed("location-context-superseded") : .ready
         guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized else { return true }
         pendingResolutionSnapshot = nil

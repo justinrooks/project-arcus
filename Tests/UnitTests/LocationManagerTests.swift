@@ -798,6 +798,45 @@ struct LocationSessionTests {
     }
 
     @MainActor
+    @Test("failed acquisition is not hidden by a pending same-cell fix")
+    func failedAcquisitionWithSameCellPendingFixRemainsUnavailable() async throws {
+        let existing = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
+        let later = durableContext(timestamp: .now, h3Cell: 1)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+                                      onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        session.currentContext = existing
+        session.currentSnapshot = existing.snapshot
+        session.startupState = .ready
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        subscribed.continuation.finish()
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        updates.continuation.yield(later.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == later.snapshot })
+        await resolver.complete(id: id, with: .failure(.locationTimeout))
+        #expect(await preparation.value == nil)
+        #expect(session.startupState == .failed("location-timeout"))
+        #expect(session.currentContext == nil)
+        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+    }
+
+    @MainActor
     @Test("same-cell fix during publication preserves successful preparation and upload")
     func sameCellFixDuringPublicationPreservesSuccess() async throws {
         let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
@@ -955,7 +994,7 @@ struct LocationSessionTests {
         try #require(await waitUntilAsync { session.currentSnapshot == second.snapshot })
         session.handleScenePhaseChange(.inactive)
         await resolver.complete(id: firstID, with: .failure(.locationTimeout))
-        try #require(await waitUntilAsync { session.startupState == .failed("location-context-superseded") })
+        try #require(await waitUntilAsync { session.startupState == .failed("location-timeout") })
         session.handleScenePhaseChange(.active)
         try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
         let preparationID = try #require(await resolver.pendingIDs(for: .prepare).first)
