@@ -190,9 +190,15 @@ private struct CombinedProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let now = Date.now
         let snapshot = currentSnapshot(now: now)
-        let entry = timelineEntry(snapshot: snapshot, now: now, family: context.family)
+        let entries = WidgetCombinedTimeline.states(for: snapshot, now: now).map { state in
+            Entry(
+                date: state.date,
+                snapshot: state.snapshot,
+                relevance: state.relevance.map { TimelineEntryRelevance(score: $0.score, duration: $0.duration) }
+            )
+        }
         let refreshDate = now.addingTimeInterval(Self.passiveRefreshInterval)
-        let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
+        let timeline = Timeline(entries: entries, policy: .after(refreshDate))
         completion(timeline)
     }
 

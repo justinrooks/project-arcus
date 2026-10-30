@@ -625,3 +625,115 @@ struct WidgetSnapshotRelevanceTests {
         )
     }
 }
+
+@Suite("WidgetCombinedTimeline")
+struct WidgetCombinedTimelineTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test("one timeline promotes warning to watch to empty and recomputes relevance")
+    func expirationTransitions() {
+        let warning = alert("Warning", end: 60)
+        let watch = alert("Watch", end: 1_200)
+        let accepted = snapshot([warning, watch])
+        let states = WidgetCombinedTimeline.states(for: accepted, now: now)
+
+        #expect(states.map { $0.date.timeIntervalSince(now) } == [0, 300, 1_200])
+        #expect(states.map { $0.snapshot.selectedAlert?.typeLabel } == ["Warning", "Watch", nil])
+        #expect(states.map { $0.snapshot.knownActiveAlertCount } == [2, 1, 0])
+        #expect(states.map { $0.snapshot.hiddenAlertCount } == [1, 0, 0])
+        #expect(states.map { $0.relevance?.score } == [100, 75, nil])
+        #expect(states.map { $0.relevance?.duration } == [60, 900, nil])
+        #expect(accepted.activeAlerts == [warning, watch])
+        #expect(accepted.selectedAlert == warning)
+        assertCoherent(states, accepted: accepted)
+    }
+
+    @Test("simultaneous and nearby boundaries coalesce without early removal")
+    func nearbyBoundaries() {
+        let accepted = snapshot([
+            alert("Warning", end: 60), alert("Warning", end: 60),
+            alert("Watch", end: 301), alert("Watch", end: 302), alert("Watch", end: 700)
+        ])
+        let states = WidgetCombinedTimeline.states(for: accepted, now: now)
+        #expect(states.map { $0.date.timeIntervalSince(now) } == [0, 300, 600, 900])
+        #expect(states.map { $0.snapshot.knownActiveAlertCount } == [5, 3, 1, 0])
+        assertCoherent(states, accepted: accepted)
+    }
+
+    @Test("an alert outside large-widget capacity eventually becomes primary")
+    func overflowPromotion() {
+        let alerts = (1...5).map { alert("Watch", end: Double($0 * 300)) }
+        let accepted = snapshot(alerts)
+        let states = WidgetCombinedTimeline.states(for: accepted, now: now)
+        let initialVisible = WidgetLargeAlertPresentation.visibleAlerts(from: states[0].snapshot.activeAlerts,
+                                                                       isAccessibilitySize: false)
+        #expect(initialVisible.count == 3)
+        #expect(WidgetLargeAlertPresentation.overflowCount(knownAlertCount: 5, visibleAlertCount: 3) == 2)
+        #expect(states[4].snapshot.selectedAlert == alerts[4])
+        #expect(states[4].snapshot.knownActiveAlertCount == 1)
+        #expect(states.last?.snapshot.selectedAlert == nil)
+        assertCoherent(states, accepted: accepted)
+    }
+
+    @Test("entry cap retains the final known expiration even beyond passive refresh")
+    func boundedTail() {
+        let accepted = snapshot((1...100).map { alert("Watch", end: Double($0 * 600)) })
+        let states = WidgetCombinedTimeline.states(for: accepted, now: now)
+        #expect(states.count == WidgetCombinedTimeline.maximumEntryCount)
+        #expect(states.last?.date == now.addingTimeInterval(60_000))
+        #expect(states.last?.snapshot.activeAlerts.isEmpty == true)
+        #expect(states.last?.relevance == nil)
+        assertCoherent(states, accepted: accepted)
+    }
+
+    @Test("empty, unavailable and legacy snapshots do not invent expiration dates")
+    func fallbackStates() {
+        let legacy = WidgetSnapshot(
+            generatedAt: now, stormRisk: .placeholder, severeRisk: .placeholder,
+            selectedAlert: alert("Warning", end: nil), hiddenAlertCount: 2,
+            freshness: .init(timestamp: nil, state: .unavailable), availability: .available
+        )
+        for accepted in [snapshot([]), legacy, WidgetSnapshot.unavailable(generatedAt: now)] {
+            let states = WidgetCombinedTimeline.states(for: accepted, now: now)
+            #expect(states.count == 1)
+            #expect(states.first?.snapshot == accepted.normalizedForWidgetPresentation(at: now))
+            #expect(states.first?.relevance == nil)
+        }
+        let legacyWithEnd = WidgetSnapshot(
+            generatedAt: now, stormRisk: .placeholder, severeRisk: .placeholder,
+            selectedAlert: alert("Warning", end: 600), hiddenAlertCount: 2,
+            freshness: .init(timestamp: now, state: .fresh), availability: .available
+        )
+        let states = WidgetCombinedTimeline.states(for: legacyWithEnd, now: now)
+        #expect(states.count == 2)
+        #expect(states.last?.snapshot.knownActiveAlertCount == 0)
+    }
+
+    private func assertCoherent(_ states: [WidgetCombinedTimeline.State], accepted: WidgetSnapshot) {
+        for (index, state) in states.enumerated() {
+            let expected = accepted.activeAlerts.filter { ($0.validEnd ?? .distantFuture) > state.date }
+            #expect(state.snapshot.activeAlerts == expected)
+            #expect(state.snapshot.selectedAlert == expected.first)
+            #expect(state.snapshot.hiddenAlertCount == max(0, expected.count - 1))
+            #expect(state.snapshot.freshness == accepted.normalizedForWidgetPresentation(at: state.date).freshness)
+            if index > 0 {
+                #expect(state.date.timeIntervalSince(states[index - 1].date) >= 300)
+            }
+        }
+    }
+
+    private func alert(_ type: String, end: TimeInterval?) -> WidgetSelectedAlertRowDisplayState {
+        .init(title: type, typeLabel: type, severity: 1, issuedAt: now,
+              validEnd: end.map { now.addingTimeInterval($0) })
+    }
+
+    private func snapshot(_ alerts: [WidgetSelectedAlertRowDisplayState]) -> WidgetSnapshot {
+        WidgetSnapshot(
+            generatedAt: now, stormRisk: .init(label: "No Risk", severity: 0),
+            severeRisk: .init(label: "No Threat", severity: 0), selectedAlert: alerts.first,
+            activeAlerts: alerts, hiddenAlertCount: max(0, alerts.count - 1),
+            freshness: .init(timestamp: now, state: .fresh),
+            alertFreshness: .init(timestamp: now, state: .fresh), availability: .available
+        )
+    }
+}
