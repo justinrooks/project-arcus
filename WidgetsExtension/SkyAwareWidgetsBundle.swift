@@ -323,10 +323,7 @@ private struct StormRiskAccessoryView: View {
     }
 
     private var isUnavailable: Bool {
-        if case .unavailable = snapshot.availability {
-            return true
-        }
-        return false
+        snapshot.isUnavailableForAccessoryRisk(snapshot.stormRisk)
     }
 
     @ViewBuilder
@@ -438,10 +435,7 @@ private struct SevereRiskAccessoryView: View {
     }
 
     private var isUnavailable: Bool {
-        if case .unavailable = snapshot.availability {
-            return true
-        }
-        return false
+        snapshot.isUnavailableForAccessoryRisk(snapshot.severeRisk)
     }
 
     @ViewBuilder

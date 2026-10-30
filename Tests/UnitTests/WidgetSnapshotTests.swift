@@ -4,6 +4,22 @@ import Testing
 
 @Suite("WidgetSnapshot")
 struct WidgetSnapshotTests {
+    @Test("accessory risk availability distinguishes missing from accepted quiet risk")
+    func accessoryAvailability_isScopedToEachRisk() {
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            stormRisk: .placeholder,
+            severeRisk: .init(label: "No Active Threats", severity: 0),
+            selectedAlert: nil,
+            hiddenAlertCount: 0,
+            freshness: .from(timestamp: iso("2026-05-01T11:55:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            availability: .available
+        )
+
+        #expect(snapshot.isUnavailableForAccessoryRisk(snapshot.stormRisk))
+        #expect(snapshot.isUnavailableForAccessoryRisk(snapshot.severeRisk) == false)
+    }
+
     @Test("encodes and decodes snapshot deterministically")
     func encodeDecode_roundTrip() throws {
         let snapshot = WidgetSnapshot(

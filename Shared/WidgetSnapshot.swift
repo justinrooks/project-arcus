@@ -16,6 +16,11 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     let locationSummary: String?
     let destination: WidgetSummaryDestination
 
+    func isUnavailableForAccessoryRisk(_ risk: WidgetRiskDisplayState) -> Bool {
+        if case .unavailable = availability { return true }
+        return risk.label == WidgetRiskDisplayState.placeholder.label
+    }
+
     var knownActiveAlertCount: Int {
         max(
             activeAlerts.count,
