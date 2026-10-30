@@ -10,6 +10,50 @@ import Testing
 struct MapFeatureModelTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
+    @Test("local summaries distinguish probability and deduplicate supported conditional intensity", arguments: [2, 10], [0, 1, 2])
+    func localRiskValues(probability: Int, intensityLevel: Int) {
+        var coordinates = makeGeoPolygon(title: "Risk").ringCoordinates
+        let polygon = MKPolygon(coordinates: &coordinates, count: coordinates.count)
+        let base = RiskPolygonOverlay.probability(from: polygon)
+        let intensity = RiskPolygonOverlay.intensity(from: polygon, level: intensityLevel, strokeColor: .black, fillColor: .clear)
+        let entries = [
+            MapOverlayEntry(key: "sev|tornado|p\(probability)|base", overlay: base, signature: 0),
+            MapOverlayEntry(key: "sev|tornado|p2|outer", overlay: base, signature: 0),
+            MapOverlayEntry(key: "intensity", overlay: intensity, signature: 0),
+            MapOverlayEntry(key: "duplicate", overlay: intensity, signature: 0)
+        ]
+        for day in [SPCForecastDay.day1, .day2, .day3] {
+            var legend = MapLegendState.current(for: .tornado, severeItems: [], fireItems: [], showsHatchingExplanation: true)
+            legend.forecastDay = day
+            let scene = MapLayerScene(
+                canvasState: MapCanvasState(overlays: entries, overlayRevision: 0, initialCenterCoordinate: nil),
+                legendState: legend, warningLegendItems: []
+            )
+            let value = MapAccessibilitySummary.make(scene: scene,
+                locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97),
+                showsWarningGeometry: true, forecastDay: day).value
+            #expect(value.contains("Local tornado risk: \(probability) percent probability."))
+            #expect(value.components(separatedBy: "Local conditional intensity:").count == (intensityLevel == 0 ? 1 : 2))
+            #expect(value.contains("If tornadoes form") == (intensityLevel > 0))
+            if day != .day1 { #expect(value.contains("current-day only")) }
+        }
+    }
+
+    @Test("nested categorical geometry announces only the highest local category")
+    func localCategoricalValues() async {
+        let model = MapFeatureModel()
+        await model.reload(using: StubSpcMapData(severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .marginal, title: "MRGL"),
+                                 makeStormRisk(level: .enhanced, title: "ENH")]),
+            mesos: .success([]), fireRisk: .success([])),
+            warningSource: StubArcusAlertQuerying(activeWarnings: .success([])), selectedLayer: .categorical)
+        let value = MapAccessibilitySummary.make(scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97),
+            showsWarningGeometry: false).value
+        #expect(value.contains("Local category: Enhanced Risk."))
+        #expect(!value.contains("Local category: Marginal"))
+    }
+
     @Test("an explicit forecast selection wins whether it arrives before or after tab visibility")
     func explicitSelectionWinsTabEntryOrdering() {
         var requestBeforeVisibility = MapTabEntryNavigationState()
@@ -307,7 +351,7 @@ struct MapFeatureModelTests {
 
         #expect(
             summary.value ==
-            "Tornado Risk saved locally. Refresh failed. Your location is inside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+            "Tornado Risk saved locally. Refresh failed. Your location is inside the displayed tornado risk area. Local tornado risk: 10 percent probability. Active warnings overlay on. No active warning areas are displayed."
         )
     }
 
@@ -334,7 +378,7 @@ struct MapFeatureModelTests {
 
         #expect(
             summary.value ==
-            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Local tornado risk: 10 percent probability. Active warnings overlay on. No active warning areas are displayed."
         )
     }
 
@@ -444,7 +488,7 @@ struct MapFeatureModelTests {
 
         #expect(
             summary.value ==
-            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Active warnings overlay on. Displaying tornado warning overlays."
+            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Local tornado risk: 10 percent probability. Active warnings overlay on. Displaying tornado warning overlays."
         )
     }
 
@@ -471,7 +515,7 @@ struct MapFeatureModelTests {
 
         #expect(
             summary.value ==
-            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Local tornado risk: 10 percent probability. Active warnings overlay on. No active warning areas are displayed."
         )
     }
 

@@ -52,6 +52,7 @@ struct MapAccessibilitySummary: Equatable {
         locationCoordinate: CLLocationCoordinate2D?
     ) -> String? {
         guard scene.legendState.presentationState != .confirmedEmpty else { return nil }
+        guard scene.legendState.presentationState != .unavailable else { return "Local relationship unknown." }
         guard let locationCoordinate else { return "Local relationship unavailable." }
 
         let thematicPolygons = scene.canvasState.overlays.compactMap { entry in
@@ -66,10 +67,61 @@ struct MapAccessibilitySummary: Equatable {
 
         let target = scene.legendState.layer.relationshipTarget
         if isInsideDisplayedRisk {
-            return "Your location is inside the displayed \(target)."
+            let values = localValues(for: scene, at: locationCoordinate)
+            return (["Your location is inside the displayed \(target)."] + values).joined(separator: " ")
         }
 
         return "Your location is outside the displayed \(target)."
+    }
+
+    private static func localValues(for scene: MapLayerScene, at coordinate: CLLocationCoordinate2D) -> [String] {
+        let local = scene.canvasState.overlays.compactMap { entry -> (String, RiskPolygonOverlay)? in
+            guard let overlay = entry.overlay as? RiskPolygonOverlay,
+                  PolygonHelpers.inPoly(user: coordinate, polygon: overlay.polygon) else { return nil }
+            return (entry.key, overlay)
+        }
+        let base = local.filter { $0.1.kind == .probability }
+        if scene.legendState.layer == .categorical {
+            let levels = base.compactMap { key, _ -> StormRiskLevel? in
+                let parts = key.split(separator: "|")
+                guard parts.count > 1, parts[0] == "cat", let raw = Int(parts[1]) else { return nil }
+                return StormRiskLevel(rawValue: raw)
+            }
+            return levels.max().map { ["Local category: \($0.message)."] } ?? []
+        }
+
+        // Significant probability and conditional intensity are separate from occurrence probability.
+        var probabilities: [Int] = []
+        var significant: [Int] = []
+        for (key, _) in base {
+            let parts = key.split(separator: "|")
+            guard parts.count > 2, parts[0] == "sev" else { continue }
+            let token = parts[2]
+            if token.hasPrefix("p"), let value = Int(token.dropFirst()) {
+                probabilities.append(value)
+            } else if token.hasPrefix("sig"), let value = Int(token.dropFirst(3)) {
+                significant.append(value)
+            }
+        }
+        var values: [String] = []
+        if let probability = probabilities.max() {
+            values.append("Local \(scene.legendState.layer.accessibilityLegendTitle.lowercased()): \(probability) percent probability.")
+        }
+        if let probability = significant.max() {
+            values.append("Local significant risk: \(probability) percent significant probability.")
+        }
+        // Intensity needs a containing base probability for the selected hazard.
+        if !probabilities.isEmpty {
+            let levels = local.compactMap { _, overlay -> Int? in
+                if case .intensity(let level) = overlay.kind { return level }
+                return nil
+            }
+            if let intensity = SevereIntensityPresentation.levels(for: scene.legendState.layer)
+                .filter({ levels.contains($0.level) }).max(by: { $0.level < $1.level }) {
+                values.append("Local conditional intensity: \(intensity.title). \(intensity.detail)")
+            }
+        }
+        return values
     }
 
     private static func warningOverlayText(
