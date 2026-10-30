@@ -61,6 +61,7 @@ final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        let receipt = RemoteNotificationReceipt(start: .now)
         guard let remoteAlertContext = RemoteNotificationContext(userInfo: userInfo) else {
             logger.notice("Ignoring remote notification without a supported hot-alert payload")
             completionHandler(.noData)
@@ -75,7 +76,7 @@ final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
         }
 
         Task {
-            completionHandler(await handler.handleRemoteNotification(remoteAlertContext))
+            completionHandler(await handler.handleRemoteNotification(remoteAlertContext, receipt: receipt))
         }
     }
 }

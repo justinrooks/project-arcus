@@ -669,9 +669,19 @@ struct AlertRepoActiveTests {
         let revision = Date(timeIntervalSince1970: 1_800_000_000)
         let client = NotificationAlertClient(payload: try notificationPayload(revision: revision), blocked: true)
         let provider = ArcusAlertProvider(alertRepo: repo, client: client)
-        let receipt = Task { await provider.syncRemoteAlert(id: notificationID, revisionSent: revision) }
+        let firstObserver = RemoteNotificationReceipt()
+        let secondObserver = RemoteNotificationReceipt()
+        let receipt = Task {
+            await RemoteAlertAcceptance.$observer.withValue({ _ in await firstObserver.recordAccepted(.newData) }) {
+                await provider.syncRemoteAlert(id: notificationID, revisionSent: revision)
+            }
+        }
         await client.waitUntilStarted()
-        let open = Task { try await provider.resolveNotificationAlert(.init(alertID: notificationID.lowercased(), revisionSent: revision)) }
+        let open = Task {
+            try await RemoteAlertAcceptance.$observer.withValue({ _ in await secondObserver.recordAccepted(.newData) }) {
+                try await provider.resolveNotificationAlert(.init(alertID: notificationID.lowercased(), revisionSent: revision))
+            }
+        }
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while await provider.coalescedRemoteSyncCount == 0, ContinuousClock.now < deadline {
             await Task.yield()
@@ -682,6 +692,47 @@ struct AlertRepoActiveTests {
         #expect(await receipt.value == .live)
         #expect(try await open.value?.currentRevisionSent == revision)
         #expect(await client.callCount == 1)
+        await firstObserver.finish()
+        await secondObserver.finish()
+        #expect(await firstObserver.run { .failed } == .newData)
+        #expect(await secondObserver.run { .failed } == .newData)
+    }
+
+    @Test("a foreground open does not inherit an overlapping receipt deadline")
+    func notificationOpenIsIndependentOfReceiptDeadline() async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        let client = NotificationAlertClient(payload: try notificationPayload(revision: revision), blocked: true)
+        let provider = ArcusAlertProvider(alertRepo: repo, client: client)
+        let context = BackgroundRefreshExecutionContext(budget: .standard(start: .now))
+        let receipt = Task {
+            await BackgroundRefreshExecutionContext.$current.withValue(context) {
+                await provider.syncRemoteAlert(id: notificationID, revisionSent: revision)
+            }
+        }
+        await client.waitUntilStarted()
+        let open = Task { try await provider.resolveNotificationAlert(
+            .init(alertID: notificationID, revisionSent: revision)) }
+        await client.waitForCallCount(2)
+        receipt.cancel()
+        await client.release()
+        #expect(await receipt.value == .cancelled)
+        #expect(try await open.value?.currentRevisionSent == revision)
+        #expect(await client.deadlines == [context.budget.workDeadline, nil])
+    }
+
+    @Test("targeted canonical acceptance notifies the receipt before later work")
+    func notificationAcceptanceObserver() async throws {
+        let revision = Date(timeIntervalSince1970: 1_800_000_000)
+        let client = NotificationAlertClient(payload: try notificationPayload(revision: revision))
+        let provider = ArcusAlertProvider(alertRepo: repo, client: client)
+        let receipt = RemoteNotificationReceipt()
+        let outcome = await RemoteAlertAcceptance.$observer.withValue({ accepted in
+            #expect(accepted?.currentRevisionSent == revision)
+            await receipt.recordAccepted(.newData)
+        }) { await provider.syncRemoteAlert(id: notificationID, revisionSent: revision) }
+        #expect(outcome == .live)
+        await receipt.finish()
+        #expect(await receipt.run { .failed } == .newData)
     }
 
     @Test("Delayed location or targeted responses cannot replace a newer accepted revision", arguments: ["location-active", "location-terminal", "targeted-active", "targeted-terminal"])
@@ -828,7 +879,9 @@ private actor NotificationAlertClient: ArcusClient {
     let fails: Bool
     private var blocked: Bool
     private var startedWaiter: CheckedContinuation<Void, Never>?
-    private var responseWaiter: CheckedContinuation<Void, Never>?
+    private var responseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var callWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private(set) var deadlines: [ContinuousClock.Instant?] = []
     private(set) var callCount = 0
     private(set) var requestedID: String?
     private(set) var requestedRevision: Date?
@@ -843,10 +896,15 @@ private actor NotificationAlertClient: ArcusClient {
         if callCount == 0 { await withCheckedContinuation { startedWaiter = $0 } }
     }
 
+    func waitForCallCount(_ count: Int) async {
+        if callCount < count { await withCheckedContinuation { callWaiters.append((count, $0)) } }
+    }
+
     func release() {
         blocked = false
-        responseWaiter?.resume()
-        responseWaiter = nil
+        let pending = responseWaiters
+        responseWaiters = []
+        pending.forEach { $0.resume() }
     }
 
     func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
@@ -855,11 +913,15 @@ private actor NotificationAlertClient: ArcusClient {
 
     func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
         callCount += 1
+        deadlines.append(BackgroundRefreshExecutionContext.current?.budget.workDeadline)
+        let ready = callWaiters.filter { $0.0 <= callCount }
+        callWaiters.removeAll { $0.0 <= callCount }
+        ready.forEach { $0.1.resume() }
         requestedID = id
         requestedRevision = revisionSent
         startedWaiter?.resume()
         startedWaiter = nil
-        if blocked { await withCheckedContinuation { responseWaiter = $0 } }
+        if blocked { await withCheckedContinuation { responseWaiters.append($0) } }
         if fails { throw ArcusError.networkError(status: 503) }
         return payload
     }

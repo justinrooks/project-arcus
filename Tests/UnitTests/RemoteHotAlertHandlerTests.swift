@@ -475,6 +475,110 @@ struct RemoteHotAlertHandlerTests {
         }
     }
 
+    @Test("deadline completes a stalled resolver and suppresses late receipt follow-up")
+    func deadlineBoundsStalledMeso() async {
+        let deadline = ReceiptTestGate()
+        let receipt = RemoteNotificationReceipt(sleepUntil: { _ in await deadline.wait() })
+        let resolver = StubRemoteMesoResolver(gated: true)
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let widget = RecordingWidgetSnapshotRefreshDriver()
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let handler = RemoteHotAlertHandler(coordinator: coordinator,
+            arcusAlerts: StubArcusAlertStore(alerts: []), presentationState: state,
+            arcusMesos: resolver, widgetSnapshotRefreshDriver: widget)
+        let task = Task { await handler.handleRemoteNotification(
+            .mesoscaleDiscussion(productID: "SPC-MD-2035-1234"), receipt: receipt) }
+        await resolver.waitUntilStarted()
+        await deadline.open()
+        #expect(await task.value == .failed)
+        await resolver.release()
+        await receipt.waitForWorkExitForTesting()
+        #expect(await receipt.run { .newData } == .failed)
+        #expect(await coordinator.requests().isEmpty)
+        #expect(await widget.refreshCallCount() == 0)
+    }
+
+    @Test("expiry preserves an accepted meso while optional reconciliation is stalled")
+    func expiryPreservesAcceptedMeso() async {
+        let deadline = ReceiptTestGate()
+        let receipt = RemoteNotificationReceipt(sleepUntil: { _ in await deadline.wait() })
+        let coordinator = RecordingHomeIngestionCoordinator(gated: true)
+        let widget = RecordingWidgetSnapshotRefreshDriver()
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let handler = RemoteHotAlertHandler(coordinator: coordinator,
+            arcusAlerts: StubArcusAlertStore(alerts: []), presentationState: state,
+            arcusMesos: StubRemoteMesoResolver(), widgetSnapshotRefreshDriver: widget)
+        let task = Task { await handler.handleRemoteNotification(
+            .mesoscaleDiscussion(productID: "SPC-MD-2035-1234"), receipt: receipt) }
+        await coordinator.waitUntilStarted()
+        await deadline.open()
+        #expect(await task.value == .newData)
+        await coordinator.release()
+        await receipt.waitForWorkExitForTesting()
+        #expect(await widget.refreshCallCount() == 0)
+    }
+
+    @Test("NWS acceptance is retained before later coordinator work expires")
+    func expiryPreservesAcceptedNWS() async {
+        let deadline = ReceiptTestGate()
+        let receipt = RemoteNotificationReceipt(sleepUntil: { _ in await deadline.wait() })
+        let revision = Date(timeIntervalSince1970: 1_776_438_000)
+        let coordinator = RecordingHomeIngestionCoordinator(gated: true,
+            acceptedNWS: makeAlert(id: "accepted", revisionSent: revision))
+        let state = await MainActor.run { RemoteAlertPresentationState() }
+        let handler = RemoteHotAlertHandler(coordinator: coordinator,
+            arcusAlerts: StubArcusAlertStore(alerts: [nil, makeAlert(id: "accepted", revisionSent: revision)]),
+            presentationState: state)
+        let task = Task { await handler.handleRemoteNotification(
+            .nwsAlert(.init(alertID: "accepted", revisionSent: revision)), receipt: receipt) }
+        await coordinator.waitUntilStarted()
+        await deadline.open()
+        #expect(await task.value == .newData)
+        await coordinator.release()
+        await receipt.waitForWorkExitForTesting()
+    }
+
+    @Test("cancellation before registration wins without starting work")
+    func cancelledBeforeRegistration() async {
+        let gate = ReceiptTestGate()
+        let receipt = RemoteNotificationReceipt()
+        let task = Task {
+            await gate.wait()
+            return await receipt.run { Issue.record("Cancelled receipt started work"); return .newData }
+        }
+        task.cancel()
+        await gate.open()
+        #expect(await task.value == .failed)
+    }
+
+    @Test("completion and expiry arbitrate once", arguments: [true, false])
+    func completionDeadlineArbitration(successFirst: Bool) async {
+        let receipt = RemoteNotificationReceipt()
+        if successFirst { await receipt.finish(.newData) }
+        await receipt.finish()
+        await receipt.finish(.noData)
+        #expect(await receipt.run { .newData } == (successFirst ? .newData : .failed))
+    }
+
+    @Test("entry time is included and HTTP receives a reserved remaining budget")
+    func receiptBudgetStartsAtEntry() async {
+        let start = ContinuousClock.now
+        let receipt = RemoteNotificationReceipt(start: start)
+        let context = await receipt.executionContext
+        #expect(context.budget.workDeadline == start + .seconds(23))
+        #expect(context.budget.completionDeadline == start + .seconds(25))
+        #expect(context.budget.admission(for: .seconds(120), at: start, isCancelled: false) == .insufficientTime)
+        let expired = RemoteNotificationReceipt(start: start - .seconds(30))
+        do { try await expired.checkActive(); Issue.record("Expired receipt admitted work") }
+        catch { #expect(error is CancellationError) }
+        let result = await receipt.run {
+            #expect(BackgroundRefreshExecutionContext.current?.budget.workDeadline == context.budget.workDeadline)
+            #expect(HTTPExecutionMode.current == .background)
+            return .noData
+        }
+        #expect(result == .noData)
+    }
+
     private func makeAlert(id: String, revisionSent: Date) -> AlertDTO {
         AlertDTO(
             id: id,
@@ -666,13 +770,17 @@ private enum TestError: Error {
 private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private var submittedRequests: [HomeIngestionRequest] = []
     private var gated: Bool
+    private let acceptedNWS: AlertDTO?
+    private var started = false
     private var gate: CheckedContinuation<Void, Never>?
     private var startedWaiter: CheckedContinuation<Void, Never>?
 
-    init(gated: Bool = false) { self.gated = gated }
+    init(gated: Bool = false, acceptedNWS: AlertDTO? = nil) {
+        self.gated = gated; self.acceptedNWS = acceptedNWS
+    }
 
     func waitUntilStarted() async {
-        if submittedRequests.isEmpty { await withCheckedContinuation { startedWaiter = $0 } }
+        if !started { await withCheckedContinuation { startedWaiter = $0 } }
     }
 
     func release() { gated = false; gate?.resume(); gate = nil }
@@ -716,6 +824,8 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         _ = progress
         _ = publication
         submittedRequests.append(request)
+        if let acceptedNWS { await RemoteAlertAcceptance.observer?(acceptedNWS) }
+        started = true
         startedWaiter?.resume(); startedWaiter = nil
         if gated { await withCheckedContinuation { gate = $0 } }
         return .empty
@@ -868,4 +978,13 @@ private actor StubRemoteMesoResolver: RemoteMesoResolving {
         if resolveCount == 0 { await withCheckedContinuation { startedWaiter = $0 } }
     }
     func release() { gate?.resume(); gate = nil }
+}
+
+private actor ReceiptTestGate {
+    private var opened = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait() async {
+        if !opened { await withCheckedContinuation { continuation = $0 } }
+    }
+    func open() { opened = true; continuation?.resume(); continuation = nil }
 }
