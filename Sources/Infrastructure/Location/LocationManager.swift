@@ -35,17 +35,28 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private var onBackgroundLocationChange: (@Sendable () async -> Void)?
     private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus, CLAccuracyAuthorization?) -> Void)?
     private var streamTask: Task<Void, Never>?
-    private var pendingRefreshLocationContinuations: [CheckedContinuation<Bool, Never>] = []
+    private struct RefreshLocationWaiter {
+        let continuation: CheckedContinuation<Bool, Never>
+        let timeoutTask: Task<Void, Never>
+    }
+    // Waiters leave this set when delivery starts, but remain pending through acceptance.
+    private var awaitingRefreshLocationIDs: Set<UUID> = []
+    private var pendingRefreshLocationContinuations: [UUID: RefreshLocationWaiter] = [:]
+    private let oneShotTimeoutSleep: @MainActor @Sendable (Duration) async throws -> Void
     private(set) var authStatus: CLAuthorizationStatus = .notDetermined
     private(set) var accuracyAuthorization: CLAccuracyAuthorization?
     
     init(
         manager: CLLocationManager = CLLocationManager(),
-        onUpdate: @escaping LocationSink
+        onUpdate: @escaping LocationSink,
+        oneShotTimeoutSleep: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        }
     ) {
         self.manager = manager
         self.authorizationOverride = Self.authorizationOverrideFromEnvironment()
         self.onUpdate = onUpdate
+        self.oneShotTimeoutSleep = oneShotTimeoutSleep
         
         super.init()
         manager.delegate = self
@@ -137,16 +148,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             return false
         }
 
-        do {
-            return try await withTimeout(timeout: timeout) { [weak self] in
-                guard let self else { return false }
-                return await self.awaitFreshLocationRequest()
-            }
-        } catch {
-            logger.notice("Timed out waiting for one-shot location refresh; the resolver may still fall back to cached or streamed location data")
-            resolvePendingRefreshLocationContinuations(with: false)
-            return false
-        }
+        let success = await awaitFreshLocationRequest(timeout: timeout)
+        return success && !Task.isCancelled
     }
     
     // MARK: - Mode management
@@ -215,16 +218,19 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         guard let loc = locations.last else { return }
         Task { @MainActor [weak self, onUpdate] in
             let shouldHandleBackgroundLocationChange = self?.currentMode == .background
+            // Snapshot ownership before acceptance suspends: later callers need a later delivery.
+            let waiterIDs = self.map { Array($0.awaitingRefreshLocationIDs) } ?? []
+            self?.awaitingRefreshLocationIDs.removeAll()
             let update = LocationUpdate(
                 coordinates: loc.coordinate,
                 timestamp: loc.timestamp,
                 accuracy: loc.horizontalAccuracy,
-                forceAcceptance: self?.pendingRefreshLocationContinuations.isEmpty == false
+                forceAcceptance: !waiterIDs.isEmpty
             )
             await onUpdate(update)
 
             if update.forceAcceptance {
-                self?.resolvePendingRefreshLocationContinuations(with: true)
+                self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: true)
             }
 
             if shouldHandleBackgroundLocationChange {
@@ -236,7 +242,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor [weak self] in
             self?.logger.error("Location manager failed with error: \(error.localizedDescription, privacy: .public)")
-            self?.resolvePendingRefreshLocationContinuations(with: false)
+            guard let self else { return }
+            resolvePendingRefreshLocationContinuations(ids: Array(awaitingRefreshLocationIDs), with: false)
         }
     }
     
@@ -274,26 +281,50 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    private func awaitFreshLocationRequest() async -> Bool {
-        await withCheckedContinuation { continuation in
-            let shouldStartRequest = pendingRefreshLocationContinuations.isEmpty
-            pendingRefreshLocationContinuations.append(continuation)
-
-            if shouldStartRequest {
-                logger.debug("Requesting one-shot current location")
-                manager.requestLocation()
-            } else {
-                logger.debug("Joining in-flight one-shot location request")
+    private func awaitFreshLocationRequest(timeout: Double) async -> Bool {
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // onCancel can run before registration; do not leave a waiter behind in that case.
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                let shouldStartRequest = awaitingRefreshLocationIDs.isEmpty
+                let timeoutTask = Task { [weak self, oneShotTimeoutSleep] in
+                    do {
+                        try await oneShotTimeoutSleep(.seconds(timeout))
+                        self?.resolvePendingRefreshLocationContinuations(ids: [id], with: false)
+                    } catch {
+                        // Completion or cancellation retired this waiter's deadline.
+                    }
+                }
+                pendingRefreshLocationContinuations[id] = RefreshLocationWaiter(
+                    continuation: continuation,
+                    timeoutTask: timeoutTask
+                )
+                awaitingRefreshLocationIDs.insert(id)
+                if shouldStartRequest {
+                    logger.debug("Requesting one-shot current location")
+                    manager.requestLocation()
+                } else {
+                    logger.debug("Joining in-flight one-shot location request")
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.resolvePendingRefreshLocationContinuations(ids: [id], with: false)
             }
         }
     }
 
-    private func resolvePendingRefreshLocationContinuations(with success: Bool) {
-        guard pendingRefreshLocationContinuations.isEmpty == false else { return }
-
-        let continuations = pendingRefreshLocationContinuations
-        pendingRefreshLocationContinuations.removeAll()
-        continuations.forEach { $0.resume(returning: success) }
+    private func resolvePendingRefreshLocationContinuations(ids: [UUID], with success: Bool) {
+        for id in ids {
+            guard let waiter = pendingRefreshLocationContinuations.removeValue(forKey: id) else { continue }
+            awaitingRefreshLocationIDs.remove(id)
+            waiter.timeoutTask.cancel()
+            waiter.continuation.resume(returning: success)
+        }
     }
 
     private func currentAuthorizationStatus() -> CLAuthorizationStatus {
