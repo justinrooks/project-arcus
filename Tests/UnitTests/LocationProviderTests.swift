@@ -293,6 +293,7 @@ struct LocationProviderTests {
 
         func release(_ index: Int) { releases.removeValue(forKey: index)?.resume() }
         func subscriptions() -> [Bool] { payloads.map(\.isSubscribed) }
+        func osVersions() -> [String] { payloads.map(\.osVersion) }
     }
 
     private actor RevokingSnapshotUploader: LocationSnapshotUploading {
@@ -1186,8 +1187,9 @@ struct LocationProviderTests {
         let pusher = LocationSnapshotPusher(
             locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
             apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
-            subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+            subscriptionStatusProvider: { subscribed.value() }, mesoNotificationEnabledProvider: { true },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, osVersionProvider: { "test-os" }, retryDelaysSeconds: [0], queueStore: store
         )
         let drain = Task { await pusher.drainPendingUploads() }
         #expect(await preferences.waitForAttempt(1))
@@ -1204,6 +1206,7 @@ struct LocationProviderTests {
         await preferences.release(3)
         await drain.value
         #expect(await preferences.subscriptions() == [initial, !initial, initial])
+        #expect(await preferences.osVersions() == ["test-os", "test-os", "test-os"])
         #expect(await store.current().isEmpty)
     }
 
@@ -1706,7 +1709,11 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            mesoNotificationEnabledProvider: { true },
+            locationUploadEnabledProvider: { true },
             authorizationStatusProvider: { .authorizedAlways },
+            osVersionProvider: { "test-os" },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1716,7 +1723,7 @@ struct LocationProviderTests {
         )
 
         #expect(outcome == .drained)
-        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await uploader.uploadedPayloads().map(\.osVersion) == ["test-os"])
         #expect(await store.current().isEmpty)
     }
 

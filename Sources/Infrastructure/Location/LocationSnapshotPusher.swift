@@ -100,6 +100,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private let mesoNotificationEnabledProvider: SubscriptionStatusProvider
     private let locationUploadEnabledProvider: LocationUploadEnabledProvider
     private let authorizationStatusProvider: AuthorizationStatusProvider
+    private let osVersionProvider: @Sendable () async -> String
     private let nowProvider: NowProvider
     private let retryDelaysSeconds: [UInt64]
     private let dedupeWindowSeconds: TimeInterval
@@ -143,6 +144,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         authorizationStatusProvider: @escaping AuthorizationStatusProvider = {
             CLLocationManager().authorizationStatus
         },
+        osVersionProvider: @escaping @Sendable () async -> String = { await UIDevice.current.systemVersion },
         nowProvider: @escaping NowProvider = { Date() },
         retryDelaysSeconds: [UInt64] = [0, 5, 15],
         dedupeWindowSeconds: TimeInterval = 15,
@@ -156,6 +158,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         self.subscriptionStatusProvider = subscriptionStatusProvider
         self.locationUploadEnabledProvider = locationUploadEnabledProvider
         self.authorizationStatusProvider = authorizationStatusProvider
+        self.osVersionProvider = osVersionProvider
         self.nowProvider = nowProvider
         self.retryDelaysSeconds = retryDelaysSeconds
         self.dedupeWindowSeconds = dedupeWindowSeconds
@@ -695,7 +698,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         deadline: ContinuousClock.Instant?,
         legacy: Bool = false
     ) async throws -> LocationSnapshotPushPayload {
-        let osVersion = await UIDevice.current.systemVersion
+        let osVersion = await osVersionProvider()
         try checkTransfer(deadline: deadline)
         let authorization = authorizationStatusProvider()
         observeConsent(subscribed: currentSubscription(), authorization: authorization)
@@ -717,7 +720,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         for request: PersistedLocationUploadRequest,
         deadline: ContinuousClock.Instant?
     ) async throws -> DevicePreferenceSyncPayload {
-        let osVersion = await UIDevice.current.systemVersion
+        let osVersion = await osVersionProvider()
         try checkTransfer(deadline: deadline)
         let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let subscribed = currentSubscription()
