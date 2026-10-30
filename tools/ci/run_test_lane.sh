@@ -17,6 +17,7 @@ measurement_tests=(
     'MapAcceptedUpdateMeasurementTests/testSelectedSceneCriticalPathAfterSourceScoping()'
     'RiskPolygonOverlayTests/hatchDrawingMeasurement()'
     'HomeProjectionStoreScalingMeasurementTests/seededRetainedProjections_reportBaselineAndPresentationScaling()'
+    'HomeProjectionStoreScalingMeasurementTests/retainedStormSetupProjections_reportBodySnapshotSampling()'
 )
 
 case "$lane" in

@@ -704,25 +704,20 @@ struct HomeProjectionObservation: View {
         _projections = Query(HomeProjection.orderedProjectionsDescriptor())
     }
 
-    private var snapshot: Snapshot {
+    static func snapshot(in projections: [HomeProjection], projectionKey: String?) -> Snapshot {
         Snapshot(
             current: projectionKey == nil
                 ? nil
-                : Self.newestDisplayReadyProjection(in: currentProjectionCandidates),
+                : Self.newestDisplayReadyProjection(in: projections.filter { $0.projectionKey == projectionKey }),
             latestObserved: Self.newestDisplayReadyProjection(in: projections)
         )
-    }
-
-    private var currentProjectionCandidates: [HomeProjection] {
-        guard let projectionKey else { return [] }
-        return projections.filter { $0.projectionKey == projectionKey }
     }
 
     static func newestDisplayReadyProjection(in projections: [HomeProjection]) -> HomeProjectionRecord? {
         HomeProjectionRecord.newestDisplayReady(in: projections.map(\.record))
     }
 
-    private var visibleRevision: HomeVisibleRevision? {
+    private func visibleRevision(for snapshot: Snapshot) -> HomeVisibleRevision? {
         HomeVisibleRevision.derive(
             previous: acceptedRevision,
             observed: projectionKey == nil ? snapshot.latestObserved : snapshot.current,
@@ -731,12 +726,14 @@ struct HomeProjectionObservation: View {
     }
 
     var body: some View {
-        content(visibleRevision, snapshot.latestObserved)
+        // Conversion decodes persisted enrichment; share one sample across rendering and observation.
+        let snapshot = Self.snapshot(in: projections, projectionKey: projectionKey)
+        content(visibleRevision(for: snapshot), snapshot.latestObserved)
             .onChange(of: snapshot, initial: true) { _, _ in
-                acceptedRevision = visibleRevision
+                acceptedRevision = visibleRevision(for: snapshot)
             }
             .onChange(of: projectionKey) { _, _ in
-                acceptedRevision = visibleRevision
+                acceptedRevision = visibleRevision(for: snapshot)
             }
     }
 

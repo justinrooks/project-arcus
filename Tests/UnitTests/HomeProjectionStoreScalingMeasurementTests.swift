@@ -47,6 +47,109 @@ struct HomeProjectionStoreScalingMeasurementTests {
     }
 #endif
 
+#if !PERFORMANCE_TESTS
+    @Test("body snapshot sampling preserves selection and observes persisted payload changes")
+    func bodySnapshotSamplingPreservesSelectionAndPayloadChanges() throws {
+        let fixture = try makeFixture(population: 10)
+        let observed = try fetchProjections(from: fixture.container)
+        let payload = Data(Self.stormSetupPayload.utf8)
+        let response = try #require(StormSetupCurrentResponsePersistenceCodec.decode(payload))
+        for projection in observed {
+            projection.stormSetupCurrentResponseData = payload
+        }
+        let snapshot = HomeProjectionObservation.snapshot(in: observed, projectionKey: fixture.targetKey)
+        #expect(snapshot.current?.projectionKey == fixture.targetKey)
+        #expect(snapshot.current?.stormSetupCurrentResponse == response)
+        #expect(snapshot.latestObserved?.id == observed.first?.id)
+        #expect(HomeProjectionObservation.snapshot(in: observed, projectionKey: nil).current == nil)
+        #expect(HomeProjectionObservation.snapshot(in: observed, projectionKey: "missing").current == nil)
+
+        // No revision-keyed cache: even a payload-only mutation is visible on the next sample.
+        let target = try #require(observed.first { $0.projectionKey == fixture.targetKey })
+        target.stormSetupCurrentResponseData = nil
+        let updated = HomeProjectionObservation.snapshot(in: observed, projectionKey: fixture.targetKey)
+        #expect(updated.current?.stormSetupCurrentResponse == nil)
+        #expect(updated.current?.updatedAt == snapshot.current?.updatedAt)
+    }
+#endif
+
+#if PERFORMANCE_TESTS
+    @Test("retained Storm Setup projections report repeated versus single body snapshot sampling")
+    func retainedStormSetupProjections_reportBodySnapshotSampling() throws {
+        let fixture = try makeFixture(population: 10)
+        let observed = try fetchProjections(from: fixture.container)
+        let payload = Data(Self.stormSetupPayload.utf8)
+        try #require(StormSetupCurrentResponsePersistenceCodec.decode(payload)?.profileAnalysis != nil)
+        for projection in observed {
+            projection.stormSetupCurrentResponseData = payload
+        }
+        var reports = ["Debug simulator microbenchmark; body access pattern replay, not rendered UI timing. payloadBytes=\(payload.count)"]
+        for key in [fixture.targetKey, nil] {
+            for sampleOnce in [false, true] {
+                var snapshotAccesses = 0
+                func snapshot() -> HomeProjectionObservation.Snapshot {
+                    snapshotAccesses += 1
+                    return HomeProjectionObservation.snapshot(in: observed, projectionKey: key)
+                }
+                func evaluate() -> HomeProjectionObservation.Snapshot {
+                    // Replay pre-fix body reads: revision's observed record and fallback key,
+                    // content's startup argument, and onChange's value. Excludes callback work.
+                    let sampled = sampleOnce ? snapshot() : nil
+                    func read() -> HomeProjectionObservation.Snapshot { sampled ?? snapshot() }
+                    let revision = HomeVisibleRevision.derive(
+                        previous: nil,
+                        observed: key == nil ? read().latestObserved : read().current,
+                        projectionKey: key ?? read().latestObserved?.projectionKey
+                    )
+                    let startup = read().latestObserved
+                    let changeValue = read()
+                    #expect(revision?.core == (key == nil ? changeValue.latestObserved : changeValue.current))
+                    #expect(startup == changeValue.latestObserved)
+                    return changeValue
+                }
+                _ = evaluate() // Warm SwiftData accessors and decoder before timing.
+                snapshotAccesses = 0
+                var samples: [Double] = []
+                for _ in 0..<Self.measuredRepetitions {
+                    let start = DispatchTime.now().uptimeNanoseconds
+                    _ = evaluate()
+                    samples.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
+                }
+                let reads = sampleOnce ? 1 : (key == nil ? 4 : 3)
+                #expect(snapshotAccesses == reads * Self.measuredRepetitions)
+                // Each snapshot maps all ten rows, plus the one matching current row, through
+                // record. Each populated record invokes exactly one Storm Setup JSON decode.
+                let conversions = reads * (observed.count + (key == nil ? 0 : 1))
+                reports.append("snapshotReads=\(reads) sourceDerivedRecordConversions=\(conversions) sourceDerivedDecodes=\(conversions) " + MeasurementReport(
+                    population: observed.count,
+                    scenario: "body-\(key == nil ? "startup" : "keyed")-\(sampleOnce ? "sampled" : "repeated")",
+                    samples: samples
+                ).description)
+            }
+        }
+        Attachment.record(reports.joined(separator: "\n"), named: "HomeProjectionBodySampling.txt")
+    }
+#endif
+
+    // Representative detailed response: HRRR metadata, canonical/diagnostic ingredients,
+    // embedded Anvil analysis, and viability. No network or raw atmospheric profile is needed.
+    private static let stormSetupPayload = #"""
+    {
+      "setup": {
+        "h3Cell": 1000000, "centroid": {"latitude": 39.75, "longitude": -104.44},
+        "source": {"sourceKind": "nomadsFilteredSubset", "model": "HRRR", "product": "wrfsfc", "domain": "conus", "runTime": "2026-06-01T18:00:00Z", "forecastHour": 3, "validTime": "2026-06-01T21:00:00Z", "fieldSetVersion": "tornado-v1", "bbox": {"leftlon": -104.3, "rightlon": -96.2, "toplat": 41.5, "bottomlat": 36.8}},
+        "surfaceHeightMslM": 1340,
+        "freshness": {"sourceValidTime": "2026-06-01T21:00:00Z", "modelRunTime": "2026-06-01T18:00:00Z", "forecastHour": 3, "fetchedAt": "2026-06-01T21:03:00Z", "expiresAt": "2026-06-01T22:00:00Z", "isStale": false, "isDegraded": false}
+      },
+      "ingredients": {
+        "canonical": {"sbcapeJkg": 1700, "mlcapeJkg": 1850, "mucapeJkg": 2200.5, "mlcinJkg": -42, "mllclM": 980, "tempDewPtDeltaF": 4.5, "threeCapeJkg": 95, "shear06kmKt": 42, "shear03kmKt": 31, "shear01kmKt": 18, "srh01kmM2s2": 125.5, "srh03kmM2s2": 175},
+        "diagnostics": {"effectiveBulkShearMs": 24.5, "effectiveSrhM2s2": 135, "supercellComposite": 0.7, "significantTornadoFixed": 1.2, "significantHail": 2.1}
+      },
+      "profileAnalysis": {"effectiveLayer": {"status": "found", "basePressureMb": 915, "topPressureMb": 750, "baseMetersAgl": 850, "topMetersAgl": 1800}, "stormMotion": {"status": "found", "bunkersRight": {"uKt": 12, "vKt": -8, "speedKt": 18, "directionTowardDeg": 215, "uMs": 6.2, "vMs": -4.1, "speedMs": 9.2}}, "mucape": 2200.5, "mlcape": 1850, "mlcin": -42, "mllclMetersAgl": 980, "effectiveSrh": 135, "effectiveBulkShearMs": 24.5, "scp": 0.7, "stpCin": 0.9, "stpFixed": 1.2, "ship": 2.1, "quality": {"profileLevelCount": 36, "warnings": []}},
+      "tornadoViability": {"overall": "supportive", "realization": "realized", "primaryFailureMode": "none", "confidence": "moderate", "summary": "Supportive setup with instability, deep shear, and low-level rotation.", "details": {"stormViability": "supportive", "supercellViability": "strong", "tornadoEfficiency": "supportive", "inhibition": "weak", "instability": "supportive", "moisture": "strong", "cloudBase": "weak", "deepShear": "strong", "lowLevelRotation": "conditional", "lowLevelStretching": "supportive", "cloudBaseEfficiency": "supportive", "supercellComposite": "strong", "tornadoComposite": "supportive", "stormMode": "conditional"}, "limitingFactors": []}
+    }
+    """#
+
     private func verifyCorrectness(population: Int) async throws {
         let fixture = try makeFixture(population: population, baselineOnTarget: population == 1)
         let store = HomeProjectionStore(modelContainer: fixture.container)
