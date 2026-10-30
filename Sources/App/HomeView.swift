@@ -13,6 +13,11 @@ import StoreKit
 import ArcusCore
 
 struct HomeView: View {
+    private struct ContextObservation: Equatable {
+        let key: LocationContext.RefreshKey?
+        let interruptionRevision: UInt64
+    }
+
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
@@ -569,7 +574,11 @@ struct HomeView: View {
                 await refreshPipeline.handleScenePhaseChange(newPhase, environment: refreshEnvironment)
             }
         }
-        .onChange(of: currentContextRefreshKey, initial: true) { _, newKey in
+        .onChange(of: ContextObservation(
+            key: currentContextRefreshKey,
+            interruptionRevision: locationSession.contextInterruptionRevision
+        ), initial: true) { _, observation in
+            let newKey = observation.key
             projectionRetentionTask?.cancel()
             projectionRetentionTask = nil
             if isUITestStaticMode == false,
@@ -596,7 +605,8 @@ struct HomeView: View {
                 await refreshPipeline.handleContextRefreshKeyChange(
                     newKey,
                     scenePhase: scenePhase,
-                    environment: refreshEnvironment
+                    environment: refreshEnvironment,
+                    interruptionRevision: observation.interruptionRevision
                 )
             }
         }

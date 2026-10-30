@@ -334,6 +334,73 @@ struct HomeRefreshPipelineTests {
         #expect(requests[1].locationContext == context)
     }
 
+    @Test("same-key recovery schedules once while retaining accepted state")
+    func sameKeyRecoverySchedulesOnce() async {
+        let context = makeContext()
+        let snapshot = HomeSnapshot(locationContext: context, locationSnapshot: context.snapshot,
+                                    refreshKey: context.refreshKey, stormRisk: .enhanced)
+        let refreshed = HomeSnapshot(locationContext: context, locationSnapshot: context.snapshot,
+                                     refreshKey: context.refreshKey, stormRisk: .moderate)
+        let coordinator = RecordingHomeIngestionCoordinator(results: [.success(snapshot), .success(refreshed), .success(refreshed)])
+        let session = FakeLocationSession(currentContext: context, preparedContext: context)
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: session)
+        let pipeline = HomeRefreshPipeline()
+        await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+        let before = await coordinator.requestCount()
+        session.currentContext = nil
+        await pipeline.handleContextRefreshKeyChange(nil, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        #expect(pipeline.stormRisk == .enhanced)
+        session.currentContext = context
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        await pipeline.waitForIdle()
+        #expect(await coordinator.requestCount() == before + 2)
+        #expect(pipeline.stormRisk == .moderate)
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        await pipeline.waitForIdle()
+        #expect(await coordinator.requestCount() == before + 2)
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 0)
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        await pipeline.waitForIdle()
+        #expect(await coordinator.requestCount() == before + 2)
+    }
+
+    @Test("same-key recovery is deferred once while ingestion is active")
+    func sameKeyRecoveryDefersWhileRefreshing() async throws {
+        let context = makeContext()
+        let snapshot = HomeSnapshot(locationContext: context, locationSnapshot: context.snapshot,
+                                    refreshKey: context.refreshKey, stormRisk: .enhanced)
+        let gate = AsyncGate()
+        let coordinator = SequencedHomeIngestionCoordinator(snapshots: Array(repeating: snapshot, count: 5),
+                                                            gates: [nil, nil, gate])
+        let session = FakeLocationSession(currentContext: context, preparedContext: context)
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: session)
+        let pipeline = HomeRefreshPipeline()
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+        try #require(await waitUntil { await coordinator.requestCount() == 2 && !pipeline.isRefreshInFlight })
+        await pipeline.enqueueRefresh(.timer, environment: environment)
+        try #require(await waitUntil { await coordinator.requestCount() == 3 })
+        session.currentContext = nil
+        await pipeline.handleContextRefreshKeyChange(nil, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        session.currentContext = context
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment,
+                                                     interruptionRevision: 1)
+        #expect(await coordinator.requestCount() == 3)
+        await gate.open()
+        try #require(await waitUntil { await coordinator.requestCount() == 5 })
+        await pipeline.waitForIdle()
+        #expect(await coordinator.requestCount() == 5)
+        await pipeline.handleScenePhaseChange(.inactive, environment: environment)
+    }
+
     @Test("settings refresh entry point uses one non-forced session tick request")
     func settingsRefreshEntryPoint_usesNonForcedSessionTickRequest() async throws {
         let context = makeContext()

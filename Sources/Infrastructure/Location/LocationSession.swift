@@ -45,9 +45,14 @@ final class LocationSession: Sendable {
     @ObservationIgnored
     private var locationResolutionGeneration: UInt64 = 0
     @ObservationIgnored
+    private var resolvingSnapshot: LocationSnapshot?
+    @ObservationIgnored
+    private var pendingResolutionSnapshot: LocationSnapshot?
+    @ObservationIgnored
     private var currentScenePhase: ScenePhase = .inactive
 
     var currentSnapshot: LocationSnapshot?
+    private(set) var contextInterruptionRevision: UInt64 = 0
     var currentContext: LocationContext?
     var authorizationStatus: CLAuthorizationStatus
     var accuracyAuthorization: CLAccuracyAuthorization?
@@ -104,6 +109,11 @@ final class LocationSession: Sendable {
         currentScenePhase = phase
         syncAuthorizationStatus()
         locationManager.updateMode(for: phase)
+        if phase == .active { scheduleAuthorizationRecoveryIfNeeded() }
+        if phase == .active, let pending = pendingResolutionSnapshot {
+            pendingResolutionSnapshot = nil
+            Task { @MainActor [weak self] in await self?.handleSnapshotUpdate(pending) }
+        }
     }
 
     func requestInteractiveAuthorization() {
@@ -156,8 +166,14 @@ final class LocationSession: Sendable {
                 placemarkTimeout: placemarkTimeout
             )
             guard isCurrentLocationResolution(generation) else { return nil }
+            if let pending = pendingResolutionSnapshot, pending.timestamp > context.snapshot.timestamp,
+               await processPendingSnapshot(generation: generation) {
+                guard startupState == .ready, currentContext?.h3Cell == context.h3Cell else { return nil }
+            }
+            pendingResolutionSnapshot = nil
             await applyResolvedContext(context, generation: generation)
             guard isCurrentLocationResolution(generation) else { return nil }
+            if await processPendingSnapshot(generation: generation), startupState != .ready { return nil }
             if let uploadSource {
                 await locationUploadCoordinator.enqueue(
                     context,
@@ -171,6 +187,7 @@ final class LocationSession: Sendable {
             return context
         } catch {
             guard isCurrentLocationResolution(generation) else { return nil }
+            if await processPendingSnapshot(generation: generation) { return nil }
             startupState = .failed(Self.failureCode(for: error))
             await publishCurrentContext(nil)
             return nil
@@ -398,6 +415,22 @@ final class LocationSession: Sendable {
                 await self.publishCurrentContext(nil)
             }
             logger.notice("Location access unavailable; currentContextReset=\(hadContext, privacy: .public)")
+        } else if hadAuthorizationChange {
+            scheduleAuthorizationRecoveryIfNeeded()
+        }
+    }
+
+    private func scheduleAuthorizationRecoveryIfNeeded() {
+        guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
+              case .failed = startupState else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.currentScenePhase == .active,
+                  self.authorizationStatus.isLocationAuthorized,
+                  case .failed = self.startupState else { return }
+            _ = await self.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
+            )
         }
     }
 
@@ -406,10 +439,25 @@ final class LocationSession: Sendable {
             currentSnapshot = snapshot
         }
 
-        guard currentScenePhase == .active, startupState == .ready else { return }
+        guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized else { return }
+        switch startupState {
+        case .ready, .failed:
+            break
+        case .resolvingContext:
+            if snapshot != resolvingSnapshot {
+                pendingResolutionSnapshot = snapshot
+            }
+            return
+        case .requestingAuthorization, .acquiringLocation:
+            pendingResolutionSnapshot = snapshot
+            return
+        default:
+            return
+        }
         guard shouldRefreshContext(for: snapshot) else { return }
 
         let generation = beginLocationResolutionAttempt()
+        resolvingSnapshot = snapshot
         startupState = .resolvingContext
         contextRefreshTask = Task { [weak self] in
             guard let self else { return }
@@ -423,8 +471,10 @@ final class LocationSession: Sendable {
                 guard Task.isCancelled == false,
                       self.isCurrentLocationResolution(generation) else { return }
 
+                if await self.processPendingSnapshot(generation: generation) { return }
                 await self.applyResolvedContext(context, generation: generation)
                 guard self.isCurrentLocationResolution(generation) else { return }
+                if await self.processPendingSnapshot(generation: generation), self.startupState != .ready { return }
                 self.startupState = .ready
                 await self.locationUploadCoordinator.enqueue(
                     context,
@@ -436,16 +486,28 @@ final class LocationSession: Sendable {
                 return
             } catch {
                 guard self.isCurrentLocationResolution(generation) else { return }
+                if await self.processPendingSnapshot(generation: generation) { return }
                 self.startupState = .failed(Self.failureCode(for: error))
                 await self.publishCurrentContext(nil)
             }
         }
     }
 
+    private func processPendingSnapshot(generation: UInt64) async -> Bool {
+        guard isCurrentLocationResolution(generation), let pending = pendingResolutionSnapshot else { return false }
+        startupState = currentContext == nil ? .failed("location-context-superseded") : .ready
+        guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized else { return true }
+        pendingResolutionSnapshot = nil
+        await handleSnapshotUpdate(pending)
+        return true
+    }
+
     private func beginLocationResolutionAttempt() -> UInt64 {
         locationResolutionGeneration &+= 1
         contextRefreshTask?.cancel()
         contextRefreshTask = nil
+        resolvingSnapshot = nil
+        pendingResolutionSnapshot = nil
         return locationResolutionGeneration
     }
 
@@ -457,7 +519,9 @@ final class LocationSession: Sendable {
         guard isCurrentLocationResolution(generation) else { return }
         await publishCurrentContext(context)
         guard isCurrentLocationResolution(generation) else { return }
-        if currentSnapshot != context.snapshot {
+        if let currentSnapshot, currentSnapshot.timestamp > context.snapshot.timestamp {
+            // Preserve a newer streamed fix until its pending resolution completes.
+        } else {
             currentSnapshot = context.snapshot
         }
         durableContextCache.save(context)
@@ -465,6 +529,9 @@ final class LocationSession: Sendable {
 
     func publishCurrentContext(_ context: LocationContext?) async {
         await retentionCoordinator.publish(context) {
+            if context == nil, currentContext != nil {
+                contextInterruptionRevision &+= 1
+            }
             currentContext = context
         }
         await onContextPublished()

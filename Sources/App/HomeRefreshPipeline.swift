@@ -115,6 +115,8 @@ final class HomeRefreshPipeline {
     private(set) var foregroundRefreshGeneration = 0
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
+    private var deferredContextRecovery = false
+    private var handledInterruptionRevision: UInt64 = 0
     private var activeRefreshCount = 0
     private var followUpRefreshCount = 0
     private var didCompleteManualConditionsRefreshSuccessfully = false
@@ -222,6 +224,7 @@ final class HomeRefreshPipeline {
 
     func resetLocationRefreshContext() {
         deferredContextRefreshKey = nil
+        deferredContextRecovery = false
         resetStormSetupActivity()
         didManualAlertRefreshFail = false
     }
@@ -358,7 +361,8 @@ final class HomeRefreshPipeline {
     func handleContextRefreshKeyChange(
         _ newKey: LocationContext.RefreshKey?,
         scenePhase: ScenePhase,
-        environment: Environment
+        environment: Environment,
+        interruptionRevision: UInt64 = 0
     ) async {
         updateEnvironment(environment)
         if newKey != stormSetupRefreshKey { resetStormSetupActivity() }
@@ -368,17 +372,22 @@ final class HomeRefreshPipeline {
             didManualRefreshFail = false
             manualRefreshProjectionKey = nil
         }
-        guard scenePhase == .active, let newKey else { return }
+        guard scenePhase == .active, let newKey,
+              environment.locationSession.currentContext?.refreshKey == newKey else { return }
+        guard interruptionRevision >= handledInterruptionRevision else { return }
+        let isRecovery = interruptionRevision > handledInterruptionRevision
+        handledInterruptionRevision = interruptionRevision
 
         if isRefreshInFlight {
             environment.logger.debug(
                 "Deferring foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) while activeRefreshCount=\(self.activeRefreshCount, privacy: .public) followUpRefreshCount=\(self.followUpRefreshCount, privacy: .public)"
             )
             deferredContextRefreshKey = newKey
+            deferredContextRecovery = deferredContextRecovery || isRecovery
             return
         }
 
-        guard newKey != lastResolvedLocationScopedRefreshKey else {
+        guard isRecovery || newKey != lastResolvedLocationScopedRefreshKey else {
             environment.logger.debug(
                 "Skipping foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) because the location scope is already resolved"
             )
@@ -827,11 +836,14 @@ final class HomeRefreshPipeline {
         )
         didCompleteManualConditionsRefreshSuccessfully = false
         let deferredContextRefreshKey = self.deferredContextRefreshKey
+        let deferredContextRecovery = self.deferredContextRecovery
         self.deferredContextRefreshKey = nil
+        self.deferredContextRecovery = false
         guard
             lastHandledScenePhase == .active,
-            deferredContextRefreshKey != nil,
-            deferredContextRefreshKey != lastResolvedLocationScopedRefreshKey
+            let deferredContextRefreshKey,
+            environment?.locationSession.currentContext?.refreshKey == deferredContextRefreshKey,
+            deferredContextRecovery || deferredContextRefreshKey != lastResolvedLocationScopedRefreshKey
         else {
             return
         }

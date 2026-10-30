@@ -655,6 +655,318 @@ struct LocationSessionTests {
     }
 
     @MainActor
+    @Test("a valid foreground fix recovers a failed location acquisition")
+    func foregroundFixRecoversFailedAcquisition() async throws {
+        let context = durableContext(timestamp: .now)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        subscribed.continuation.finish()
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let prepareID = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: prepareID, with: .failure(.locationTimeout))
+        #expect(await preparation.value == nil)
+        updates.continuation.yield(context.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let resolveID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: resolveID, with: .success(context))
+        #expect(await waitUntilAsync { session.currentContext == context && session.startupState == .ready })
+    }
+
+    @MainActor
+    @Test("newer streamed fix survives an in-flight recovery", arguments: [false, true], [false, true])
+    func newerFixSurvivesRecovery(firstFails: Bool, secondFails: Bool) async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
+        let second = durableContext(timestamp: .now, h3Cell: 2)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        session.startupState = .failed("location-timeout")
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        subscribed.continuation.finish()
+        updates.continuation.yield(first.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let firstID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        updates.continuation.yield(second.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == second.snapshot })
+        await resolver.complete(id: firstID, with: firstFails ? .failure(.locationTimeout) : .success(first))
+        try #require(await waitUntilAsync {
+            let ids = await resolver.pendingIDs(for: .resolve)
+            return ids.count == 1 && ids.first != firstID
+        })
+        let secondID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: secondID, with: secondFails ? .failure(.locationTimeout) : .success(second))
+        if secondFails {
+            #expect(await waitUntilAsync { session.startupState == .failed("location-timeout") })
+            #expect(session.currentContext == nil)
+            #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+        } else {
+            #expect(await waitUntilAsync { session.currentContext == second && session.startupState == .ready })
+        }
+    }
+
+    @MainActor
+    @Test("restoring authorization starts acquisition", arguments: [false, true])
+    func authorizationRecoveryStartsAcquisition(afterSettings: Bool) async throws {
+        let context = durableContext(timestamp: .now)
+        let source = LocationManagerTests.StubAuthorizationManager(status: .denied)
+        let manager = LocationManager(manager: source, onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: makeLocationClient(provider: LocationProvider()),
+                                      locationManager: manager, locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        _ = await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false)
+        if afterSettings { session.handleScenePhaseChange(.inactive) }
+        source.stubStatus = .authorizedWhenInUse
+        manager.locationManagerDidChangeAuthorization(source)
+        try #require(await waitUntilAsync { session.authorizationStatus == .authorizedWhenInUse })
+        if afterSettings { session.handleScenePhaseChange(.active) }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: id, with: .success(context))
+        #expect(await waitUntilAsync { session.currentContext == context && session.startupState == .ready })
+    }
+
+    @MainActor
+    @Test("a fix received during acquisition is resolved after its completion", arguments: [false, true])
+    func fixDuringAcquisitionIsNotLost(firstFails: Bool) async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
+        let second = durableContext(timestamp: .now, h3Cell: 2)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+                                      onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        subscribed.continuation.finish()
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let firstID = try #require(await resolver.pendingIDs(for: .prepare).first)
+        updates.continuation.yield(second.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == second.snapshot })
+        await resolver.complete(id: firstID, with: firstFails ? .failure(.locationTimeout) : .success(first))
+        _ = await preparation.value
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let secondID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: secondID, with: .success(second))
+        #expect(await waitUntilAsync { session.currentContext == second && session.startupState == .ready })
+    }
+
+    @MainActor
+    @Test("same-cell fix during publication preserves successful preparation and upload")
+    func sameCellFixDuringPublicationPreservesSuccess() async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
+        let later = durableContext(timestamp: .now, h3Cell: 1)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+                                      onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver, locationUploadCoordinator: uploader,
+                                      onContextPublished: {
+            entered.continuation.yield(())
+            var iterator = release.stream.makeAsyncIterator()
+            _ = await iterator.next()
+        })
+        session.handleScenePhaseChange(.active)
+        var subscribedIterator = subscribed.stream.makeAsyncIterator()
+        _ = await subscribedIterator.next()
+        subscribed.continuation.finish()
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false,
+                                                        uploadSource: .foregroundLocationChange)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: id, with: .success(first))
+        var enteredIterator = entered.stream.makeAsyncIterator()
+        _ = await enteredIterator.next()
+        updates.continuation.yield(later.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == later.snapshot })
+        release.continuation.finish()
+        #expect(await preparation.value == first)
+        #expect(session.startupState == .ready)
+        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        await session.publishCurrentContext(nil)
+        #expect(session.contextInterruptionRevision == 1)
+        await session.publishCurrentContext(nil)
+        #expect(session.contextInterruptionRevision == 1)
+    }
+
+    @MainActor
+    @Test("same-cell fix during streamed publication still uploads")
+    func sameCellStreamDuringPublicationUploads() async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1))
+        let later = durableContext(timestamp: .now)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+                                      onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver, locationUploadCoordinator: uploader,
+                                      onContextPublished: {
+            entered.continuation.yield(())
+            var iterator = release.stream.makeAsyncIterator()
+            _ = await iterator.next()
+        })
+        session.handleScenePhaseChange(.active)
+        session.startupState = .failed("location-timeout")
+        var subscribedIterator = subscribed.stream.makeAsyncIterator()
+        _ = await subscribedIterator.next()
+        updates.continuation.yield(first.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: id, with: .success(first))
+        var enteredIterator = entered.stream.makeAsyncIterator()
+        _ = await enteredIterator.next()
+        updates.continuation.yield(later.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == later.snapshot })
+        release.continuation.finish()
+        #expect(await waitUntilAsync {
+            let count = await uploader.recordedEnqueueCount()
+            return session.startupState == .ready && count == 1
+        })
+    }
+
+    @MainActor
+    @Test("authorization loss fences a suspended recovery")
+    func authorizationLossFencesRecovery() async throws {
+        let context = durableContext(timestamp: .now)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let source = LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(manager: source, onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        session.startupState = .failed("location-timeout")
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        updates.continuation.yield(context.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .resolve).first)
+        updates.continuation.yield(context.snapshot)
+        source.stubStatus = .denied
+        manager.locationManagerDidChangeAuthorization(source)
+        try #require(await waitUntilAsync { session.authorizationStatus == .denied })
+        await resolver.complete(id: id, with: .success(context))
+        #expect(await waitUntilAsync { session.startupState == .failed("location-unavailable") })
+        #expect(session.currentContext == nil)
+        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+    }
+
+    @MainActor
+    @Test("pending fix resumes after the scene returns active")
+    func pendingFixResumesAfterForegroundReturn() async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
+        let second = durableContext(timestamp: .now, h3Cell: 2)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+                                      onUpdate: { _ in })
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver,
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.active)
+        session.startupState = .failed("location-timeout")
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        updates.continuation.yield(first.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let firstID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        updates.continuation.yield(second.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == second.snapshot })
+        session.handleScenePhaseChange(.inactive)
+        await resolver.complete(id: firstID, with: .failure(.locationTimeout))
+        try #require(await waitUntilAsync { session.startupState == .failed("location-context-superseded") })
+        session.handleScenePhaseChange(.active)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let preparationID = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: preparationID, with: .failure(.locationTimeout))
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let secondID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: secondID, with: .success(second))
+        #expect(await waitUntilAsync { session.currentContext == second && session.startupState == .ready })
+    }
+
+    @MainActor
     @Test("new explicit preparation invalidates an older snapshot-driven resolution")
     func explicitPreparationInvalidatesOlderSnapshotDrivenResolution() async {
         let initialContext = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
