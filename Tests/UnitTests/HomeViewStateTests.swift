@@ -1012,6 +1012,7 @@ struct HomeViewKeyedProjectionObservationTests {
     private final class ObservationRecorder {
         var snapshots: [HomeProjectionObservation.Snapshot] = []
         var contentIdentityTokens: [UUID] = []
+        var isMounted = false
     }
 
     @MainActor
@@ -1044,12 +1045,16 @@ struct HomeViewKeyedProjectionObservationTests {
         var body: some View {
             Text("\(snapshot.current?.id.uuidString ?? "missing") / \(snapshot.latestObserved?.id.uuidString ?? "missing")")
                 .onAppear {
+                    recorder.isMounted = true
                     recorder.snapshots.append(snapshot)
                     recorder.contentIdentityTokens.append(identityToken)
                 }
                 .onChange(of: snapshot) { _, newSnapshot in
                     recorder.snapshots.append(newSnapshot)
                     recorder.contentIdentityTokens.append(identityToken)
+                }
+                .onDisappear {
+                    recorder.isMounted = false
                 }
         }
     }
@@ -1077,12 +1082,17 @@ struct HomeViewKeyedProjectionObservationTests {
 
         let recorder = ObservationRecorder()
         let keyState = ProjectionKeyState(projectionKey: nil)
+        // A standalone context owns its container, including while SwiftUI retires the query observer.
+        let queryContext = ModelContext(container)
         let host = UIHostingController(
-            rootView: ObservationHost(state: keyState, recorder: recorder).modelContainer(container)
+            rootView: AnyView(
+                ObservationHost(state: keyState, recorder: recorder).environment(\.modelContext, queryContext)
+            )
         )
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = host
         defer {
+            host.rootView = AnyView(EmptyView())
             window.isHidden = true
             window.rootViewController = nil
         }
@@ -1140,10 +1150,15 @@ struct HomeViewKeyedProjectionObservationTests {
         try await waitForEmission(in: recorder, afterCount: priorEmissionCount) {
             $0.latestObserved?.id == replacement.id
         }
+        try await dismissObservation(host, window: window, recorder: recorder, context: queryContext)
     }
 
     @Test("initial warm revision survives its first same-context observation gap")
     func initialWarmRevisionSurvivesFirstGap() async throws {
+        try await verifyInitialWarmRevisionSurvivesFirstGap()
+    }
+
+    private func verifyInitialWarmRevisionSurvivesFirstGap() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let modelContext = ModelContext(container)
         let location = makeContext(h3Cell: 611, countyCode: "COC005", fireZone: "COZ214")
@@ -1158,12 +1173,17 @@ struct HomeViewKeyedProjectionObservationTests {
 
         let recorder = ObservationRecorder()
         let keyState = ProjectionKeyState(projectionKey: HomeProjection.projectionKey(for: location))
+        // A standalone context owns its container, including while SwiftUI retires the query observer.
+        let queryContext = ModelContext(container)
         let host = UIHostingController(
-            rootView: ObservationHost(state: keyState, recorder: recorder).modelContainer(container)
+            rootView: AnyView(
+                ObservationHost(state: keyState, recorder: recorder).environment(\.modelContext, queryContext)
+            )
         )
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = host
         defer {
+            host.rootView = AnyView(EmptyView())
             window.isHidden = true
             window.rootViewController = nil
         }
@@ -1181,6 +1201,25 @@ struct HomeViewKeyedProjectionObservationTests {
 
         keyState.projectionKey = HomeProjection.projectionKey(for: other)
         try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) { $0.current == nil }
+        try await dismissObservation(host, window: window, recorder: recorder, context: queryContext)
+    }
+
+    @Test("dismissed query hosts leave no observers referencing a released context")
+    func dismissedObservation_allowsUnrelatedContainerSaves() async throws {
+        for _ in 0..<5 {
+            try await verifyInitialWarmRevisionSurvivesFirstGap()
+            try autoreleasepool {
+                let container = try TestStore.container(for: [HomeProjection.self])
+                let context = ModelContext(container)
+                _ = makeProjection(
+                    in: context,
+                    location: makeContext(h3Cell: 711, countyCode: "COC005", fireZone: "COZ214"),
+                    updatedAt: Date(timeIntervalSince1970: 100),
+                    isDisplayReady: true
+                )
+                try context.save()
+            }
+        }
     }
 
     @Test("projection query observes all sorted rows and preserves readiness selection")
@@ -1272,6 +1311,25 @@ struct HomeViewKeyedProjectionObservationTests {
         #expect(
             HomeProjectionObservation.newestDisplayReadyProjection(in: fallbackAfterDeletion)?.id == newestOtherLocation.id
         )
+    }
+
+    private func dismissObservation(
+        _ host: UIHostingController<AnyView>,
+        window: UIWindow,
+        recorder: ObservationRecorder,
+        context: ModelContext
+    ) async throws {
+        host.rootView = AnyView(EmptyView())
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        for _ in 0..<100 {
+            if recorder.isMounted == false { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(recorder.isMounted == false, "Query host must disappear before its context is released")
+        window.isHidden = true
+        window.rootViewController = nil
+        withExtendedLifetime(context) {}
     }
 
     private func makeProjection(

@@ -103,6 +103,7 @@ final class HomeRefreshPipeline {
     }
 
     private let foregroundTimerInterval: Duration
+    private let foregroundTimerSleep: @Sendable (Duration) async throws -> Void
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
 
     private var environment: Environment?
@@ -179,7 +180,10 @@ final class HomeRefreshPipeline {
         initialRefreshInFlight: Bool = false,
         initialStormSetupRefreshInFlight: Bool = false,
         initialStormSetupAttemptResult: HomeStormSetupRefreshResult? = nil,
-        foregroundTimerInterval: Duration = .seconds(120)
+        foregroundTimerInterval: Duration = .seconds(120),
+        foregroundTimerSleep: @escaping @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        }
     ) {
         self.snap = initialSnap
         self.stormSetup = initialStormSetup
@@ -205,6 +209,11 @@ final class HomeRefreshPipeline {
         self.stormSetupAttemptResult = initialStormSetupAttemptResult
         self.outlookRefreshStatus = initialOutlooks.isEmpty && initialOutlook == nil ? .loading : .success(hasContent: true)
         self.foregroundTimerInterval = foregroundTimerInterval
+        self.foregroundTimerSleep = foregroundTimerSleep
+    }
+
+    isolated deinit {
+        foregroundTimerTask?.cancel()
     }
 
     func updateEnvironment(_ environment: Environment) {
@@ -391,17 +400,20 @@ final class HomeRefreshPipeline {
     private func startForegroundTimerIfNeeded() {
         guard foregroundTimerTask == nil else { return }
 
+        let interval = foregroundTimerInterval
+        let sleep = foregroundTimerSleep
         foregroundTimerTask = Task { @MainActor [weak self] in
-            await self?.runForegroundTimerLoop()
-        }
-    }
-
-    private func runForegroundTimerLoop() async {
-        while Task.isCancelled == false {
-            try? await Task.sleep(for: foregroundTimerInterval)
-            if Task.isCancelled { return }
-            foregroundRefreshGeneration &+= 1
-            await submit(.timer, waitsForCompletion: false)
+            while Task.isCancelled == false {
+                do {
+                    try await sleep(interval)
+                } catch {
+                    return
+                }
+                // Retain the owner only for this tick, never across the next sleep.
+                guard Task.isCancelled == false, let self else { return }
+                self.foregroundRefreshGeneration &+= 1
+                await self.submit(.timer, waitsForCompletion: false)
+            }
         }
     }
 
