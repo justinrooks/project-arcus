@@ -11,6 +11,9 @@ struct LocationManagerTests {
         var stubAccuracy: CLAccuracyAuthorization
         private(set) var requestWhenInUseCount = 0
         private(set) var requestAlwaysCount = 0
+        private(set) var requestLocationCount = 0
+
+        override func requestLocation() { requestLocationCount += 1 }
 
         init(status: CLAuthorizationStatus, accuracy: CLAccuracyAuthorization = .fullAccuracy) {
             self.stubStatus = status
@@ -49,6 +52,169 @@ struct LocationManagerTests {
             try? await Task.sleep(for: interval)
         }
         return condition()
+    }
+
+    @MainActor
+    private final class ManualTimeouts {
+        let (started, didStart) = AsyncStream<Int>.makeStream()
+        private var nextID = 0
+        private var deadlines: [Int: AsyncStream<Void>.Continuation] = [:]
+
+        func sleep(_ duration: Duration) async throws {
+            let id = nextID
+            nextID += 1
+            let (ticks, tick) = AsyncStream<Void>.makeStream()
+            deadlines[id] = tick
+            defer { deadlines.removeValue(forKey: id) }
+            didStart.yield(id)
+            for await _ in ticks { return }
+            throw CancellationError()
+        }
+
+        func expire(_ id: Int) {
+            deadlines[id]?.yield(())
+            deadlines[id]?.finish()
+        }
+    }
+
+    @MainActor
+    private func result(
+        of caller: Task<Bool, Never>, sut: LocationManager, manager: StubAuthorizationManager
+    ) async -> Bool {
+        // Failure-only watchdog: ordering below uses explicit registrations and clock ticks.
+        var neededRescue = false
+        let rescue = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            neededRescue = true
+            sut.locationManager(manager, didFailWithError: CLError(.locationUnknown))
+        }
+        let value = await caller.value
+        rescue.cancel()
+        #expect(!neededRescue, "Caller required a later delegate callback to unwind")
+        return value
+    }
+
+    @MainActor
+    @Test("one-shot wait exits without a delegate callback", arguments: [false, true])
+    func oneShotWait_exitsWithoutCallback(cancel: Bool) async throws {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let clock = ManualTimeouts()
+        let sut = LocationManager(manager: manager, onUpdate: { _ in }, oneShotTimeoutSleep: clock.sleep)
+        let caller = Task { await sut.refreshCurrentLocation() }
+        var starts = clock.started.makeAsyncIterator()
+        let deadline = try #require(await starts.next())
+        if cancel { caller.cancel() } else { clock.expire(deadline) }
+        #expect(await result(of: caller, sut: sut, manager: manager) == false)
+    }
+
+    @MainActor
+    @Test("cancellation before registration does not start a location request")
+    func oneShotWait_cancelledBeforeRegistration() async {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        let caller = Task { await sut.refreshCurrentLocation() }
+        caller.cancel() // The task cannot enter the main actor until this test suspends.
+        #expect(await result(of: caller, sut: sut, manager: manager) == false)
+        #expect(manager.requestLocationCount == 0)
+    }
+
+    @MainActor
+    @Test("retiring one caller preserves a coalesced caller", arguments: [false, true], [false, true])
+    func oneShotWait_preservesOtherCaller(cancel: Bool, delegateSuccess: Bool) async throws {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let clock = ManualTimeouts()
+        let sut = LocationManager(manager: manager, onUpdate: { _ in }, oneShotTimeoutSleep: clock.sleep)
+        var starts = clock.started.makeAsyncIterator()
+        let first = Task { await sut.refreshCurrentLocation() }
+        let firstDeadline = try #require(await starts.next())
+        var secondResult: Bool?
+        let second = Task {
+            let value = await sut.refreshCurrentLocation()
+            secondResult = value
+            return value
+        }
+        _ = await starts.next()
+        #expect(manager.requestLocationCount == 1)
+        if cancel { first.cancel() } else { clock.expire(firstDeadline) }
+        #expect(await result(of: first, sut: sut, manager: manager) == false)
+        #expect(secondResult == nil)
+        if delegateSuccess {
+            sut.locationManager(manager, didUpdateLocations: [CLLocation(latitude: 40, longitude: -105)])
+        } else {
+            sut.locationManager(manager, didFailWithError: CLError(.locationUnknown))
+        }
+        #expect(await result(of: second, sut: sut, manager: manager) == delegateSuccess)
+    }
+
+    @MainActor
+    @Test("acceptance racing retirement preserves independent deliveries", arguments: [false, true], [false, true])
+    func oneShotWait_deliveryCapturesWaiterOwnership(cancel: Bool, laterSuccess: Bool) async throws {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let clock = ManualTimeouts()
+        let (acceptances, accepting) = AsyncStream<AsyncStream<Void>.Continuation>.makeStream()
+        let sut = LocationManager(manager: manager, onUpdate: { _ in
+            let (releases, release) = AsyncStream<Void>.makeStream()
+            accepting.yield(release)
+            for await _ in releases { break }
+        }, oneShotTimeoutSleep: clock.sleep)
+        var starts = clock.started.makeAsyncIterator()
+        var deliveries = acceptances.makeAsyncIterator()
+        let first = Task { await sut.refreshCurrentLocation() }
+        let firstDeadline = try #require(await starts.next())
+        let retained = Task { await sut.refreshCurrentLocation() }
+        _ = await starts.next()
+        sut.locationManager(manager, didUpdateLocations: [CLLocation(latitude: 40, longitude: -105)])
+        let release = try #require(await deliveries.next())
+        if cancel { first.cancel() } else { clock.expire(firstDeadline) }
+        #expect(await result(of: first, sut: sut, manager: manager) == false)
+        var laterResult: Bool?
+        let later = Task {
+            let value = await sut.refreshCurrentLocation()
+            laterResult = value
+            return value
+        }
+        _ = await starts.next()
+        #expect(manager.requestLocationCount == 2)
+        if laterSuccess {
+            release.finish()
+            #expect(await result(of: retained, sut: sut, manager: manager))
+            #expect(laterResult == nil)
+            sut.locationManager(manager, didUpdateLocations: [CLLocation(latitude: 41, longitude: -105)])
+            let releaseLater = try #require(await deliveries.next())
+            releaseLater.finish()
+        } else {
+            // A newer acquisition failure must not retire an earlier fix awaiting acceptance.
+            sut.locationManager(manager, didFailWithError: CLError(.locationUnknown))
+            #expect(await result(of: later, sut: sut, manager: manager) == false)
+            release.finish()
+            #expect(await result(of: retained, sut: sut, manager: manager))
+        }
+        #expect(await result(of: later, sut: sut, manager: manager) == laterSuccess)
+    }
+
+    @MainActor
+    @Test("late callbacks and retired deadlines do not double resume; subsequent request succeeds")
+    func oneShotWait_lateCallbacksAndNextRequest() async throws {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let clock = ManualTimeouts()
+        let (updates, updated) = AsyncStream<Bool>.makeStream()
+        let sut = LocationManager(manager: manager, onUpdate: { updated.yield($0.forceAcceptance) },
+                                  oneShotTimeoutSleep: clock.sleep)
+        var starts = clock.started.makeAsyncIterator()
+        var deliveries = updates.makeAsyncIterator()
+        let first = Task { await sut.refreshCurrentLocation() }
+        let firstDeadline = try #require(await starts.next())
+        clock.expire(firstDeadline)
+        #expect(await result(of: first, sut: sut, manager: manager) == false)
+        sut.locationManager(manager, didUpdateLocations: [CLLocation(latitude: 40, longitude: -105)])
+        #expect(await deliveries.next() == false)
+        let next = Task { await sut.refreshCurrentLocation() }
+        let nextDeadline = try #require(await starts.next())
+        sut.locationManager(manager, didUpdateLocations: [CLLocation(latitude: 40, longitude: -105)])
+        #expect(await result(of: next, sut: sut, manager: manager))
+        clock.expire(firstDeadline)
+        clock.expire(nextDeadline)
+        #expect(manager.requestLocationCount == 2)
     }
 
     @MainActor
