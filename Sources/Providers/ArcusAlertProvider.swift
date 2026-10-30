@@ -13,12 +13,28 @@ actor ArcusAlertProvider {
     let client: ArcusClient
     let alertRepo: AlertRepo
     let feedStateStore: FeedStateStore?
-    private var inFlightSyncs: [LocationContext.RefreshKey: Task<ArcusLocationSyncOutcome, Never>] = [:]
+    private struct LocationSyncKey: Hashable {
+        let location: LocationContext.RefreshKey
+        let deadline: ContinuousClock.Instant?
+    }
+    private struct SyncRun<Outcome: Sendable> {
+        let task: Task<Outcome, Never>
+        var owners: Set<UUID>
+    }
+    private var inFlightSyncs: [LocationSyncKey: SyncRun<ArcusLocationSyncOutcome>] = [:]
     private struct RemoteSyncKey: Hashable {
         let id: String
         let revisionSent: Date?
+        let deadline: ContinuousClock.Instant?
     }
-    private var inFlightRemoteSyncs: [RemoteSyncKey: Task<ArcusRemoteAlertSyncOutcome, Never>] = [:]
+    private struct RemoteAcceptance { let alert: AlertDTO? }
+    private struct RemoteSyncRun {
+        let task: Task<ArcusRemoteAlertSyncOutcome, Never>
+        var owners: Set<UUID>
+        var observers: [UUID: @Sendable (AlertDTO?) async -> Void]
+        var acceptance: RemoteAcceptance?
+    }
+    private var inFlightRemoteSyncs: [RemoteSyncKey: RemoteSyncRun] = [:]
     private(set) var coalescedRemoteSyncCount = 0
     
     init(alertRepo: AlertRepo, client: ArcusClient, feedStateStore: FeedStateStore? = nil) {
@@ -30,10 +46,20 @@ actor ArcusAlertProvider {
 
 extension ArcusAlertProvider: ArcusAlertSyncing {
     func sync(context: LocationContext) async -> ArcusLocationSyncOutcome {
-        let key = context.refreshKey
-        if let inFlight = inFlightSyncs[key] {
+        let key = LocationSyncKey(location: context.refreshKey,
+            deadline: BackgroundRefreshExecutionContext.current?.budget.workDeadline)
+        let owner = UUID()
+        if var inFlight = inFlightSyncs[key] {
+            inFlight.owners.insert(owner)
+            inFlightSyncs[key] = inFlight
+            defer { removeLocationOwner(owner, key: key) }
             logger.debug("Arcus alert sync already in-flight for current location scope; joining existing task")
-            let outcome = await inFlight.value
+            let joinedTask = inFlight.task
+            let outcome = await withTaskCancellationHandler {
+                await joinedTask.value
+            } onCancel: {
+                Task { await self.removeLocationOwner(owner, key: key) }
+            }
             return Task.isCancelled ? .cancelled : outcome
         }
 
@@ -68,33 +94,77 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
             }
         }
 
-        inFlightSyncs[key] = task
-        let outcome = await task.value
-        inFlightSyncs[key] = nil
+        inFlightSyncs[key] = SyncRun(task: task, owners: [owner])
+        defer { removeLocationOwner(owner, key: key) }
+        let outcome = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { await self.removeLocationOwner(owner, key: key) }
+        }
         logger.info("Arcus alert sync finished scope=location-context outcome=\(String(describing: outcome), privacy: .public)")
         return Task.isCancelled ? .cancelled : outcome
     }
 
     func syncRemoteAlert(id: String, revisionSent: Date?) async -> ArcusRemoteAlertSyncOutcome {
-        let key = RemoteSyncKey(id: ArcusAlertIdentifier.canonical(id), revisionSent: revisionSent)
-        if let task = inFlightRemoteSyncs[key] {
+        guard !Task.isCancelled else { return .cancelled }
+        let key = RemoteSyncKey(id: ArcusAlertIdentifier.canonical(id), revisionSent: revisionSent,
+            deadline: BackgroundRefreshExecutionContext.current?.budget.workDeadline)
+        let owner = UUID()
+        let task: Task<ArcusRemoteAlertSyncOutcome, Never>
+        if var run = inFlightRemoteSyncs[key] {
             coalescedRemoteSyncCount += 1
-            logger.debug("Targeted alert sync joined existing request count=\(self.coalescedRemoteSyncCount, privacy: .public)")
-            let outcome = await task.value
-            return Task.isCancelled ? .cancelled : outcome
+            run.owners.insert(owner)
+            run.observers[owner] = RemoteAlertAcceptance.observer
+            inFlightRemoteSyncs[key] = run
+            task = run.task
+            if let acceptance = run.acceptance, let observer = RemoteAlertAcceptance.observer {
+                await observer(acceptance.alert)
+            }
+        } else {
+            task = Task { await performRemoteAlertSync(key: key) }
+            var observers: [UUID: @Sendable (AlertDTO?) async -> Void] = [:]
+            observers[owner] = RemoteAlertAcceptance.observer
+            inFlightRemoteSyncs[key] = RemoteSyncRun(task: task, owners: [owner], observers: observers)
         }
-        let task = Task { await performRemoteAlertSync(id: key.id, revisionSent: revisionSent) }
-        inFlightRemoteSyncs[key] = task
-        let outcome = await task.value
-        inFlightRemoteSyncs[key] = nil
+        defer { removeRemoteOwner(owner, key: key) }
+        let outcome = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { await self.removeRemoteOwner(owner, key: key) }
+        }
         return Task.isCancelled ? .cancelled : outcome
     }
 
-    private func performRemoteAlertSync(id: String, revisionSent: Date?) async -> ArcusRemoteAlertSyncOutcome {
+    private func removeRemoteOwner(_ owner: UUID, key: RemoteSyncKey) {
+        guard var run = inFlightRemoteSyncs[key], run.owners.remove(owner) != nil else { return }
+        run.observers[owner] = nil
+        if run.owners.isEmpty {
+            if key.deadline != nil { run.task.cancel() }
+            inFlightRemoteSyncs[key] = nil
+        } else { inFlightRemoteSyncs[key] = run }
+    }
+
+    private func removeLocationOwner(_ owner: UUID, key: LocationSyncKey) {
+        guard var run = inFlightSyncs[key], run.owners.remove(owner) != nil else { return }
+        if run.owners.isEmpty {
+            if key.deadline != nil { run.task.cancel() }
+            inFlightSyncs[key] = nil
+        } else { inFlightSyncs[key] = run }
+    }
+
+    private func performRemoteAlertSync(key: RemoteSyncKey) async -> ArcusRemoteAlertSyncOutcome {
+        let id = key.id
+        let revisionSent = key.revisionSent
         logger.info("Arcus alert sync started scope=targeted-alert")
         do {
             let source = try await alertRepo.refreshAlert(using: client, id: id, revisionSent: revisionSent)
             let outcome = Self.remoteOutcome(for: source)
+            let accepted = try await alertRepo.notificationAlert(id: id)
+            if var run = inFlightRemoteSyncs[key] {
+                run.acceptance = RemoteAcceptance(alert: accepted)
+                inFlightRemoteSyncs[key] = run
+                for observer in run.observers.values { await observer(accepted) }
+            }
             await record(source: source, feedID: "arcus.alert")
             logger.info("Arcus alert sync finished scope=targeted-alert outcome=\(String(describing: outcome), privacy: .public)")
             return outcome

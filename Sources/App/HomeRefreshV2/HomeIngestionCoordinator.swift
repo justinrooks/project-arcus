@@ -58,11 +58,13 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
         let requestedPlan: HomeIngestionPlan
         let progress: HomeIngestionProgressHandler?
         let publication: HomeIngestionPublicationHandler?
+        let remoteAcceptance: (@Sendable (AlertDTO?) async -> Void)?
         let continuation: CheckedContinuation<HomeSnapshot, Error>
         var earliestRunNumber = 0
 
         var isCancelableBackgroundOwner: Bool {
             requestedPlan.provenance == .background
+                || requestedPlan.provenance == [.background, .remoteHotAlertReceived]
         }
     }
 
@@ -78,6 +80,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
 
     private var activePlan: HomeIngestionPlan?
     private var activeTask: Task<HomeSnapshot, Error>?
+    private struct RemoteAcceptance { let alert: AlertDTO? }
+    private var activeRemoteAcceptance: RemoteAcceptance?
     private var activeExecutionContext: BackgroundRefreshExecutionContext?
     private var activeRunNumber = 0
     private var activeRunStartedAt: Date?
@@ -120,6 +124,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
         publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
         let requestedPlan = request.plan
+        if request.trigger == .remoteHotAlertReceived { try Task.checkCancellation() }
         let waiterID = UUID()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -128,6 +133,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
                     requestedPlan: requestedPlan,
                     progress: progress,
                     publication: publication,
+                    remoteAcceptance: RemoteAlertAcceptance.observer,
                     continuation: continuation
                 )
                 submit(requestedPlan, waiter: waiter)
@@ -155,7 +161,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
         if let activePlan,
            activePlan.satisfies(requestedPlan),
            activePlanCanSatisfy(requestedPlan),
-           !(activeExecutionContext != nil && requestedPlan.executionClass == .foreground) {
+           !(activeExecutionContext != nil && (requestedPlan.executionClass == .foreground
+                || activeExecutionContext?.budget.workDeadline != submittedExecutionContext?.budget.workDeadline)) {
             logger.debug(
                 "Home ingestion request joined active run requested={\(requestedPlan.logDescription)} active={\(activePlan.logDescription)}"
             )
@@ -170,6 +177,9 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
             if let pendingRun {
                 let mergedPlan = pendingRun.plan.merged(with: requestedPlan)
                 let hasForegroundOwner = pendingRun.hasForegroundOwner || requestedPlan.executionClass == .foreground
+                let hasReceiptBudget = (pendingRun.plan.provenance.contains(.remoteHotAlertReceived)
+                    && pendingRun.executionContext != nil)
+                    || (requestedPlan.provenance.contains(.remoteHotAlertReceived) && submittedExecutionContext != nil)
                 logger.debug(
                     "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingRun.plan.logDescription)} merged={\(mergedPlan.logDescription)}"
                 )
@@ -178,7 +188,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
                     executionContext: mergedExecutionContext(
                         pending: pendingRun.executionContext,
                         submitted: submittedExecutionContext,
-                        executionClass: mergedPlan.executionClass
+                        executionClass: mergedPlan.executionClass,
+                        hasReceiptBudget: hasReceiptBudget
                     ),
                     hasForegroundOwner: hasForegroundOwner,
                     hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
@@ -218,9 +229,16 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
     private func mergedExecutionContext(
         pending: BackgroundRefreshExecutionContext?,
         submitted: BackgroundRefreshExecutionContext?,
-        executionClass: HomeIngestionExecutionClass
+        executionClass: HomeIngestionExecutionClass,
+        hasReceiptBudget: Bool
     ) -> BackgroundRefreshExecutionContext? {
         guard executionClass == .background else { return nil }
+        if hasReceiptBudget, pending?.budget.workDeadline != submitted?.budget.workDeadline {
+            // Preserve the existing lifetime of an unbudgeted shared owner.
+            guard let pending, let submitted else { return nil }
+            // Each receipt keeps its own watchdog. Budgeted owners can share the latest bounded window.
+            return pending.budget.workDeadline >= submitted.budget.workDeadline ? pending : submitted
+        }
         return .merged(pending, submitted)
     }
 
@@ -235,6 +253,10 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
         guard var waiter else { return }
         waiter.earliestRunNumber = earliestRunNumber
         waiters[waiter.id] = waiter
+        if earliestRunNumber == activeRunNumber, let acceptance = activeRemoteAcceptance,
+           let observer = waiter.remoteAcceptance {
+            Task { await observer(acceptance.alert) }
+        }
 
         #if DEBUG
         notifyWaiterCountObservers()
@@ -248,6 +270,12 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
            waiter.isCancelableBackgroundOwner,
            activeRunHasNoOwners {
             activeTask?.cancel()
+        }
+        // A queued receipt has no fire-and-forget ownership. Retire its orphaned follow-up.
+        if waiter.requestedPlan.provenance == [.background, .remoteHotAlertReceived],
+           let pendingRun, !pendingRun.hasFireAndForgetOwner,
+           !waiters.values.contains(where: { $0.earliestRunNumber > activeRunNumber }) {
+            self.pendingRun = nil
         }
         #if DEBUG
         notifyWaiterCountObservers()
@@ -307,6 +335,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
         let runNumber = activeRunNumber
         activePlan = plan
         activeExecutionContext = executionContext
+        activeRemoteAcceptance = nil
         activeRunStartedAt = Date()
         activeRunCanAbsorbRemoteHotAlert = plan.forcedLanes.contains(.hotAlerts)
         activeRunHasFireAndForgetOwner = hasFireAndForgetOwner
@@ -314,21 +343,25 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
 
         let task = Task {
             try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
-                try await executor.run(
-                    plan: plan,
-                    progress: HomeIngestionRunProgress(
-                        runID: runID,
-                        markHotAlertsCompleted: {
-                            await self.markHotAlertsCompleted(for: plan)
-                        },
-                        report: { event in
-                            await self.reportProgress(event, for: plan)
-                        },
-                        publish: { publication in
-                            await self.publish(publication, for: plan, runID: runID)
-                        }
+                try await RemoteAlertAcceptance.$observer.withValue({ alert in
+                    await self.reportRemoteAcceptance(alert, for: plan)
+                }) {
+                    try await executor.run(
+                        plan: plan,
+                        progress: HomeIngestionRunProgress(
+                            runID: runID,
+                            markHotAlertsCompleted: {
+                                await self.markHotAlertsCompleted(for: plan)
+                            },
+                            report: { event in
+                                await self.reportProgress(event, for: plan)
+                            },
+                            publish: { publication in
+                                await self.publish(publication, for: plan, runID: runID)
+                            }
+                        )
                     )
-                )
+                }
             }
         }
         activeTask = task
@@ -350,6 +383,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
         activePlan = nil
         activeTask = nil
         activeExecutionContext = nil
+        activeRemoteAcceptance = nil
         activeRunStartedAt = nil
         activeRunCanAbsorbRemoteHotAlert = false
         activeRunHasFireAndForgetOwner = false
@@ -409,6 +443,16 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
     private func markHotAlertsCompleted(for plan: HomeIngestionPlan) {
         guard activePlan == plan else { return }
         activeRunCanAbsorbRemoteHotAlert = false
+    }
+
+    private func reportRemoteAcceptance(_ alert: AlertDTO?, for plan: HomeIngestionPlan) async {
+        guard activePlan == plan else { return }
+        activeRemoteAcceptance = RemoteAcceptance(alert: alert)
+        let observers = waiters.values.compactMap { waiter in
+            waiter.earliestRunNumber <= activeRunNumber && plan.satisfies(waiter.requestedPlan)
+                ? waiter.remoteAcceptance : nil
+        }
+        for observer in observers { await observer(alert) }
     }
 
     private func reportProgress(_ event: HomeIngestionProgressEvent, for plan: HomeIngestionPlan) async {

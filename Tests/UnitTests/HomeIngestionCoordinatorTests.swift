@@ -46,6 +46,90 @@ struct HomeIngestionCoordinatorTests {
         await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: false)
     }
 
+    @Test("queued receipts retain the latest bounded budget in either arrival order",
+          arguments: [false, true])
+    func queuedReceiptsKeepBoundedBudget(laterDeadlineFirst: Bool) async throws {
+        let gate = AsyncGate()
+        let followUpGate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate, followUpGate: followUpGate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let start = ContinuousClock.now
+        let earlier = BackgroundRefreshExecutionContext(budget: .init(
+            start: start, completionDeadline: start + .seconds(15), finalizationReserve: .seconds(2)))
+        let later = BackgroundRefreshExecutionContext(budget: .init(
+            start: start, completionDeadline: start + .seconds(25), finalizationReserve: .seconds(2)))
+        let firstContext = laterDeadlineFirst ? later : earlier
+        let secondContext = laterDeadlineFirst ? earlier : later
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        let first = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(firstContext) {
+                try await coordinator.enqueueAndWait(.remoteHotAlertReceived,
+                    remoteAlertContext: .init(alertID: "queued-receipts"))
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        let second = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(secondContext) {
+                try await coordinator.enqueueAndWait(.remoteHotAlertReceived,
+                    remoteAlertContext: .init(alertID: "queued-receipts"))
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        await gate.open()
+        await executor.waitForStartedRun(2)
+        let earlierOwner = laterDeadlineFirst ? second : first
+        let laterOwner = laterDeadlineFirst ? first : second
+        earlierOwner.cancel()
+        await expectCancellation(earlierOwner)
+        await followUpGate.open()
+        #expect(try await laterOwner.value == .empty)
+        let contexts = await executor.observedExecutionContexts()
+        #expect(contexts.count == 2)
+        let merged = try #require(contexts.last.flatMap { $0 })
+        #expect(merged.budget.workDeadline == later.budget.workDeadline)
+        #expect(merged.budget.admission(for: .seconds(120), at: start, isCancelled: false) == .insufficientTime)
+    }
+
+    @Test("queued location owner does not inherit a receipt deadline", arguments: [false, true])
+    func queuedReceiptPreservesUnbudgetedLocation(receiptFirst: Bool) async throws {
+        let gate = AsyncGate()
+        let followUpGate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate, followUpGate: followUpGate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = BackgroundRefreshExecutionContext(budget: .standard(start: .now))
+        let location = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+        let receiptRequest = HomeIngestionRequest(trigger: .remoteHotAlertReceived,
+            remoteAlertContext: .init(alertID: "mixed-queued-receipt"))
+        let locationRequest = HomeIngestionRequest(trigger: .backgroundLocationChange, locationContext: location)
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        let first = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(receiptFirst ? context : nil) {
+                try await coordinator.enqueueAndWait(receiptFirst ? receiptRequest : locationRequest)
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        let second = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(receiptFirst ? nil : context) {
+                try await coordinator.enqueueAndWait(receiptFirst ? locationRequest : receiptRequest)
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        await gate.open()
+        await executor.waitForStartedRun(2)
+        let receiptOwner = receiptFirst ? first : second
+        let locationOwner = receiptFirst ? second : first
+        await context.deadlineState.markExceeded()
+        receiptOwner.cancel()
+        await expectCancellation(receiptOwner)
+        let contexts = await executor.observedExecutionContexts()
+        #expect(contexts.count == 2)
+        #expect(contexts[1] == nil)
+        await followUpGate.open()
+        #expect(try await locationOwner.value == .empty)
+    }
+
     @Test("foreground participation permanently clears a queued background budget")
     func foregroundParticipationPermanentlyClearsQueuedBackgroundBudget() async {
         let gate = AsyncGate()
@@ -589,13 +673,14 @@ struct HomeIngestionCoordinatorTests {
         #expect(await executor.wasCanceled(run: 1))
     }
 
-    @Test("canceling the only background waiter cancels its active executor")
-    func canceledOnlyBackgroundWaiter_cancelsActiveExecutor() async {
+    @Test("canceling the only background waiter cancels its active executor",
+          arguments: [HomeRefreshTrigger.backgroundRefresh, .remoteHotAlertReceived])
+    func canceledOnlyBackgroundWaiter_cancelsActiveExecutor(trigger: HomeRefreshTrigger) async {
         let executor = ControlledHomeIngestionExecutor()
         let coordinator = HomeIngestionCoordinator(executor: executor)
 
         let backgroundWaiter = Task {
-            try await coordinator.enqueueAndWait(.backgroundRefresh)
+            try await coordinator.enqueueAndWait(trigger)
         }
 
         await coordinator.waitForTestWaiterCount(atLeast: 1)
@@ -604,8 +689,98 @@ struct HomeIngestionCoordinatorTests {
         backgroundWaiter.cancel()
         await expectCancellation(backgroundWaiter)
         #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+        await executor.releaseRunIfWaiting(1)
         await executor.waitForCompletedRun(1)
         #expect(await executor.wasCanceled(run: 1))
+    }
+
+    @Test("pre-cancelled receipt never starts an executor")
+    func precancelledReceiptDoesNotSubmit() async {
+        let gate = AsyncGate()
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let receipt = Task {
+            await gate.wait()
+            return try await coordinator.enqueueAndWait(.remoteHotAlertReceived)
+        }
+        receipt.cancel()
+        await gate.open()
+        await expectCancellation(receipt)
+        #expect(await executor.executedPlans().isEmpty)
+    }
+
+    @Test("targeted acceptance is forwarded only through the registered owner")
+    func targetedAcceptanceForwardsToOwner() async throws {
+        let executor = BudgetCapturingHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let recorder = ForwardingCallbackRecorder()
+        _ = try await RemoteAlertAcceptance.$observer.withValue({ _ in await recorder.recordProgress() }) {
+            try await coordinator.enqueueAndWait(.remoteHotAlertReceived)
+        }
+        #expect(await recorder.progressCount() == 1)
+    }
+
+    @Test("late joining receipt replays acceptance before a stalled sibling finishes")
+    func lateReceiptReplaysAcceptance() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let first = Task { try await coordinator.enqueueAndWait(.remoteHotAlertReceived) }
+        await executor.waitForStartedRun(1)
+        await executor.emitRemoteAcceptance(forRun: 1)
+        let received = AsyncCount()
+        let lifetime = RemoteNotificationReceipt()
+        let second = Task {
+            try await RemoteAlertAcceptance.$observer.withValue({ _ in
+                await lifetime.recordAccepted(.newData)
+                await received.record()
+            }) { try await coordinator.enqueueAndWait(.remoteHotAlertReceived) }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        await received.waitForCount(1)
+        await lifetime.finish()
+        #expect(await lifetime.run { .failed } == .newData)
+        second.cancel()
+        await expectCancellation(second)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        await executor.releaseRun(1)
+        #expect(try await first.value == .empty)
+    }
+
+    @Test("a receipt can retire independently while another receipt retains the run")
+    func receiptCancellationRetainsSharedOwner() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let first = Task { try await coordinator.enqueueAndWait(.remoteHotAlertReceived) }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+        let second = Task { try await coordinator.enqueueAndWait(.remoteHotAlertReceived) }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        first.cancel()
+        await expectCancellation(first)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        await executor.releaseRun(1)
+        #expect(try await second.value == .empty)
+    }
+
+    @Test("a cancelled queued receipt does not start orphaned ingestion")
+    func queuedReceiptRetiresItsFollowUp() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        let receipt = Task {
+            try await coordinator.enqueueAndWait(.remoteHotAlertReceived,
+                remoteAlertContext: .init(alertID: "queued-receipt"))
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        receipt.cancel()
+        await expectCancellation(receipt)
+        await coordinator.enqueue(.manualRefresh)
+        await executor.releaseRun(1)
+        await executor.waitForStartedRun(2)
+        #expect(await executor.executedPlans()[1].provenance.contains(.remoteHotAlertReceived) == false)
+        await executor.releaseRun(2)
+        await executor.waitForCompletedRun(2)
     }
 
     @Test("one active background waiter retains shared work after another cancels")
@@ -1023,6 +1198,7 @@ private actor BudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
         inheritedBudget = BackgroundRefreshExecutionContext.current != nil
+        await RemoteAlertAcceptance.observer?(nil)
         return HomeSnapshot()
     }
 
@@ -1033,17 +1209,25 @@ private actor BudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
 
 private actor QueuedBudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
     private let gate: AsyncGate
-    private var contexts: [Bool] = []
+    private let followUpGate: AsyncGate?
+    private var contexts: [BackgroundRefreshExecutionContext?] = []
+    private let started = AsyncCount()
 
-    init(gate: AsyncGate) {
+    init(gate: AsyncGate, followUpGate: AsyncGate? = nil) {
         self.gate = gate
+        self.followUpGate = followUpGate
     }
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
-        contexts.append(BackgroundRefreshExecutionContext.current != nil)
+        contexts.append(BackgroundRefreshExecutionContext.current)
+        await started.record()
         if contexts.count == 1 {
             await gate.wait()
+        } else {
+            await followUpGate?.wait()
         }
+        try Task.checkCancellation()
+        try await BackgroundRefreshExecutionContext.current?.deadlineState.throwIfExceeded()
         return HomeSnapshot()
     }
 
@@ -1051,8 +1235,12 @@ private actor QueuedBudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting
         contexts.count
     }
 
+    func waitForStartedRun(_ run: Int) async { await started.waitForCount(run) }
+
+    func observedExecutionContexts() -> [BackgroundRefreshExecutionContext?] { contexts }
+
     func observedBudgetContexts() -> [Bool] {
-        contexts
+        contexts.map { $0 != nil }
     }
 }
 
@@ -1265,6 +1453,7 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
     private var plans: [HomeIngestionPlan] = []
     private var failedRuns: Set<Int> = []
     private var progresses: [HomeIngestionRunProgress] = []
+    private var remoteObservers: [(@Sendable (AlertDTO?) async -> Void)?] = []
     private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
     private let startedRuns = AsyncCount()
     private let completedRuns = AsyncCount()
@@ -1278,6 +1467,7 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
         plans.append(plan)
         progresses.append(progress)
+        remoteObservers.append(RemoteAlertAcceptance.observer)
         let run = progresses.count
         await startedRuns.record()
 
@@ -1312,6 +1502,10 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
         await completedRuns.waitForCount(run)
     }
 
+    func releaseRunIfWaiting(_ run: Int) {
+        releaseContinuations.removeValue(forKey: run)?.resume()
+    }
+
     func releaseRun(_ run: Int) {
         guard let continuation = releaseContinuations.removeValue(forKey: run) else {
             fatalError("Run \(run) was not waiting for release")
@@ -1325,6 +1519,10 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     func executedPlans() -> [HomeIngestionPlan] { plans }
+
+    func emitRemoteAcceptance(forRun run: Int) async {
+        await remoteObservers[run - 1]?(nil)
+    }
 
     func emitProgress(_ event: HomeIngestionProgressEvent, forRun run: Int) async {
         await progress(for: run).report(event)

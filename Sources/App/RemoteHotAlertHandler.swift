@@ -62,6 +62,99 @@ final class RemoteAlertPresentationState {
     }
 }
 
+/// Carries canonical targeted acceptance through the coordinator's existing owner boundary.
+enum RemoteAlertAcceptance {
+    @TaskLocal static var observer: (@Sendable (AlertDTO?) async -> Void)?
+}
+
+/// One caller's lifetime. The watchdog never awaits the work it cancels: providers may ignore cancellation.
+actor RemoteNotificationReceipt {
+    let executionContext: BackgroundRefreshExecutionContext
+    private let now: @Sendable () -> ContinuousClock.Instant
+    private let sleepUntil: @Sendable (ContinuousClock.Instant) async throws -> Void
+    private var continuation: CheckedContinuation<UIBackgroundFetchResult, Never>?
+    private var result: UIBackgroundFetchResult?
+    private var acceptedResult: UIBackgroundFetchResult?
+    private var work: Task<Void, Never>?
+    private var watchdog: Task<Void, Never>?
+#if DEBUG
+    private var workExited = false
+    private var workExitWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForWorkExitForTesting() async {
+        if !workExited { await withCheckedContinuation { workExitWaiters.append($0) } }
+    }
+#endif
+
+    init(
+        start: ContinuousClock.Instant = .now,
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+        sleepUntil: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        }
+    ) {
+        // Application policy: 25 seconds total, with two seconds reserved for completion.
+        executionContext = .init(budget: .init(
+            start: start, completionDeadline: start + .seconds(25), finalizationReserve: .seconds(2)
+        ))
+        self.now = now
+        self.sleepUntil = sleepUntil
+    }
+
+    func run(
+        _ operation: @escaping @Sendable () async -> UIBackgroundFetchResult
+    ) async -> UIBackgroundFetchResult {
+        if Task.isCancelled { finish() }
+        if let result { return result }
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            work = Task {
+                let value = await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                    await HTTPExecutionMode.$current.withValue(.background) {
+                        await operation()
+                    }
+                }
+                finish(value)
+#if DEBUG
+                workExited = true
+                let waiters = workExitWaiters
+                workExitWaiters = []
+                waiters.forEach { $0.resume() }
+#endif
+            }
+            watchdog = Task {
+                do {
+                    try await sleepUntil(executionContext.budget.workDeadline)
+                    finish()
+                } catch { /* Normal completion cancels the watchdog. */ }
+            }
+        }
+    }
+
+    func checkActive() throws {
+        try Task.checkCancellation()
+        guard result == nil, executionContext.budget.remainingWork(at: now()) > .zero else {
+            throw CancellationError()
+        }
+    }
+
+    func recordAccepted(_ value: UIBackgroundFetchResult) {
+        guard result == nil, executionContext.budget.remainingWork(at: now()) > .zero else { return }
+        if value != .failed || acceptedResult == nil { acceptedResult = value }
+    }
+
+    func finish(_ value: UIBackgroundFetchResult? = nil) {
+        guard result == nil else { return }
+        result = acceptedResult ?? value ?? .failed
+        work?.cancel()
+        watchdog?.cancel()
+        work = nil
+        watchdog = nil
+        if let result { continuation?.resume(returning: result) }
+        continuation = nil
+    }
+}
+
 actor RemoteHotAlertHandler {
     protocol WidgetSnapshotRefreshDriving: Sendable {
         func refreshFromLatestProjection(generatedAt: Date) async throws
@@ -94,25 +187,61 @@ actor RemoteHotAlertHandler {
         self.logger = logger
     }
 
-    func handleRemoteNotification(_ context: RemoteNotificationContext) async -> UIBackgroundFetchResult {
-        switch context {
-        case .nwsAlert(let alert):
-            return await handleRemoteNotification(alert)
-        case .mesoscaleDiscussion(let productID):
-            guard await allowsBackgroundIngestion(), let arcusMesos else { return .failed }
-            do {
+    func handleRemoteNotification(
+        _ context: RemoteNotificationContext,
+        receipt: RemoteNotificationReceipt = RemoteNotificationReceipt()
+    ) async -> UIBackgroundFetchResult {
+        await withTaskCancellationHandler {
+            await receipt.run { await self.receive(context, receipt: receipt) }
+        } onCancel: {
+            Task { await receipt.finish() }
+        }
+    }
+
+    private func receive(
+        _ context: RemoteNotificationContext, receipt: RemoteNotificationReceipt
+    ) async -> UIBackgroundFetchResult {
+        do {
+            try await receipt.checkActive()
+            guard await allowsBackgroundIngestion() else { return .failed }
+            try await receipt.checkActive()
+            switch context {
+            case .nwsAlert(let alert):
+                let previous = try await arcusAlerts.getAlert(id: alert.alertID)
+                try await receipt.checkActive()
+                if alert.fetchResult(before: previous, after: previous) == .noData {
+                    await receipt.recordAccepted(.noData)
+                }
+                try await RemoteAlertAcceptance.$observer.withValue({ latest in
+                    await receipt.recordAccepted(alert.fetchResult(before: previous, after: latest))
+                }) {
+                    _ = try await coordinator.enqueueAndWait(
+                        .remoteHotAlertReceived, remoteAlertContext: alert
+                    )
+                }
+                try await receipt.checkActive()
+                let latest = try await arcusAlerts.getAlert(id: alert.alertID)
+                try await receipt.checkActive()
+                await receipt.recordAccepted(alert.fetchResult(before: previous, after: latest))
+            case .mesoscaleDiscussion(let productID):
+                guard let arcusMesos else { return .failed }
                 let before = try await arcusMesos.acceptedNotificationMeso(productID: productID)
+                try await receipt.checkActive()
                 guard let accepted = try await arcusMesos.resolveNotificationMeso(productID: productID) else {
                     return .failed
                 }
-                // Reconcile a complete location-scoped collection independently of targeted acceptance.
+                try await receipt.checkActive()
+                await receipt.recordAccepted(before == accepted ? .noData : .newData)
+                try await receipt.checkActive()
                 _ = try await coordinator.enqueueAndWait(.remoteHotAlertReceived)
-                await refreshWidgetSnapshotAfterRemoteAlertIngestion()
-                return before == accepted ? .noData : .newData
-            } catch {
-                logger.error("Remote meso receipt failed")
-                return .failed
             }
+            try await receipt.checkActive()
+            await refreshWidgetSnapshotAfterRemoteAlertIngestion()
+            try await receipt.checkActive()
+            return .noData // The accepted product result is retained by the receipt.
+        } catch {
+            logger.error("Remote hot-alert receipt did not finish")
+            return .failed
         }
     }
 
@@ -137,25 +266,7 @@ actor RemoteHotAlertHandler {
     }
 
     func handleRemoteNotification(_ remoteAlertContext: HomeRemoteAlertContext) async -> UIBackgroundFetchResult {
-        guard await allowsBackgroundIngestion() else {
-            logger.error("Skipping remote hot-alert ingestion because persistent storage is unavailable")
-            return .failed
-        }
-
-        do {
-            let previousAlert = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
-            _ = try await coordinator.enqueueAndWait(
-                .remoteHotAlertReceived,
-                locationContext: nil,
-                remoteAlertContext: remoteAlertContext
-            )
-            await refreshWidgetSnapshotAfterRemoteAlertIngestion()
-            let latestAlert = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
-            return remoteAlertContext.fetchResult(before: previousAlert, after: latestAlert)
-        } catch {
-            logger.error("Remote hot-alert receipt failed: \(error.localizedDescription, privacy: .public)")
-            return .failed
-        }
+        await handleRemoteNotification(.nwsAlert(remoteAlertContext))
     }
 
     func handleNotificationOpen(_ remoteAlertContext: HomeRemoteAlertContext) async {
@@ -236,6 +347,7 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
 #if DEBUG
         await publicationCheckpointForTesting?()
 #endif
+        try Task.checkCancellation()
         try widgetSnapshotRefresher.refresh(
             scope: .activeAlertProjection,
             input: .init(publication: publication, generatedAt: generatedAt)

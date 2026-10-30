@@ -257,17 +257,26 @@ struct RemoteMesoResolutionTests {
         #expect(await client.targetCalls.count == 1)
     }
 
-    @Test("a cancelled waiter cannot publish but does not cancel shared acceptance")
+    @Test("a cancelled receipt cannot stop an unbudgeted open or lend it a deadline")
     func cancelledWaiterPreservesSharedWork() async throws {
         let repo = MesoRepo(modelContainer: try await makeContainer())
         let client = NotificationMesoClient(data: try encodedMesoPayload(issued: now), gated: true)
         let provider = ArcusMesoProvider(client: client, repo: repo, now: { now })
-        let first = Task { try await provider.resolveNotificationMeso(productID: "SPC-MD-2035-1234") }
+        let context = BackgroundRefreshExecutionContext(budget: .standard(start: .now))
+        let first = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(context) {
+                try await provider.resolveNotificationMeso(productID: "SPC-MD-2035-1234")
+            }
+        }
         await client.waitUntilStarted()
+        let second = Task { try await provider.resolveNotificationMeso(productID: "SPC-MD-2035-1234") }
+        await client.waitForTargetCount(2)
         first.cancel()
         await client.release()
         do { _ = try await first.value; Issue.record("Cancelled waiter should throw") }
         catch { #expect(error is CancellationError) }
+        #expect(try await second.value != nil)
+        #expect(await client.budgetDeadlines == [context.budget.workDeadline, nil])
         #expect(try await provider.acceptedNotificationMeso(productID: "SPC-MD-2035-1234") != nil)
     }
 
@@ -390,7 +399,9 @@ private actor NotificationMesoClient: ArcusMesoClient {
     let source: HTTPResponse.Source
     let status: Int
     let gated: Bool
-    private var gate: CheckedContinuation<Void, Never>?
+    private var gates: [CheckedContinuation<Void, Never>] = []
+    private var targetWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private(set) var budgetDeadlines: [ContinuousClock.Instant?] = []
     private var startedWaiter: CheckedContinuation<Void, Never>?
     private(set) var targetCalls: [String] = []
     private(set) var collectionCalls = 0
@@ -406,8 +417,12 @@ private actor NotificationMesoClient: ArcusMesoClient {
 
     func fetchMeso(productID: String) async throws -> HTTPResponse {
         targetCalls.append(productID)
+        budgetDeadlines.append(BackgroundRefreshExecutionContext.current?.budget.workDeadline)
         startedWaiter?.resume(); startedWaiter = nil
-        if gated { await withCheckedContinuation { gate = $0 } }
+        let ready = targetWaiters.filter { $0.0 <= targetCalls.count }
+        targetWaiters.removeAll { $0.0 <= targetCalls.count }
+        ready.forEach { $0.1.resume() }
+        if gated { await withCheckedContinuation { gates.append($0) } }
         if status != 200 { throw ArcusError.networkError(status: status) }
         return HTTPResponse(status: 200, headers: [:], data: data, source: source)
     }
@@ -415,5 +430,8 @@ private actor NotificationMesoClient: ArcusMesoClient {
     func waitUntilStarted() async {
         if targetCalls.isEmpty { await withCheckedContinuation { startedWaiter = $0 } }
     }
-    func release() { gate?.resume(); gate = nil }
+    func waitForTargetCount(_ count: Int) async {
+        if targetCalls.count < count { await withCheckedContinuation { targetWaiters.append((count, $0)) } }
+    }
+    func release() { let pending = gates; gates = []; pending.forEach { $0.resume() } }
 }
