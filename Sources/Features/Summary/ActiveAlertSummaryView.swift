@@ -194,6 +194,7 @@ struct ActiveAlertSummaryView: View {
         .onDisappear {
             flexibleHeightResetTask?.cancel()
             flexibleHeightResetTask = nil
+            heightPhase = .stable(contentState)
         }
     }
 

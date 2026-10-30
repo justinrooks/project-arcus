@@ -2,12 +2,69 @@ import Foundation
 import CoreLocation
 import SwiftUI
 import Testing
+import UIKit
 @testable import SkyAware
 
 @Suite("SummaryView Local Alerts")
 @MainActor
 struct SummaryViewLocalAlertsTests {
     private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+    @Test("retained Local Alerts settles interrupted height holds on reappearance")
+    func localAlerts_interruptedHeightHold() async throws {
+        let state = LocalAlertsHeightLifecycleState()
+        let host = UIHostingController(rootView: LocalAlertsHeightLifecycleHost(state: state))
+        host.safeAreaRegions = []
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let navigation = UINavigationController(rootViewController: host)
+        navigation.setNavigationBarHidden(true, animated: false)
+        window.rootViewController = navigation
+        defer {
+            state.onContentChange = nil
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        window.makeKeyAndVisible()
+        try await waitForLocalAlertsLifecycle { !state.appearances.isEmpty }
+        let identity = try #require(state.appearances.first)
+
+        for content in [ActiveAlertSummaryView.ContentState.empty, .loading] {
+            state.content = .alerts
+            try await waitForLocalAlertsLifecycle { state.renderedContent == .alerts }
+            let disappearanceCount = state.disappearances
+            var interrupted = false
+            state.onContentChange = {
+                // Schedule immediately after SwiftUI commits this update, avoiding a UIKit
+                // navigation mutation during SwiftUI's lifecycle callback.
+                Task { @MainActor in
+                    navigation.pushViewController(UIViewController(), animated: false)
+                    interrupted = true
+                }
+            }
+            state.content = content
+            try await waitForLocalAlertsLifecycle { interrupted && state.disappearances > disappearanceCount }
+            state.onContentChange = nil
+            await Task.yield()
+            navigation.popViewController(animated: false)
+            try await waitForLocalAlertsLifecycle { host.view.window != nil }
+            host.view.layoutIfNeeded()
+            // Loading's intrinsic height is below 72, so this catches a stranded flexible phase.
+            #expect(host.sizeThatFits(in: CGSize(width: 390, height: 1_000)).height >= 72)
+            #expect(state.appearances.allSatisfy { $0 == identity })
+            #expect(state.content == content)
+        }
+    }
+
+    private func waitForLocalAlertsLifecycle(_ predicate: () -> Bool) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while !predicate(), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        try #require(predicate(), "Hosted Local Alerts lifecycle did not reach the expected state")
+    }
 
     @Test("display states map to presentation states")
     func localAlertsPresentationState_mapsDisplayStates() {
@@ -587,5 +644,51 @@ struct LocalAlertsDisplayStateTests {
                 isLocationUnavailable: false
             ) == .unavailable(reason: .noUsefulAlertState)
         )
+    }
+}
+
+@MainActor
+@Observable
+private final class LocalAlertsHeightLifecycleState {
+    var content: ActiveAlertSummaryView.ContentState = .alerts
+    var renderedContent: ActiveAlertSummaryView.ContentState?
+    var appearances: [UUID] = []
+    var disappearances = 0
+    var onContentChange: (() -> Void)?
+}
+
+@MainActor
+private struct LocalAlertsHeightLifecycleHost: View {
+    let state: LocalAlertsHeightLifecycleState
+    @State private var identity = UUID()
+
+    var body: some View {
+        ActiveAlertSummaryView(
+            mesos: state.content == .alerts ? [MdDTO(
+                number: 803,
+                title: "Test discussion",
+                link: URL(filePath: "/test-discussion"),
+                issued: .distantPast,
+                validStart: .distantPast,
+                validEnd: .distantFuture,
+                areasAffected: "Test area",
+                summary: "Test summary",
+                concerning: nil,
+                watchProbability: "50",
+                threats: nil,
+                coordinates: []
+            )] : [],
+            alerts: [],
+            localAlertsDisplayState: state.content == .loading
+                ? .noCacheResolving : .current(content: state.content == .alerts ? .populated : .empty, source: .live)
+        )
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear { state.appearances.append(identity) }
+        .onDisappear { state.disappearances += 1 }
+        .onChange(of: state.content, initial: true) { _, content in
+            state.appearances.append(identity)
+            state.renderedContent = content
+            state.onContentChange?()
+        }
     }
 }
