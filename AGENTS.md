@@ -65,6 +65,19 @@
   - Functions and properties use lowerCamelCase.
   - Test types end with `Tests` or `UITests`.
 
+
+### SwiftUI Specialist
+
+For substantive SwiftUI implementation, architectural review, or performance investigation, use Apple's `swiftui-specialist` skill when available.
+
+Apply it to view composition, Observation and state ownership, view lifecycle, navigation, rendering efficiency, and native SwiftUI API usage.
+
+Treat the skill as Apple framework guidance, not authority to redesign established architecture. Preserve SkyAware's canonical state ownership, cache-forward presentation, Swift 6 concurrency guarantees, deployment targets, and existing design language.
+
+Prefer evidence-backed corrections over stylistic refactoring. Do not invoke the skill for unrelated backend, persistence, or infrastructure work.
+
+If the skill is unavailable in the execution environment, proceed with standard project guidance and note its absence.
+
 ## Testing Expectations
 - Use Swift Testing (`import Testing`).
 - When hand-editing `project.pbxproj` test membership exception lists, preserve Xcode's filename ordering (for example, `ArcusMesoClientTests.swift` follows the `Alert*` entries). Commit verified ordering-only normalization rather than repeatedly reverting it and leaving the committed project out of order.
