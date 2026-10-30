@@ -46,6 +46,90 @@ struct HomeIngestionCoordinatorTests {
         await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: false)
     }
 
+    @Test("queued receipts retain the latest bounded budget in either arrival order",
+          arguments: [false, true])
+    func queuedReceiptsKeepBoundedBudget(laterDeadlineFirst: Bool) async throws {
+        let gate = AsyncGate()
+        let followUpGate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate, followUpGate: followUpGate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let start = ContinuousClock.now
+        let earlier = BackgroundRefreshExecutionContext(budget: .init(
+            start: start, completionDeadline: start + .seconds(15), finalizationReserve: .seconds(2)))
+        let later = BackgroundRefreshExecutionContext(budget: .init(
+            start: start, completionDeadline: start + .seconds(25), finalizationReserve: .seconds(2)))
+        let firstContext = laterDeadlineFirst ? later : earlier
+        let secondContext = laterDeadlineFirst ? earlier : later
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        let first = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(firstContext) {
+                try await coordinator.enqueueAndWait(.remoteHotAlertReceived,
+                    remoteAlertContext: .init(alertID: "queued-receipts"))
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        let second = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(secondContext) {
+                try await coordinator.enqueueAndWait(.remoteHotAlertReceived,
+                    remoteAlertContext: .init(alertID: "queued-receipts"))
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        await gate.open()
+        await executor.waitForStartedRun(2)
+        let earlierOwner = laterDeadlineFirst ? second : first
+        let laterOwner = laterDeadlineFirst ? first : second
+        earlierOwner.cancel()
+        await expectCancellation(earlierOwner)
+        await followUpGate.open()
+        #expect(try await laterOwner.value == .empty)
+        let contexts = await executor.observedExecutionContexts()
+        #expect(contexts.count == 2)
+        let merged = try #require(contexts.last.flatMap { $0 })
+        #expect(merged.budget.workDeadline == later.budget.workDeadline)
+        #expect(merged.budget.admission(for: .seconds(120), at: start, isCancelled: false) == .insufficientTime)
+    }
+
+    @Test("queued location owner does not inherit a receipt deadline", arguments: [false, true])
+    func queuedReceiptPreservesUnbudgetedLocation(receiptFirst: Bool) async throws {
+        let gate = AsyncGate()
+        let followUpGate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate, followUpGate: followUpGate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = BackgroundRefreshExecutionContext(budget: .standard(start: .now))
+        let location = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+        let receiptRequest = HomeIngestionRequest(trigger: .remoteHotAlertReceived,
+            remoteAlertContext: .init(alertID: "mixed-queued-receipt"))
+        let locationRequest = HomeIngestionRequest(trigger: .backgroundLocationChange, locationContext: location)
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        let first = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(receiptFirst ? context : nil) {
+                try await coordinator.enqueueAndWait(receiptFirst ? receiptRequest : locationRequest)
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        let second = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(receiptFirst ? nil : context) {
+                try await coordinator.enqueueAndWait(receiptFirst ? locationRequest : receiptRequest)
+            }
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        await gate.open()
+        await executor.waitForStartedRun(2)
+        let receiptOwner = receiptFirst ? first : second
+        let locationOwner = receiptFirst ? second : first
+        await context.deadlineState.markExceeded()
+        receiptOwner.cancel()
+        await expectCancellation(receiptOwner)
+        let contexts = await executor.observedExecutionContexts()
+        #expect(contexts.count == 2)
+        #expect(contexts[1] == nil)
+        await followUpGate.open()
+        #expect(try await locationOwner.value == .empty)
+    }
+
     @Test("foreground participation permanently clears a queued background budget")
     func foregroundParticipationPermanentlyClearsQueuedBackgroundBudget() async {
         let gate = AsyncGate()
@@ -1125,17 +1209,25 @@ private actor BudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
 
 private actor QueuedBudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
     private let gate: AsyncGate
-    private var contexts: [Bool] = []
+    private let followUpGate: AsyncGate?
+    private var contexts: [BackgroundRefreshExecutionContext?] = []
+    private let started = AsyncCount()
 
-    init(gate: AsyncGate) {
+    init(gate: AsyncGate, followUpGate: AsyncGate? = nil) {
         self.gate = gate
+        self.followUpGate = followUpGate
     }
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
-        contexts.append(BackgroundRefreshExecutionContext.current != nil)
+        contexts.append(BackgroundRefreshExecutionContext.current)
+        await started.record()
         if contexts.count == 1 {
             await gate.wait()
+        } else {
+            await followUpGate?.wait()
         }
+        try Task.checkCancellation()
+        try await BackgroundRefreshExecutionContext.current?.deadlineState.throwIfExceeded()
         return HomeSnapshot()
     }
 
@@ -1143,8 +1235,12 @@ private actor QueuedBudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting
         contexts.count
     }
 
+    func waitForStartedRun(_ run: Int) async { await started.waitForCount(run) }
+
+    func observedExecutionContexts() -> [BackgroundRefreshExecutionContext?] { contexts }
+
     func observedBudgetContexts() -> [Bool] {
-        contexts
+        contexts.map { $0 != nil }
     }
 }
 

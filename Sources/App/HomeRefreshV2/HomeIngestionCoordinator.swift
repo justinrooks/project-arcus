@@ -177,20 +177,19 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
             if let pendingRun {
                 let mergedPlan = pendingRun.plan.merged(with: requestedPlan)
                 let hasForegroundOwner = pendingRun.hasForegroundOwner || requestedPlan.executionClass == .foreground
+                let hasReceiptBudget = (pendingRun.plan.provenance.contains(.remoteHotAlertReceived)
+                    && pendingRun.executionContext != nil)
+                    || (requestedPlan.provenance.contains(.remoteHotAlertReceived) && submittedExecutionContext != nil)
                 logger.debug(
                     "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingRun.plan.logDescription)} merged={\(mergedPlan.logDescription)}"
                 )
                 self.pendingRun = .init(
                     plan: mergedPlan,
-                    executionContext: ((pendingRun.plan.provenance.contains(.remoteHotAlertReceived)
-                            && pendingRun.executionContext != nil)
-                            || (requestedPlan.provenance.contains(.remoteHotAlertReceived)
-                                && submittedExecutionContext != nil))
-                        && pendingRun.executionContext?.budget.workDeadline != submittedExecutionContext?.budget.workDeadline
-                        ? nil : mergedExecutionContext(
+                    executionContext: mergedExecutionContext(
                         pending: pendingRun.executionContext,
                         submitted: submittedExecutionContext,
-                        executionClass: mergedPlan.executionClass
+                        executionClass: mergedPlan.executionClass,
+                        hasReceiptBudget: hasReceiptBudget
                     ),
                     hasForegroundOwner: hasForegroundOwner,
                     hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
@@ -230,9 +229,16 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualR
     private func mergedExecutionContext(
         pending: BackgroundRefreshExecutionContext?,
         submitted: BackgroundRefreshExecutionContext?,
-        executionClass: HomeIngestionExecutionClass
+        executionClass: HomeIngestionExecutionClass,
+        hasReceiptBudget: Bool
     ) -> BackgroundRefreshExecutionContext? {
         guard executionClass == .background else { return nil }
+        if hasReceiptBudget, pending?.budget.workDeadline != submitted?.budget.workDeadline {
+            // Preserve the existing lifetime of an unbudgeted shared owner.
+            guard let pending, let submitted else { return nil }
+            // Each receipt keeps its own watchdog. Budgeted owners can share the latest bounded window.
+            return pending.budget.workDeadline >= submitted.budget.workDeadline ? pending : submitted
+        }
         return .merged(pending, submitted)
     }
 
