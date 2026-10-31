@@ -390,6 +390,34 @@ struct RiskPolygonOverlayTests {
     }
 #endif
 
+    @Test("Delayed map centering respects Reduce Motion and preserves one-time camera ownership", arguments: [false, true])
+    @MainActor
+    func delayedCenteringRespectsMotion(reduceMotion: Bool) throws {
+        let map = CenteringRequestMapView()
+        map.requests.removeAll() // Ignore MapKit's own initialization request.
+        let coordinator = MapCoordinator()
+        let first = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        let later = CLLocationCoordinate2D(latitude: 40.0150, longitude: -105.2705)
+        func canvas(_ coordinate: CLLocationCoordinate2D?) -> MapCanvasView {
+            MapCanvasView(state: MapCanvasState(overlays: [], overlayRevision: 0, initialCenterCoordinate: coordinate))
+        }
+
+        canvas(nil).centerOnFirstCoordinateIfNeeded(on: map, coordinator: coordinator, reduceMotion: reduceMotion)
+        #expect(map.requests.isEmpty)
+        canvas(first).centerOnFirstCoordinateIfNeeded(on: map, coordinator: coordinator, reduceMotion: reduceMotion)
+        let request = try #require(map.requests.first)
+        #expect(map.requests.count == 1)
+        #expect(request.animated == !reduceMotion)
+        #expect(request.region.center.latitude == first.latitude)
+        #expect(request.region.center.longitude == first.longitude)
+        #expect(coordinator.lastCenteredCoordinate?.latitude == first.latitude)
+
+        // A later scene (or changed preference) must not reclaim a user-controlled camera.
+        canvas(later).centerOnFirstCoordinateIfNeeded(on: map, coordinator: coordinator, reduceMotion: !reduceMotion)
+        #expect(map.requests.count == 1)
+        #expect(coordinator.lastCenteredCoordinate?.longitude == first.longitude)
+    }
+
     private func makePolygon() -> MKPolygon {
         var coordinates = [
             CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
@@ -436,5 +464,14 @@ struct RiskPolygonOverlayTests {
         var alpha: CGFloat = 0
         color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
         return (red, green, blue, alpha)
+    }
+}
+
+@MainActor
+private final class CenteringRequestMapView: MKMapView {
+    var requests: [(region: MKCoordinateRegion, animated: Bool)] = []
+
+    override func setRegion(_ region: MKCoordinateRegion, animated: Bool) {
+        requests.append((region, animated))
     }
 }
