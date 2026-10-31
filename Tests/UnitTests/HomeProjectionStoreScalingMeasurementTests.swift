@@ -3,6 +3,10 @@ import CoreLocation
 import Foundation
 import SwiftData
 import Testing
+import Observation
+import Synchronization
+import SwiftUI
+import UIKit
 @testable import SkyAware
 
 @Suite("Home Projection Store Scaling Measurement", .serialized)
@@ -128,6 +132,163 @@ struct HomeProjectionStoreScalingMeasurementTests {
             }
         }
         Attachment.record(reports.joined(separator: "\n"), named: "HomeProjectionBodySampling.txt")
+    }
+#endif
+
+#if PERFORMANCE_TESTS
+    @Test("transient presentation publications report scoped and hosted Observation counts")
+    func presentationDependencies_reportObservationBreadth() async throws {
+        let fixture = try makeFixture(population: 10)
+        let observed = try fetchProjections(from: fixture.container)
+        let payload = Data(Self.stormSetupPayload.utf8)
+        for projection in observed { projection.stormSetupCurrentResponseData = payload }
+        let pipeline = HomeRefreshPipeline()
+        let current = try #require(observed.first { $0.projectionKey == fixture.targetKey })
+        let state = HomeDependencyProbeRevision(revision: HomeVisibleRevision(core: current.record, alerts: nil, enrichment: nil))
+        let now = Date(timeIntervalSince1970: 10_010)
+        func evaluate(narrow: Bool, staticMode: Bool = false) -> HomeView.HomePresentationSnapshot {
+            if narrow {
+                return HomeView.presentationSnapshot(
+                    now: now, visibleRevision: state.revision, startupProjection: state.revision?.core,
+                    currentContext: fixture.target, pipeline: pipeline, isUITestStaticMode: staticMode
+                )
+            }
+            // Baseline replay of main ac714a6's eager production call, without projection decoding.
+            let visibleRevision = state.revision
+            let startupProjection = visibleRevision?.core
+            return HomeView.HomePresentationSnapshot(
+                visibleRevision: visibleRevision,
+                newestStartupProjection: startupProjection,
+                currentContext: fixture.target,
+                pipelineSnap: pipeline.snap,
+                pipelineStormRisk: pipeline.stormRisk,
+                pipelineSevereRisk: pipeline.severeRisk,
+                pipelineFireRisk: pipeline.fireRisk,
+                pipelineWeather: pipeline.summaryWeather,
+                pipelineAirQuality: pipeline.airQuality,
+                pipelineMesos: pipeline.mesos,
+                pipelineAlerts: pipeline.alerts,
+                resolvedLocationScopedRefreshKey: pipeline.lastResolvedLocationScopedRefreshKey,
+                alertSnapshotRefreshKey: pipeline.alertSnapshotRefreshKey,
+                pipelineStormSetup: pipeline.stormSetup,
+                pipelineStormSetupCurrentResponse: pipeline.stormSetupCurrentResponse,
+                stormSetupRefreshKey: pipeline.stormSetupRefreshKey,
+                isUITestStaticMode: staticMode,
+                now: now
+            )
+        }
+        var lines = ["#810 scoped notifications and hosted content evaluations; no rendering/hitch measurement. Timings exclude projection conversion/decode."]
+        for narrow in [false, true] {
+            for scenario in ["warm-weather", "manual-enrichment", "accepted-core"] {
+                let notifications = Mutex(0)
+                var changedOutputs = 0
+                for index in 0..<20 {
+                    let before = withObservationTracking {
+                        evaluate(narrow: narrow)
+                    } onChange: {
+                        notifications.withLock { $0 += 1 }
+                    }
+                    switch scenario {
+                    case "warm-weather":
+                        pipeline.summaryWeather = SummaryWeather(
+                            temperature: .init(value: Double(index), unit: .fahrenheit),
+                            symbolName: "sun.max", conditionText: "Clear", asOf: now,
+                            dewPoint: .init(value: 54, unit: .fahrenheit), humidity: 0.45,
+                            windSpeed: .init(value: 15, unit: .milesPerHour), windGust: nil,
+                            windDirection: "NW", pressure: .init(value: 29.92, unit: .inchesOfMercury),
+                            pressureTrend: "steady"
+                        )
+                    case "manual-enrichment":
+                        pipeline.stormSetupCurrentResponse = index.isMultiple(of: 2) ? current.record.stormSetupCurrentResponse : nil
+                    default:
+                        current.stormRisk = index.isMultiple(of: 2) ? .high : .slight
+                        state.revision = HomeVisibleRevision(core: current.record, alerts: nil, enrichment: nil)
+                    }
+                    let after = evaluate(narrow: narrow)
+                    if before.weather != after.weather || before.stormRisk != after.stormRisk ||
+                        before.stormSetupCurrentResponse != after.stormSetupCurrentResponse {
+                        changedOutputs += 1
+                    }
+                }
+                #expect(notifications.withLock { $0 } == (narrow && scenario != "accepted-core" ? 0 : 20))
+                #expect(changedOutputs == (scenario == "accepted-core" ? 20 : 0))
+                lines.append("narrow=\(narrow) scenario=\(scenario) mutations=20 notifications=\(notifications.withLock { $0 }) changedOutputs=\(changedOutputs)")
+            }
+            var samples: [Double] = []
+            var consumed = 0
+            for _ in 0..<9 {
+                let start = DispatchTime.now().uptimeNanoseconds
+                for _ in 0..<1000 {
+                    let output = evaluate(narrow: narrow)
+                    consumed += output.alerts.count + (output.stormRisk == nil ? 0 : 1)
+                }
+                samples.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000 / 1000)
+            }
+            lines.append("narrow=\(narrow) consumed=\(consumed) " + MeasurementReport(population: 10, scenario: "presentation-only-per-evaluation-ms", samples: samples).description)
+        }
+        try current.modelContext?.save()
+        for narrow in [false, true] {
+            pipeline.snap = fixture.target.snapshot
+            let counter = HomeDependencyBodyCounter()
+            let context = ModelContext(fixture.container)
+            let root = HomeProjectionObservation(projectionKey: fixture.targetKey) { _, _ in
+                let output = evaluate(narrow: narrow)
+                let _ = { counter.evaluations += 1 }()
+                Text(output.stormRisk == nil ? "missing" : "accepted")
+            }.environment(\.modelContext, context)
+            let host = UIHostingController(rootView: root)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(500))
+            let initial = counter.evaluations
+            for index in 0..<20 {
+                pipeline.snap = index.isMultiple(of: 2) ? nil : fixture.target.snapshot
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            #expect(initial > 0)
+            #expect(counter.evaluations - initial == (narrow ? 0 : 20))
+            lines.append("HOSTED narrow=\(narrow) warm-transient-steps=20 initialContentEvaluations=\(initial) additionalContentEvaluations=\(counter.evaluations - initial)")
+            window.isHidden = true
+            window.rootViewController = nil
+            try await Task.sleep(for: .milliseconds(100))
+            withExtendedLifetime((host, window, context, fixture.container)) {}
+        }
+        // Static mode continues reading and presenting pipeline weather in the candidate.
+        state.revision = nil
+        let staticResult = evaluate(narrow: true, staticMode: true)
+        #expect(staticResult.weather == pipeline.summaryWeather)
+        Attachment.record(lines.joined(separator: "\n"), named: "HomePresentationDependencies810.txt")
+    }
+#endif
+
+#if !PERFORMANCE_TESTS
+    @Test("production ignores transient payloads while static mode observes and presents them", arguments: [false, true])
+    func presentationDependenciesPreserveAcceptedAndStaticState(staticMode: Bool) throws {
+        let fixture = try makeFixture(population: 1)
+        let observed = try fetchProjections(from: fixture.container)
+        let core = try #require(observed.first).record
+        let pipeline = HomeRefreshPipeline(initialSnap: fixture.target.snapshot)
+        let notifications = Mutex(0)
+        func snapshot(revision: HomeVisibleRevision?) -> HomeView.HomePresentationSnapshot {
+            HomeView.presentationSnapshot(
+                now: .init(timeIntervalSince1970: 10_010), visibleRevision: revision, startupProjection: core,
+                currentContext: fixture.target, pipeline: pipeline, isUITestStaticMode: staticMode
+            )
+        }
+        let before = withObservationTracking {
+            snapshot(revision: nil)
+        } onChange: {
+            notifications.withLock { $0 += 1 }
+        }
+        #expect(before.locationSnapshot == (staticMode ? fixture.target.snapshot : nil))
+        pipeline.snap = nil
+        #expect(notifications.withLock { $0 } == (staticMode ? 1 : 0))
+        #expect(snapshot(revision: nil).locationSnapshot == nil)
+        let accepted = snapshot(revision: HomeVisibleRevision(core: core, alerts: nil, enrichment: nil))
+        #expect(accepted.projection == core)
+        #expect(accepted.locationSnapshot == core.locationSnapshot)
+        #expect(accepted.stormRisk == core.stormRisk)
     }
 #endif
 
@@ -462,3 +623,18 @@ private struct MeasurementReport: CustomStringConvertible {
         return "PROJECTION_SCALING population=\(population) scenario=\(scenario) samplesMs=[\(durations)] minMs=\(String(format: "%.3f", sorted[0])) medianMs=\(String(format: "%.3f", sorted[sorted.count / 2])) p95Ms=\(String(format: "%.3f", sorted[p95Index])) maxMs=\(String(format: "%.3f", sorted[sorted.count - 1]))\(metricSummary)"
     }
 }
+#if PERFORMANCE_TESTS
+@MainActor
+@Observable
+private final class HomeDependencyProbeRevision {
+    var revision: HomeVisibleRevision?
+    init(revision: HomeVisibleRevision?) { self.revision = revision }
+}
+#endif
+
+#if PERFORMANCE_TESTS
+@MainActor
+private final class HomeDependencyBodyCounter {
+    var evaluations = 0
+}
+#endif

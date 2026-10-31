@@ -18,6 +18,7 @@ measurement_tests=(
     'RiskPolygonOverlayTests/hatchDrawingMeasurement()'
     'HomeProjectionStoreScalingMeasurementTests/seededRetainedProjections_reportBaselineAndPresentationScaling()'
     'HomeProjectionStoreScalingMeasurementTests/retainedStormSetupProjections_reportBodySnapshotSampling()'
+    'HomeProjectionStoreScalingMeasurementTests/presentationDependencies_reportObservationBreadth()'
 )
 
 case "$lane" in
