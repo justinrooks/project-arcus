@@ -18,6 +18,8 @@ struct MapOverlayEntry {
 struct MapCanvasView: UIViewRepresentable {
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let state: MapCanvasState
     private let defaultViewportMeters: CLLocationDistance = 1_450_000//2_200_000
     
@@ -63,17 +65,26 @@ struct MapCanvasView: UIViewRepresentable {
 
         configureAccessibility(for: uiView)
 
-        if context.coordinator.lastCenteredCoordinate == nil, let coord = state.initialCenterCoordinate {
-            let region = MKCoordinateRegion(
-                center: coord,
-                latitudinalMeters: defaultViewportMeters,
-                longitudinalMeters: defaultViewportMeters
-            )
-            uiView.setRegion(region, animated: true)
-            context.coordinator.lastCenteredCoordinate = coord
-        }
+        centerOnFirstCoordinateIfNeeded(
+            on: uiView, coordinator: context.coordinator, reduceMotion: reduceMotion
+        )
     }
-    
+
+    func centerOnFirstCoordinateIfNeeded(
+        on mapView: MKMapView,
+        coordinator: MapCoordinator,
+        reduceMotion: Bool
+    ) {
+        guard coordinator.lastCenteredCoordinate == nil, let coordinate = state.initialCenterCoordinate else { return }
+        let region = MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: defaultViewportMeters,
+            longitudinalMeters: defaultViewportMeters
+        )
+        mapView.setRegion(region, animated: !reduceMotion)
+        coordinator.lastCenteredCoordinate = coordinate
+    }
+
     func makeCoordinator() -> MapCoordinator {
         MapCoordinator()
     }
