@@ -75,10 +75,13 @@ struct HomeView: View {
         HomeProjectionObservation(
             projectionKey: currentProjectionKey
         ) { visibleRevision, startup in
-            let presentation = presentationSnapshot(
+            let presentation = Self.presentationSnapshot(
                 now: Date(),
                 visibleRevision: visibleRevision,
-                startupProjection: startup
+                startupProjection: startup,
+                currentContext: locationSession.currentContext,
+                pipeline: refreshPipeline,
+                isUITestStaticMode: isUITestStaticMode
             )
             let readinessState = readinessState(presentation: presentation)
             let todayContentState = todayContentState(
@@ -126,28 +129,32 @@ struct HomeView: View {
         refreshPipeline.hasAcceptedEmptyOutlookSnapshot || cachedOutlookSnapshot.isAcceptedEmpty
     }
 
-    private func presentationSnapshot(
+    static func presentationSnapshot(
         now: Date,
         visibleRevision: HomeVisibleRevision?,
-        startupProjection: HomeProjectionRecord?
+        startupProjection: HomeProjectionRecord?,
+        currentContext: LocationContext?,
+        pipeline: HomeRefreshPipeline,
+        isUITestStaticMode: Bool
     ) -> HomePresentationSnapshot {
+        // Production presents accepted revisions; avoid observing discarded static-test payloads.
         HomePresentationSnapshot(
             visibleRevision: visibleRevision,
             newestStartupProjection: startupProjection,
-            currentContext: locationSession.currentContext,
-            pipelineSnap: refreshPipeline.snap,
-            pipelineStormRisk: refreshPipeline.stormRisk,
-            pipelineSevereRisk: refreshPipeline.severeRisk,
-            pipelineFireRisk: refreshPipeline.fireRisk,
-            pipelineWeather: refreshPipeline.summaryWeather,
-            pipelineAirQuality: refreshPipeline.airQuality,
-            pipelineMesos: refreshPipeline.mesos,
-            pipelineAlerts: refreshPipeline.alerts,
-            resolvedLocationScopedRefreshKey: refreshPipeline.lastResolvedLocationScopedRefreshKey,
-            alertSnapshotRefreshKey: refreshPipeline.alertSnapshotRefreshKey,
-            pipelineStormSetup: refreshPipeline.stormSetup,
-            pipelineStormSetupCurrentResponse: refreshPipeline.stormSetupCurrentResponse,
-            stormSetupRefreshKey: refreshPipeline.stormSetupRefreshKey,
+            currentContext: currentContext,
+            pipelineSnap: isUITestStaticMode ? pipeline.snap : nil,
+            pipelineStormRisk: isUITestStaticMode ? pipeline.stormRisk : nil,
+            pipelineSevereRisk: isUITestStaticMode ? pipeline.severeRisk : nil,
+            pipelineFireRisk: isUITestStaticMode ? pipeline.fireRisk : nil,
+            pipelineWeather: isUITestStaticMode ? pipeline.summaryWeather : nil,
+            pipelineAirQuality: isUITestStaticMode ? pipeline.airQuality : nil,
+            pipelineMesos: isUITestStaticMode ? pipeline.mesos : [],
+            pipelineAlerts: isUITestStaticMode ? pipeline.alerts : [],
+            resolvedLocationScopedRefreshKey: pipeline.lastResolvedLocationScopedRefreshKey,
+            alertSnapshotRefreshKey: pipeline.alertSnapshotRefreshKey,
+            pipelineStormSetup: isUITestStaticMode ? pipeline.stormSetup : nil,
+            pipelineStormSetupCurrentResponse: isUITestStaticMode ? pipeline.stormSetupCurrentResponse : nil,
+            stormSetupRefreshKey: isUITestStaticMode ? pipeline.stormSetupRefreshKey : nil,
             isUITestStaticMode: isUITestStaticMode,
             now: now
         )
