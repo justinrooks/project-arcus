@@ -129,12 +129,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private var hasLoadedPersistedPending = false
     private var newestCaptureByCoalescingKey: [PendingCoalescingKey: Date] = [:]
     private var pendingLoad: Task<[PersistedLocationUploadRequest], Never>?
+    private var committedPending: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
+    private var pendingSaveCount = 0
     private var pendingSave: Task<Bool, Never>?
     // An opt-out may restrict lagging defaults. An opt-in requires confirmation
     // from the setting provider: asynchronous callbacks can arrive out of order.
     private var subscriptionOverride: (value: Bool, baseline: Bool)?
 
-    private enum TransferSuppressed: Error { case obsolete }
+    private enum TransferSuppressed: Error { case obsolete, persistencePending }
     private enum UploadOutcome { case uploaded, discarded, pending }
 
     init(
@@ -266,6 +268,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             )
             return true
         }
+        await waitForPendingSave()
         let coalescingKey = coalescingKey(for: persisted)
         if let newest = newestCaptureByCoalescingKey[coalescingKey], newest > context.capturedAt {
             return await persistPendingState()
@@ -361,6 +364,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             return
         }
 
+        await waitForPendingSave()
         let coalescingKey = coalescingKey(for: persisted)
         if pendingByCoalescingKey[coalescingKey] == nil {
             logger.debug(
@@ -386,6 +390,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     func drainPendingUploads() async {
         await ensurePersistedPendingLoaded()
 
+        guard pendingSaveCount == 0 else { return }
         guard !pendingByCoalescingKey.isEmpty else { return }
         logger.info("Location upload drain started pendingCount=\(self.pendingByCoalescingKey.count, privacy: .public)")
 
@@ -393,7 +398,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
 
         var enqueuedCount = 0
         var dedupedCount = 0
-        for pending in pendingByCoalescingKey.values.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+        for pending in committedPending.values.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+            guard pendingSaveCount == 0 else { break }
+            guard pendingByCoalescingKey[coalescingKey(for: pending)] == pending else { continue }
             let now = nowProvider()
             let dedupeKey = DeduplicationKey(
                 installationId: pending.installationId,
@@ -437,6 +444,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     ) async -> PendingLocationUploadDrainOutcome {
         await ensurePersistedPendingLoaded()
 
+        guard pendingSaveCount == 0 else { return .remaining }
         guard !pendingByCoalescingKey.isEmpty else { return .drained }
         guard !isProcessing else { return .remaining }
         guard budget.uploadQuota > 0, shouldContinueDraining(before: budget.deadline) else {
@@ -452,7 +460,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         }
 
         var admittedCount = 0
-        for pending in pendingByCoalescingKey.values.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+        for pending in committedPending.values.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+            guard pendingSaveCount == 0 else { break }
+            guard pendingByCoalescingKey[coalescingKey(for: pending)] == pending else { continue }
             guard admittedCount < budget.uploadQuota, shouldContinueDraining(before: budget.deadline) else {
                 break
             }
@@ -494,14 +504,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             defer { activeRequests.removeValue(forKey: workItem.coalescingKey) }
             let outcome = await uploadWithRetry(workItem, deadline: budget.deadline)
             if outcome != .pending {
+                await waitForPendingSave()
                 if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
                     lastUploadBySemanticKey[semanticDedupeKey] = (nowProvider(), capturedAt(of: workItem.request))
                 }
                 if pendingByCoalescingKey[coalescingKey] == workItem.request,
                    !queue.contains(where: { $0.coalescingKey == coalescingKey }) {
                     pendingByCoalescingKey.removeValue(forKey: coalescingKey)
+                    await persistPendingState()
                 }
-                await persistPendingState()
             }
 
             guard shouldContinueDraining(before: budget.deadline) else { break }
@@ -563,6 +574,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             defer { activeRequests.removeValue(forKey: workItem.coalescingKey) }
             let outcome = await uploadWithRetry(workItem)
             if outcome != .pending {
+                await waitForPendingSave()
                 logger.notice(
                     "Location upload work completed source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
@@ -572,8 +584,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 if pendingByCoalescingKey[workItem.coalescingKey] == workItem.request,
                    !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) {
                     pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
+                    await persistPendingState()
                 }
-                await persistPendingState()
             } else {
                 logger.error(
                     "Location upload failed source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
@@ -676,6 +688,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                     }
                 }
                 return .uploaded
+            } catch TransferSuppressed.persistencePending {
+                return .pending
             } catch is TransferSuppressed {
                 return .discarded
             } catch InstallationConsentStore.Failure.consentConflictRequiresRecovery {
@@ -758,7 +772,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     ) async throws -> LocationSnapshotPushPayload {
         let osVersion = await osVersionProvider()
         try checkTransfer(deadline: deadline)
-        guard pendingByCoalescingKey[coalescingKey(for: request)] == request else {
+        guard pendingSaveCount == 0 else { throw TransferSuppressed.persistencePending }
+        guard committedPending[coalescingKey(for: request)] == request,
+              pendingByCoalescingKey[coalescingKey(for: request)] == request else {
             throw TransferSuppressed.obsolete
         }
         let authorization = authorizationStatusProvider()
@@ -892,6 +908,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             pendingByCoalescingKey[key] = request
             newestCaptureByCoalescingKey[key] = capturedAt(of: request)
         }
+        committedPending = pendingByCoalescingKey
         hasLoadedPersistedPending = true
         self.pendingLoad = nil
     }
@@ -902,17 +919,34 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         return await persistPendingState()
     }
 
+    private func waitForPendingSave() async {
+        while pendingSaveCount > 0, let save = pendingSave {
+            _ = await save.value
+        }
+    }
+
     @discardableResult
     private func persistPendingState() async -> Bool {
         let requests = pendingByCoalescingKey.values.sorted(by: { $0.requestedAt < $1.requestedAt })
+        let snapshot = pendingByCoalescingKey
+        pendingSaveCount += 1
         let previous = pendingSave
         let store = queueStore
         let save = Task {
+            defer { pendingSaveCount -= 1 }
             _ = await previous?.value
             do {
                 try await store.savePendingRequests(requests)
+                committedPending = snapshot
                 return true
             } catch {
+                // Roll back only this snapshot; a newer admission may already be waiting to save.
+                if pendingByCoalescingKey == snapshot {
+                    pendingByCoalescingKey = committedPending
+                    for (key, request) in snapshot where capturedAt(of: request) != nil {
+                        newestCaptureByCoalescingKey[key] = committedPending[key].flatMap { capturedAt(of: $0) }
+                    }
+                }
                 return false
             }
         }

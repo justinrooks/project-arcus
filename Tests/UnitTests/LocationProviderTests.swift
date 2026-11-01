@@ -637,11 +637,18 @@ struct LocationProviderTests {
         private var pending: [PersistedLocationUploadRequest] = []
         private var gate: CheckedContinuation<Void, Never>?
         private var started = false
+        private var saves = 0
+        private let pauseAt: Int
         let failFirst: Bool
-        init(failFirst: Bool) { self.failFirst = failFirst }
+        init(failFirst: Bool, pauseAt: Int = 1, seed: [PersistedLocationUploadRequest] = []) {
+            self.failFirst = failFirst
+            self.pauseAt = pauseAt
+            self.pending = seed
+        }
         func loadPendingRequests() async -> [PersistedLocationUploadRequest] { pending }
         func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async throws {
-            if !started {
+            saves += 1
+            if saves == pauseAt {
                 started = true
                 await withCheckedContinuation { gate = $0 }
                 if failFirst { throw URLError(.cannotWriteToFile) }
@@ -685,6 +692,97 @@ struct LocationProviderTests {
         if case .locationSnapshot(let context) = pending.first?.operation {
             #expect(context.capturedAt == Date(timeIntervalSince1970: 200))
         } else { Issue.record("Newest presence missing after overlapping saves") }
+    }
+
+    @Test("uncommitted replacement cannot drain and failed save restores committed presence",
+          arguments: [false, true], [(false, false), (false, true), (true, false), (true, true)])
+    func replacementCommitFencesDrain(failSave: Bool, mode: (Bool, Bool)) async throws {
+        let (bounded, reopen) = mode
+        let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        let cell = try SwiftyH3Hasher().h3Cell(for: coordinates)
+        let old = LocationSnapshot(coordinates: coordinates, timestamp: Date(timeIntervalSince1970: 100),
+            accuracy: 25, placemarkSummary: nil, h3Cell: cell)
+        let newest = LocationSnapshot(coordinates: coordinates, timestamp: Date(timeIntervalSince1970: 200),
+            accuracy: 25, placemarkSummary: nil, h3Cell: cell)
+        let request = PersistedLocationUploadRequest(source: .foregroundLocationChange, reason: .locationChanged,
+            forceUpload: false, installationId: "install", requestedAt: Date(timeIntervalSince1970: 100),
+            isSubscribed: true, authorizationState: "always", apnsToken: "token",
+            operation: .locationSnapshot(context: try #require(PersistedLocationContext(observation: old, now: .now))),
+            mesoNotificationsEnabled: true)
+        let store = SuspendedQueueStore(failFirst: failSave, seed: [request])
+        let uploader = MockSnapshotUploader()
+        func makePusher() -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
+                installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
+                mesoNotificationEnabledProvider: { true }, locationUploadEnabledProvider: { true },
+                authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store)
+        }
+        let pusher = makePusher()
+        let admission = Task { await pusher.enqueuePresence(newest,
+            source: .foregroundLocationChange, reason: .locationChanged) }
+        while await !store.hasStarted() { await Task.yield() }
+        if bounded {
+            #expect(await pusher.drainPendingUploads(using: .init(uploadQuota: 1,
+                deadline: ContinuousClock().now.advanced(by: .seconds(5)))) == .remaining)
+        } else { await pusher.drainPendingUploads() }
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await store.loadPendingRequests() == [request])
+        await store.release()
+        #expect(await admission.value == !failSave)
+        if failSave {
+            #expect(await store.loadPendingRequests() == [request])
+            await (reopen ? makePusher() : pusher).drainPendingUploads()
+            #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [old.timestamp])
+        } else {
+            #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [newest.timestamp])
+        }
+        #expect(await store.loadPendingRequests().isEmpty)
+    }
+
+    private actor PreparationGate {
+        private var gate: CheckedContinuation<Void, Never>?
+        private var opened = false
+        private var started = false
+        func version() async -> String {
+            started = true
+            if !opened { await withCheckedContinuation { gate = $0 } }
+            return "test"
+        }
+        func hasStarted() -> Bool { started }
+        func release() { opened = true; gate?.resume(); gate = nil }
+    }
+
+    @Test("active preparation retains committed A when replacement B persistence fails")
+    func activePreparationDuringFailedReplacement() async throws {
+        let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        let cell = try SwiftyH3Hasher().h3Cell(for: coordinates)
+        func observation(_ time: TimeInterval) -> LocationSnapshot {
+            LocationSnapshot(coordinates: coordinates, timestamp: Date(timeIntervalSince1970: time),
+                accuracy: 25, placemarkSummary: nil, h3Cell: cell)
+        }
+        let old = observation(100)
+        let store = SuspendedQueueStore(failFirst: true, pauseAt: 2)
+        let preparation = PreparationGate()
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(locationUploader: uploader,
+            preferenceUploader: MockPreferenceUploader(), installationIdProvider: { "install" },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            osVersionProvider: { await preparation.version() }, retryDelaysSeconds: [0], queueStore: store)
+        let active = Task { await pusher.enqueuePresence(old,
+            source: .foregroundLocationChange, reason: .locationChanged) }
+        while await !preparation.hasStarted() { await Task.yield() }
+        let replacement = Task { await pusher.enqueuePresence(observation(200),
+            source: .foregroundLocationChange, reason: .locationChanged) }
+        while await !store.hasStarted() { await Task.yield() }
+        await preparation.release()
+        #expect(await active.value)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        await store.release()
+        #expect(await replacement.value == false)
+        #expect(await store.loadPendingRequests().count == 1)
+        await pusher.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [old.timestamp])
+        #expect(await store.loadPendingRequests().isEmpty)
     }
 
     private actor SuspendedLoadStore: LocationUploadQueueStoring {
