@@ -799,6 +799,64 @@ struct LocationProviderTests {
         #expect(snapshot.h3Cell == sampleH3Cell)
     }
     
+    @Test("minimal presence rejects invalid observation evidence", arguments: 0...7)
+    func minimalPresence_rejectsInvalidEvidence(scenario: Int) async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        let cell = try SwiftyH3Hasher(resolution: scenario == 2 ? .res7 : .res8).h3Cell(for: coordinates)
+        let snapshot = LocationSnapshot(
+            coordinates: scenario == 7 ? CLLocationCoordinate2D(latitude: 91, longitude: -104) : coordinates,
+            timestamp: scenario == 3 ? now.addingTimeInterval(1) : now,
+            accuracy: scenario == 4 ? .nan : (scenario == 5 ? -1 : (scenario == 6 ? 0 : 25)),
+            placemarkSummary: nil, h3Cell: scenario == 0 ? nil : (scenario == 1 ? 1 : cell)
+        )
+        let uploads = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploads, preferenceUploader: MockPreferenceUploader(),
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            nowProvider: { now }, retryDelaysSeconds: [0], queueStore: store
+        )
+        await pusher.enqueuePresence(snapshot, source: .foregroundLocationChange, reason: .locationChanged)
+        #expect(await uploads.uploadedPayloads().isEmpty)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("minimal presence preserves observation evidence through durable queue reopen")
+    func minimalPresence_reopensWithoutRegionMetadata() async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        let snapshot = LocationSnapshot(coordinates: coordinates, timestamp: now.addingTimeInterval(-45),
+            accuracy: 25, placemarkSummary: "Display only", h3Cell: try SwiftyH3Hasher().h3Cell(for: coordinates))
+        let suite = "minimal-presence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let first = LocationSnapshotPusher(
+            locationUploader: OfflineSnapshotUploader(), preferenceUploader: MockPreferenceUploader(),
+            installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        )
+        await first.enqueuePresence(snapshot, source: .foregroundLocationChange, reason: .locationChanged)
+        let uploads = MockSnapshotUploader()
+        let reopenedStore = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        #expect(await reopenedStore.loadPendingRequests().count == 1)
+        let reopened = LocationSnapshotPusher(
+            locationUploader: uploads, preferenceUploader: MockPreferenceUploader(),
+            installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now }, retryDelaysSeconds: [0],
+            queueStore: reopenedStore
+        )
+        await reopened.drainPendingUploads()
+        let payload = try #require(await uploads.uploadedPayloads().first)
+        #expect(payload.capturedAt == snapshot.timestamp)
+        #expect(payload.locationAgeSeconds == 45)
+        #expect(payload.horizontalAccuracyMeters == 25)
+        #expect(payload.h3Cell == snapshot.h3Cell && payload.h3Resolution == 8)
+        #expect(payload.county == nil && payload.zone == nil && payload.fireZone == nil)
+        #expect(payload.countyLabel == nil && payload.fireZoneLabel == nil)
+        #expect(await reopenedStore.loadPendingRequests().isEmpty)
+    }
+
     private struct UnavailableContextResolver: LocationContextResolving {
         func prepareCurrentContext(
             requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
