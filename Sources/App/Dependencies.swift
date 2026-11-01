@@ -392,7 +392,9 @@ final class Dependencies: Sendable {
         let airQualityClient = AirQualityHTTPClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()
 
-        let snapshotUploader = HTTPLocationSnapshotUploader(baseURL: arcusBaseURL, http: httpClient)
+        let snapshotUploader = HTTPLocationSnapshotUploader(
+            baseURL: arcusBaseURL, http: httpClient, protocolVersion: .geographyInvalidatingV4
+        )
         let preferenceUploader = HTTPDevicePreferenceSyncUploader(baseURL: arcusBaseURL, http: httpClient)
         let locationUploadCoordinator = LocationSnapshotPusher(
             locationUploader: snapshotUploader,

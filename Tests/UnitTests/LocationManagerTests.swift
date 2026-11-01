@@ -369,7 +369,7 @@ struct LocationSessionTests {
         let newID = try #require(await resolver.pendingIDs(for: .resolve).first)
         await resolver.complete(id: newID, with: .success(moved))
         try #require(await waitUntilAsync { session.currentContext == moved && session.startupState == .ready })
-        #expect(await uploader.recordedEnqueueCount() == 0)
+        try #require(await waitUntilAsync { await uploader.recordedEnqueueCount() == 1 })
         #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
         let intents = await presence.recorded()
         #expect(intents.map { $0.0 } == [first.snapshot, refreshed.snapshot, moved.snapshot])
@@ -413,6 +413,110 @@ struct LocationSessionTests {
             session.handleScenePhaseChange(.active)
             return await presence.count() == 2
         })
+    }
+
+    @MainActor
+    @Test("V4 foreground movement enriches only current geography even with minimal transport active", arguments: [0, 1, 2])
+    func foregroundMovementReachesV4Transport(scenario: Int) async throws {
+        let staleResolution = scenario == 1
+        let beforePreparation = scenario == 2
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+        func context(latitude: Double, timestamp: Date) throws -> LocationContext {
+            let coordinates = CLLocationCoordinate2D(latitude: latitude, longitude: -105)
+            let cell = try SwiftyH3Hasher().h3Cell(for: coordinates)
+            return LocationContext(snapshot: .init(coordinates: coordinates, timestamp: timestamp,
+                accuracy: 20, placemarkSummary: nil, h3Cell: cell), h3Cell: cell,
+                grid: .init(nwsId: "test", latitude: latitude, longitude: -105, gridId: "BOU", gridX: 1, gridY: 1,
+                    forecastURL: nil, forecastHourlyURL: nil, forecastGridDataURL: nil, observationStationsURL: nil,
+                    city: nil, state: nil, timeZoneId: nil, radarStationId: nil, forecastZone: "COZ039",
+                    countyCode: "COC031", fireZone: "COZ246", countyLabel: "Denver", fireZoneLabel: "Fire area"))
+        }
+        let first = try context(latitude: 39, timestamp: now.addingTimeInterval(-1))
+        let moved = try context(latitude: 40, timestamp: now)
+        let suite = "foreground-v4-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let consent = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                  locationSharingEnabled: true, locationAuthorization: .whenInUse)
+        }, markerExists: { false }, createMarker: {})
+        let http = ConsentHTTP()
+        let base = URL(string: "https://arcus.example.com")!
+        let queueStore = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let pusher = LocationSnapshotPusher(
+            locationUploader: HTTPLocationSnapshotUploader(baseURL: base, http: http,
+                enrollment: enrolledTestCoordinator(), consent: consent, protocolVersion: .geographyInvalidatingV4),
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http,
+                enrollment: enrolledTestCoordinator(), consent: consent),
+            installationIdProvider: { id }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedWhenInUse }, nowProvider: { now },
+            retryDelaysSeconds: [0], queueStore: queueStore)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let resolver = ControlledResolver()
+        let session = LocationSession(locationClient: LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        }), locationManager: LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in .accepted }), locationContextResolver: resolver,
+            locationUploadCoordinator: pusher, presenceEnqueuer: pusher)
+        session.handleScenePhaseChange(.active)
+        session.startupState = .failed("location-timeout")
+        var subscription = subscribed.stream.makeAsyncIterator()
+        _ = await subscription.next()
+        subscribed.continuation.finish()
+        if staleResolution {
+            updates.continuation.yield(first.snapshot)
+            try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+            try #require(await waitUntilAsync { await http.recorded().filter { $0.path.contains("location-snapshots") }.count == 1 })
+            // Ensure the first transport completed before pausing the movement's minimal transfer.
+            try #require(await waitUntilAsync { await queueStore.loadPendingRequests().isEmpty })
+        }
+        if beforePreparation { await http.pauseFirst() } else { await http.pausePresence() }
+        updates.continuation.yield(moved.snapshot)
+        try #require(await waitUntilAsync {
+            let requests = await http.recorded()
+            if beforePreparation { return requests.count == 1 && requests.first?.path == "/v3/devices/preferences" }
+            return requests.filter { $0.path.contains("location-snapshots") }.count == (staleResolution ? 2 : 1)
+        })
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let firstID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: firstID, with: .success(staleResolution ? first : moved))
+        if staleResolution {
+            try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+            let movedID = try #require(await resolver.pendingIDs(for: .resolve).first)
+            await resolver.complete(id: movedID, with: .success(moved))
+        }
+        try #require(await waitUntilAsync {
+            let requests = await queueStore.loadPendingRequests()
+            return requests.contains { request in
+                if case .locationSnapshot(let context) = request.operation { return context.county != nil }
+                return false
+            }
+        })
+        // Reversed task arrival must not replace the enriched durable intent with minimal metadata.
+        #expect(await pusher.enqueuePresence(moved.snapshot, source: .foregroundLocationChange, reason: .locationChanged))
+        let pending = await queueStore.loadPendingRequests()
+        #expect(pending.contains { request in
+            if case .locationSnapshot(let context) = request.operation { return context.county == "COC031" }
+            return false
+        })
+        await http.release()
+        try #require(await waitUntilAsync { await queueStore.loadPendingRequests().isEmpty })
+        let requests = await http.recorded().filter { $0.path.contains("location-snapshots") }
+        #expect(requests.allSatisfy { $0.path == "/v4/devices/location-snapshots" })
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let payloads = try requests.map { try decoder.decode(DeviceLocationSnapshotV3Payload.self, from: $0.body!) }
+        #expect(payloads.count == (staleResolution ? 3 : 2))
+        #expect(payloads.dropLast().allSatisfy { $0.county == nil && $0.zone == nil && $0.fireZone == nil })
+        let enriched = try #require(payloads.last)
+        #expect(enriched.h3Cell == moved.h3Cell && enriched.capturedAt == moved.snapshot.timestamp)
+        #expect(enriched.county == moved.grid.countyCode && enriched.fireZone == moved.grid.fireZone)
+        #expect(enriched.zone == moved.grid.forecastZone)
+        #expect(enriched.countyLabel == "Denver" && enriched.fireZoneLabel == "Fire area")
     }
 
     private func durableContext(

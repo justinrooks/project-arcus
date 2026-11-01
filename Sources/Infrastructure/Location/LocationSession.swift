@@ -489,14 +489,13 @@ final class LocationSession: Sendable {
                 if await self.processPendingSnapshot(generation: generation), self.startupState != .ready { return }
                 guard await self.reconcileResolvedContext(context, generation: generation) else { return }
                 self.startupState = .ready
-                if self.presenceEnqueuer == nil {
-                    await self.locationUploadCoordinator.enqueue(
-                        context,
-                        source: .foregroundLocationChange,
-                        reason: .locationChanged,
-                        forceUpload: false
-                    )
-                }
+                // Independent presence must still be followed by current geographic enrichment.
+                await self.locationUploadCoordinator.enqueue(
+                    context,
+                    source: .foregroundLocationChange,
+                    reason: .locationChanged,
+                    forceUpload: false
+                )
             } catch is CancellationError {
                 return
             } catch {

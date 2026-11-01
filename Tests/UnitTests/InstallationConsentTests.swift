@@ -18,8 +18,8 @@ func isolatedConsentStore(
 struct InstallationConsentTests {
     let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
 
-    @Test("minimal presence uses authenticated V3 admission and honors revocation", arguments: [false, true])
-    func minimalPresence_authenticatedTransport(revokeDuringAdmission: Bool) async throws {
+    @Test("minimal presence selects authenticated V3 or V4 and honors revocation", arguments: [false, true], ["accepted", "ignored", "stale", "invalid", "404", "503", "revoked"])
+    func minimalPresence_authenticatedTransport(useV4: Bool, outcome: String) async throws {
         let suite = "minimal-presence-http-\(UUID())"
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let sharing = Mutex(true)
@@ -28,7 +28,10 @@ struct InstallationConsentTests {
                   locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .whenInUse)
         }, markerExists: { false }, createMarker: {})
         let http = ConsentHTTP()
+        let revokeDuringAdmission = outcome == "revoked"
         if revokeDuringAdmission { await http.pauseFirst() }
+        if let status = Int(outcome) { await http.presenceHTTPResponse(status) }
+        else { await http.presenceResponse(outcome) }
         let base = URL(string: "https://arcus.example.com")!
         let now = Date(timeIntervalSince1970: 10_000)
         let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
@@ -36,7 +39,8 @@ struct InstallationConsentTests {
             accuracy: 25, placemarkSummary: nil, h3Cell: try SwiftyH3Hasher().h3Cell(for: coordinates))
         let pusher = LocationSnapshotPusher(
             locationUploader: HTTPLocationSnapshotUploader(baseURL: base, http: http,
-                enrollment: enrolledTestCoordinator(), consent: store),
+                enrollment: enrolledTestCoordinator(), consent: store,
+                protocolVersion: useV4 ? .geographyInvalidatingV4 : .legacyV3),
             preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http,
                 enrollment: enrolledTestCoordinator(), consent: store),
             apnsTokenProvider: { "" }, installationIdProvider: { id },
@@ -54,7 +58,8 @@ struct InstallationConsentTests {
             sharing.withLock { $0 = false }
             await http.release()
         }
-        await upload.value
+        let retained = await upload.value
+        #expect(retained) // Admission succeeded independently of the transport outcome.
         let requests = await http.recorded()
         if revokeDuringAdmission {
             #expect(requests.allSatisfy { $0.path == "/v3/devices/preferences" })
@@ -62,7 +67,9 @@ struct InstallationConsentTests {
                 .loadPendingRequests().isEmpty)
             return
         }
-        #expect(requests.map(\.path) == ["/v3/devices/preferences", "/v3/devices/location-snapshots"])
+        #expect(requests.map(\.path) == ["/v3/devices/preferences", useV4 ? "/v4/devices/location-snapshots" : "/v3/devices/location-snapshots"])
+        let pending = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending").loadPendingRequests()
+        #expect(pending.count == (["invalid", "404", "503"].contains(outcome) ? 1 : 0))
         let request = try #require(requests.last)
         #expect(request.headers["Authorization"] == "Bearer \(String(repeating: "A", count: 43))")
         let decoder = JSONDecoder()
@@ -161,6 +168,8 @@ actor ConsentHTTP: HTTPClient {
     private var rejection: Int?
     private var stale = false
     private var presenceStatus = "accepted"
+    private var presenceHTTPStatus = 200
+    private var presencePaused = false
     private var tokenDeterminesOwnership = false
 
     func pause() { paused = true }
@@ -168,9 +177,12 @@ actor ConsentHTTP: HTTPClient {
     func reject(_ status: Int) { rejection = status }
     func reportStale() { stale = true }
     func presenceResponse(_ status: String) { presenceStatus = status }
+    func presenceHTTPResponse(_ status: Int) { presenceHTTPStatus = status }
+    func pausePresence() { presencePaused = true }
     func ownershipDependsOnToken() { tokenDeterminesOwnership = true }
     func release() {
         paused = false
+        presencePaused = false
         let pending = waiters
         waiters.removeAll()
         for waiter in pending { waiter.resume() }
@@ -195,8 +207,9 @@ actor ConsentHTTP: HTTPClient {
             encoder.dateEncodingStrategy = .iso8601
             return HTTPResponse(status: 200, headers: [:], data: try encoder.encode(ack))
         }
-        if url.path == ArcusSignalConfiguration.locationSnapshotsPath {
-            return HTTPResponse(status: 200, headers: [:], data: Data("{\"status\":\"\(presenceStatus)\",\"receivedAt\":\"2026-10-29T00:00:00Z\"}".utf8))
+        if url.path == ArcusSignalConfiguration.locationSnapshotsPath || url.path == "/v4/devices/location-snapshots" {
+            if presencePaused { await withCheckedContinuation { waiters.append($0) } }
+            return HTTPResponse(status: presenceHTTPStatus, headers: [:], data: Data("{\"status\":\"\(presenceStatus)\",\"receivedAt\":\"2026-10-29T00:00:00Z\"}".utf8))
         }
         return HTTPResponse(status: 204, headers: [:], data: nil)
     }
