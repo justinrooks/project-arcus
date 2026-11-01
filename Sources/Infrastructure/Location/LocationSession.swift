@@ -109,7 +109,7 @@ final class LocationSession: Sendable {
         currentScenePhase = phase
         syncAuthorizationStatus()
         locationManager.updateMode(for: phase)
-        if phase == .active { scheduleAuthorizationRecoveryIfNeeded() }
+        if phase == .active, pendingResolutionSnapshot == nil { scheduleAuthorizationRecoveryIfNeeded() }
         if phase == .active, let pending = pendingResolutionSnapshot {
             pendingResolutionSnapshot = nil
             Task { @MainActor [weak self] in await self?.handleSnapshotUpdate(pending) }
@@ -171,9 +171,10 @@ final class LocationSession: Sendable {
                 guard startupState == .ready, currentContext?.h3Cell == context.h3Cell else { return nil }
             }
             pendingResolutionSnapshot = nil
-            await applyResolvedContext(context, generation: generation)
+            guard await applyResolvedContext(context, generation: generation) else { return nil }
             guard isCurrentLocationResolution(generation) else { return nil }
             if await processPendingSnapshot(generation: generation), startupState != .ready { return nil }
+            guard await reconcileResolvedContext(context, generation: generation) else { return nil }
             if let uploadSource {
                 await locationUploadCoordinator.enqueue(
                     context,
@@ -244,9 +245,9 @@ final class LocationSession: Sendable {
         }
 
         if let context = reusableContext {
-            currentSnapshot = context.snapshot
-            await applyResolvedContext(context, generation: generation)
+            guard await applyResolvedContext(context, generation: generation) else { return nil }
             guard isCurrentLocationResolution(generation) else { return nil }
+            guard await reconcileResolvedContext(context, generation: generation) else { return nil }
             if let uploadSource {
                 await locationUploadCoordinator.enqueue(
                     context,
@@ -321,7 +322,8 @@ final class LocationSession: Sendable {
     }
 
     func enqueueCurrentLocationUpload(source: LocationUploadSource, reason: LocationUploadReason) async {
-        guard let context = await resolveCurrentContextIfNeeded() else { return }
+        guard let context = await resolveCurrentContextIfNeeded(),
+              await reconcileResolvedContext(context, generation: locationResolutionGeneration) else { return }
         await locationUploadCoordinator.enqueue(
             context,
             source: source,
@@ -472,9 +474,10 @@ final class LocationSession: Sendable {
                       self.isCurrentLocationResolution(generation) else { return }
 
                 if await self.processPendingSnapshot(generation: generation) { return }
-                await self.applyResolvedContext(context, generation: generation)
+                guard await self.applyResolvedContext(context, generation: generation) else { return }
                 guard self.isCurrentLocationResolution(generation) else { return }
                 if await self.processPendingSnapshot(generation: generation), self.startupState != .ready { return }
+                guard await self.reconcileResolvedContext(context, generation: generation) else { return }
                 self.startupState = .ready
                 await self.locationUploadCoordinator.enqueue(
                     context,
@@ -522,26 +525,58 @@ final class LocationSession: Sendable {
         locationResolutionGeneration == generation
     }
 
-    private func applyResolvedContext(_ context: LocationContext, generation: UInt64) async {
-        guard isCurrentLocationResolution(generation) else { return }
-        await publishCurrentContext(context)
-        guard isCurrentLocationResolution(generation) else { return }
+    private func applyResolvedContext(_ context: LocationContext, generation: UInt64) async -> Bool {
+        guard await reconcileResolvedContext(context, generation: generation) else { return false }
+        guard await publishCurrentContext(context, when: {
+            self.isCurrentLocationResolution(generation) && self.matchesLatestGeography(context)
+        }) else {
+            _ = await reconcileResolvedContext(context, generation: generation)
+            return false
+        }
+        // Publication can suspend for retention work or its callback; recheck before persisting/uploading.
+        guard await reconcileResolvedContext(context, generation: generation) else { return false }
         if let currentSnapshot, currentSnapshot.timestamp > context.snapshot.timestamp {
             // Preserve a newer streamed fix until its pending resolution completes.
         } else {
             currentSnapshot = context.snapshot
         }
         durableContextCache.save(context)
+        return true
+    }
+
+    private func matchesLatestGeography(_ context: LocationContext) -> Bool {
+        guard let currentSnapshot, currentSnapshot.timestamp > context.snapshot.timestamp else { return true }
+        return currentSnapshot.h3Cell == context.h3Cell
+    }
+
+    private func reconcileResolvedContext(_ context: LocationContext, generation: UInt64) async -> Bool {
+        let latest = await locationClient.snapshot()
+        guard isCurrentLocationResolution(generation) else { return false }
+        _ = reconcileCurrentSnapshot(with: latest)
+        guard matchesLatestGeography(context) else {
+            pendingResolutionSnapshot = currentSnapshot
+            _ = await processPendingSnapshot(generation: generation)
+            return false
+        }
+        return true
     }
 
     func publishCurrentContext(_ context: LocationContext?) async {
-        await retentionCoordinator.publish(context) {
+        _ = await publishCurrentContext(context, when: { true })
+    }
+
+    private func publishCurrentContext(_ context: LocationContext?, when isCurrent: () -> Bool) async -> Bool {
+        var didPublish = false
+        await retentionCoordinator.publish(context, when: isCurrent) {
             if context == nil, currentContext != nil {
                 contextInterruptionRevision &+= 1
             }
             currentContext = context
+            didPublish = true
         }
+        guard didPublish else { return false }
         await onContextPublished()
+        return true
     }
 
     private func invalidateDurableContextIfMoved(by snapshot: LocationSnapshot?) {

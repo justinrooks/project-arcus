@@ -38,6 +38,13 @@ struct LocationSnapshot: Sendable, Equatable {
     /// Hex-encoded H3 cell id used for coarse server-side location bucketing.
     var h3Cell: Int64?
 
+    /// Derived display metadata is deliberately excluded from observation identity.
+    func hasSameObservation(as other: LocationSnapshot) -> Bool {
+        coordinates.latitude == other.coordinates.latitude &&
+        coordinates.longitude == other.coordinates.longitude &&
+        timestamp == other.timestamp && accuracy == other.accuracy && h3Cell == other.h3Cell
+    }
+
     static func == (lhs: LocationSnapshot, rhs: LocationSnapshot) -> Bool {
         lhs.coordinates.latitude == rhs.coordinates.latitude &&
         lhs.coordinates.longitude == rhs.coordinates.longitude &&
@@ -156,7 +163,7 @@ actor LocationProvider {
             saveAndYieldSnapshot(snap, reason: "accepted-update")
             
             // 3) Reverse geocode – fire-and-forget
-            Task { await updatePlacemarkIfNeeded(for: update.coordinates, timestamp: update.timestamp) }
+            Task { await updatePlacemarkIfNeeded(for: snap) }
             return .accepted
         } else {
             suppressedCount &+= 1
@@ -166,75 +173,51 @@ actor LocationProvider {
     
     // MARK: - Placemark/Geocoding
     
-    /// Entry point for the BackgroundOrchestrator to get a fresh placemark. This gets used in the notifications
-    /// - Parameters:
-    ///   - coord: coordinates to reverse geocode
-    ///   - timeout: timeout so we don't consume all our background budget
-    /// - Returns: updated location snap
-    func ensurePlacemark(for coord: CLLocationCoordinate2D, timeout: Double = 8) async -> LocationSnapshot {
-        if let lastSnapshot,
-           lastSnapshot.coordinates.latitude == coord.latitude,
-           lastSnapshot.coordinates.longitude == coord.longitude,
-           lastSnapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-           lastSnapshot.h3Cell != nil {
-            logger.debug("Reusing cached placemark for unchanged location context")
-            return lastSnapshot
+    /// Enrich only the supplied observation; a newer accepted fix remains independently owned.
+    func ensurePlacemark(for observation: LocationSnapshot, timeout: Double = 8) async -> LocationSnapshot {
+        guard let current = lastSnapshot, current.hasSameObservation(as: observation) else {
+            return observation
+        }
+        if current.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return current
         }
 
-        // Geocoding enriches accepted evidence; it cannot create a location observation.
-        guard let base = lastSnapshot,
-              base.coordinates.latitude == coord.latitude,
-              base.coordinates.longitude == coord.longitude else {
-            return lastSnapshot ?? LocationSnapshot(
-                coordinates: coord, timestamp: .distantPast,
-                accuracy: kCLLocationAccuracyThreeKilometers,
-                placemarkSummary: nil, h3Cell: nil
-            )
-        }
         do {
             let place = try await withTimeout(timeout: timeout) {
-                try await self.geocoder.reverseGeocode(coord)
+                try await self.geocoder.reverseGeocode(observation.coordinates)
             }
-            guard var current = lastSnapshot,
-                  current.timestamp == base.timestamp,
-                  current.coordinates.latitude == coord.latitude,
-                  current.coordinates.longitude == coord.longitude else {
-                return lastSnapshot ?? base
-            }
-            if current.placemarkSummary != place {
-                current.placemarkSummary = place
-                saveAndYieldSnapshot(current, reason: "placemark-resolved")
-            }
-            return current
+            return applyPlacemark(place, to: observation)
         } catch {
-            return lastSnapshot ?? base
+            // Keep any display metadata that another matching request already resolved.
+            return lastSnapshot.flatMap { $0.hasSameObservation(as: observation) ? $0 : nil } ?? observation
         }
     }
 
     // MARK: Placemark Helpers
-    private func updatePlacemarkIfNeeded(for coord: CLLocationCoordinate2D, timestamp: Date) async {
+    func updatePlacemarkIfNeeded(for observation: LocationSnapshot) async {
+        guard lastSnapshot?.hasSameObservation(as: observation) == true else { return }
         logger.debug("Resolving placemark for accepted location update")
         do {
-            let summary = try await geocoder.reverseGeocode(coord)
-            
-            // Update snapshot and notify
-            if var snap = lastSnapshot {
-                // Ignore late geocoder completions that would regress snapshot recency.
-                guard timestamp >= snap.timestamp else { return }
-                guard snap.placemarkSummary != summary else { return }
-                
-                snap = LocationSnapshot(coordinates: snap.coordinates,
-                                        timestamp: snap.timestamp,
-                                        accuracy: snap.accuracy,
-                                        placemarkSummary: summary,
-                                        h3Cell: snap.h3Cell)
-                saveAndYieldSnapshot(snap, reason: "placemark-enriched")
-            }
+            let summary = try await geocoder.reverseGeocode(observation.coordinates)
+            _ = applyPlacemark(summary, to: observation)
         } catch {
             logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
         }
     }
-    
+
+    private func applyPlacemark(_ summary: String, to observation: LocationSnapshot) -> LocationSnapshot {
+        guard var current = lastSnapshot, current.hasSameObservation(as: observation) else {
+            return observation
+        }
+        // An empty response is not useful enrichment and must not erase a known display name.
+        guard !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return current }
+        if current.placemarkSummary != summary {
+            current.placemarkSummary = summary
+            saveAndYieldSnapshot(current, reason: "placemark-enriched")
+        }
+        return current
+    }
+
     private func resolveH3Cell(for coord: CLLocationCoordinate2D) -> Int64? {
         do {
             return try hasher.h3Cell(for: coord)

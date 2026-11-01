@@ -610,6 +610,116 @@ struct LocationSessionTests {
         #expect(session.startupState == .failed("location-missing-region-context"))
     }
 
+    private actor AcceptedSnapshotState {
+        var latest: LocationSnapshot?
+        private(set) var publications = 0
+
+        func accept(_ snapshot: LocationSnapshot) { latest = snapshot }
+        func recordPublication() { publications += 1 }
+    }
+
+    @MainActor
+    @Test("inactive preparation rejects a superseded geography before publication or upload",
+          arguments: [false, true], [false, true])
+    func inactivePreparationRejectsSupersededContext(background: Bool, deliversUpdate: Bool) async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
+        let second = durableContext(timestamp: .now, h3Cell: 2)
+        let source = AcceptedSnapshotState()
+        await source.accept(first.snapshot)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { await source.latest }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let suiteName = "LocationSessionTests.superseded.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let cache = DurableLocationContextCache(suiteName: suiteName)
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                                      onUpdate: { _ in .accepted })
+        let resolver = ControlledResolver()
+        let uploader = StubUploadCoordinator()
+        let retention = HomeProjectionRetentionCoordinator()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: uploader, durableContextCache: cache,
+            retentionCoordinator: retention, onContextPublished: { await source.recordPublication() })
+        session.handleScenePhaseChange(background ? .background : .inactive)
+        var subscribedIterator = subscribed.stream.makeAsyncIterator()
+        _ = await subscribedIterator.next()
+        subscribed.continuation.finish()
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false,
+                                                        uploadSource: .foregroundLocationChange)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await source.accept(second.snapshot)
+        if deliversUpdate {
+            updates.continuation.yield(second.snapshot)
+            try #require(await waitUntilAsync { session.currentSnapshot == second.snapshot })
+        }
+        await resolver.complete(id: id, with: .success(first))
+        #expect(await preparation.value == nil)
+        #expect(session.currentSnapshot == second.snapshot)
+        #expect(session.currentContext == nil)
+        #expect(retention.currentActiveProjectionKey() == nil)
+        #expect(await source.publications == 0)
+        #expect(cache.load() == nil)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        // The rejected background result must leave the newer fix available for foreground recovery.
+        session.handleScenePhaseChange(.active)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let replacementID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: replacementID, with: .success(second))
+        #expect(await waitUntilAsync { session.currentContext == second && session.startupState == .ready })
+    }
+
+    @MainActor
+    @Test("movement during inactive publication prevents later cache and upload handoff")
+    func inactivePublicationRechecksBeforeCachingAndUpload() async throws {
+        let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
+        let second = durableContext(timestamp: .now, h3Cell: 2)
+        let source = AcceptedSnapshotState()
+        await source.accept(first.snapshot)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer { release.continuation.finish() }
+        let client = LocationClient(snapshot: { await source.latest }, updates: { updates.stream })
+        let suiteName = "LocationSessionTests.publication.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let cache = DurableLocationContextCache(suiteName: suiteName)
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                                      onUpdate: { _ in .accepted })
+        let resolver = ControlledResolver()
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: uploader, durableContextCache: cache,
+            onContextPublished: {
+                entered.continuation.yield(())
+                var iterator = release.stream.makeAsyncIterator()
+                _ = await iterator.next()
+            })
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false,
+                                                        uploadSource: .foregroundLocationChange)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: id, with: .success(first))
+        var enteredIterator = entered.stream.makeAsyncIterator()
+        _ = await enteredIterator.next()
+        #expect(session.currentContext == first)
+        await source.accept(second.snapshot)
+        release.continuation.finish()
+        #expect(await preparation.value == nil)
+        #expect(session.currentSnapshot == second.snapshot)
+        #expect(cache.load() == nil)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+    }
+
     @MainActor
     @Test("older explicit location attempt cannot replace a newer result", arguments: [false, true])
     func olderExplicitLocationAttemptCannotReplaceNewerResult(olderAttemptFails: Bool) async {
@@ -1010,9 +1120,6 @@ struct LocationSessionTests {
         await resolver.complete(id: firstID, with: .failure(.locationTimeout))
         try #require(await waitUntilAsync { session.startupState == .failed("location-timeout") })
         session.handleScenePhaseChange(.active)
-        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
-        let preparationID = try #require(await resolver.pendingIDs(for: .prepare).first)
-        await resolver.complete(id: preparationID, with: .failure(.locationTimeout))
         try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
         let secondID = try #require(await resolver.pendingIDs(for: .resolve).first)
         await resolver.complete(id: secondID, with: .success(second))
