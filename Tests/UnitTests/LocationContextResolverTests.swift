@@ -615,10 +615,11 @@ struct LocationContextResolverTests {
                 maximumAcceptedLocationAge: 300,
                 placemarkTimeout: 0.1
             )
-            Issue.record("Expected missingH3Cell")
+            Issue.record("Expected locationTimeout because the unresolvable fix was rejected")
         } catch {
-            #expect((error as? LocationContextError) == .missingH3Cell)
+            #expect((error as? LocationContextError) == .locationTimeout)
         }
+        #expect(await locationProvider.snapshot() == nil)
     }
 
     @Test("does not produce a ready context without county and fire zone")

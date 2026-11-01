@@ -227,10 +227,10 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 accuracy: loc.horizontalAccuracy,
                 forceAcceptance: !waiterIDs.isEmpty
             )
-            await onUpdate(update)
+            let acceptance = await onUpdate(update)
 
             if update.forceAcceptance {
-                self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: true)
+                self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: acceptance == .accepted)
             }
 
             if shouldHandleBackgroundLocationChange {
@@ -255,7 +255,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 let updates = CLLocationUpdate.liveUpdates(.otherNavigation)
                 for try await update in updates {
                     guard let loc = update.location else { continue }
-                    await self?.onUpdate(.init(
+                    _ = await self?.onUpdate(.init(
                         coordinates: loc.coordinate,
                         timestamp: loc.timestamp,
                         accuracy: loc.horizontalAccuracy

@@ -95,11 +95,24 @@ struct LocationManagerTests {
     }
 
     @MainActor
+    @Test("one-shot success requires accepted evidence", arguments: [LocationAcceptance.accepted, .redundant, .rejected])
+    func oneShotWait_reflectsAcceptance(acceptance: LocationAcceptance) async throws {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let clock = ManualTimeouts()
+        let sut = LocationManager(manager: manager, onUpdate: { _ in acceptance }, oneShotTimeoutSleep: clock.sleep)
+        let caller = Task { await sut.refreshCurrentLocation() }
+        var starts = clock.started.makeAsyncIterator()
+        _ = await starts.next()
+        sut.locationManager(manager, didUpdateLocations: [CLLocation(latitude: 40, longitude: -105)])
+        #expect(await result(of: caller, sut: sut, manager: manager) == (acceptance == .accepted))
+    }
+
+    @MainActor
     @Test("one-shot wait exits without a delegate callback", arguments: [false, true])
     func oneShotWait_exitsWithoutCallback(cancel: Bool) async throws {
         let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
         let clock = ManualTimeouts()
-        let sut = LocationManager(manager: manager, onUpdate: { _ in }, oneShotTimeoutSleep: clock.sleep)
+        let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted }, oneShotTimeoutSleep: clock.sleep)
         let caller = Task { await sut.refreshCurrentLocation() }
         var starts = clock.started.makeAsyncIterator()
         let deadline = try #require(await starts.next())
@@ -111,7 +124,7 @@ struct LocationManagerTests {
     @Test("cancellation before registration does not start a location request")
     func oneShotWait_cancelledBeforeRegistration() async {
         let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
-        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted })
         let caller = Task { await sut.refreshCurrentLocation() }
         caller.cancel() // The task cannot enter the main actor until this test suspends.
         #expect(await result(of: caller, sut: sut, manager: manager) == false)
@@ -123,7 +136,7 @@ struct LocationManagerTests {
     func oneShotWait_preservesOtherCaller(cancel: Bool, delegateSuccess: Bool) async throws {
         let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
         let clock = ManualTimeouts()
-        let sut = LocationManager(manager: manager, onUpdate: { _ in }, oneShotTimeoutSleep: clock.sleep)
+        let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted }, oneShotTimeoutSleep: clock.sleep)
         var starts = clock.started.makeAsyncIterator()
         let first = Task { await sut.refreshCurrentLocation() }
         let firstDeadline = try #require(await starts.next())
@@ -156,6 +169,7 @@ struct LocationManagerTests {
             let (releases, release) = AsyncStream<Void>.makeStream()
             accepting.yield(release)
             for await _ in releases { break }
+            return .accepted
         }, oneShotTimeoutSleep: clock.sleep)
         var starts = clock.started.makeAsyncIterator()
         var deliveries = acceptances.makeAsyncIterator()
@@ -198,7 +212,7 @@ struct LocationManagerTests {
         let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
         let clock = ManualTimeouts()
         let (updates, updated) = AsyncStream<Bool>.makeStream()
-        let sut = LocationManager(manager: manager, onUpdate: { updated.yield($0.forceAcceptance) },
+        let sut = LocationManager(manager: manager, onUpdate: { updated.yield($0.forceAcceptance); return .accepted },
                                   oneShotTimeoutSleep: clock.sleep)
         var starts = clock.started.makeAsyncIterator()
         var deliveries = updates.makeAsyncIterator()
@@ -221,7 +235,7 @@ struct LocationManagerTests {
     @Test("authorization callback updates cached authStatus")
     func locationManagerDidChangeAuthorization_updatesAuthStatus() async throws {
         let manager = StubAuthorizationManager(status: .notDetermined)
-        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted })
         #expect(sut.authStatus == .notDetermined)
 
         manager.stubStatus = .authorizedAlways
@@ -237,7 +251,7 @@ struct LocationManagerTests {
     @Test("authorization callback updates cached accuracyAuthorization")
     func locationManagerDidChangeAuthorization_updatesAccuracyAuthorization() async throws {
         let manager = StubAuthorizationManager(status: .authorizedWhenInUse, accuracy: .fullAccuracy)
-        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted })
         #expect(sut.accuracyAuthorization == .fullAccuracy)
 
         manager.stubAccuracy = .reducedAccuracy
@@ -253,7 +267,7 @@ struct LocationManagerTests {
     @Test("requestAlwaysAuthorizationUpgradeIfNeeded requests always when currently authorized while in use")
     func requestAlwaysAuthorizationUpgradeIfNeeded_requestsAlwaysAuthorization() {
         let manager = StubAuthorizationManager(status: .authorizedWhenInUse)
-        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted })
 
         let didRequestUpgrade = sut.requestAlwaysAuthorizationUpgradeIfNeeded()
 
@@ -273,7 +287,7 @@ struct LocationManagerTests {
 
         for status in disallowedStatuses {
             let manager = StubAuthorizationManager(status: status)
-            let sut = LocationManager(manager: manager, onUpdate: { _ in })
+            let sut = LocationManager(manager: manager, onUpdate: { _ in .accepted })
             let didRequestUpgrade = sut.requestAlwaysAuthorizationUpgradeIfNeeded()
 
             #expect(didRequestUpgrade == false)
@@ -518,7 +532,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
 
         let context = LocationContext(
@@ -576,7 +590,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
 
         let session = LocationSession(
@@ -602,7 +616,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = ControlledResolver()
         let session = LocationSession(
@@ -667,7 +681,7 @@ struct LocationSessionTests {
         })
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: client, locationManager: manager,
@@ -705,7 +719,7 @@ struct LocationSessionTests {
         })
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: client, locationManager: manager,
@@ -742,7 +756,7 @@ struct LocationSessionTests {
     func authorizationRecoveryStartsAcquisition(afterSettings: Bool) async throws {
         let context = durableContext(timestamp: .now)
         let source = LocationManagerTests.StubAuthorizationManager(status: .denied)
-        let manager = LocationManager(manager: source, onUpdate: { _ in })
+        let manager = LocationManager(manager: source, onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: makeLocationClient(provider: LocationProvider()),
                                       locationManager: manager, locationContextResolver: resolver,
@@ -773,7 +787,7 @@ struct LocationSessionTests {
             return updates.stream
         })
         let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-                                      onUpdate: { _ in })
+                                      onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: client, locationManager: manager,
                                       locationContextResolver: resolver,
@@ -810,7 +824,7 @@ struct LocationSessionTests {
             return updates.stream
         })
         let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-                                      onUpdate: { _ in })
+                                      onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: client, locationManager: manager,
                                       locationContextResolver: resolver,
@@ -851,7 +865,7 @@ struct LocationSessionTests {
             return updates.stream
         })
         let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-                                      onUpdate: { _ in })
+                                      onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let uploader = StubUploadCoordinator()
         let session = LocationSession(locationClient: client, locationManager: manager,
@@ -902,7 +916,7 @@ struct LocationSessionTests {
             return updates.stream
         })
         let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-                                      onUpdate: { _ in })
+                                      onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let uploader = StubUploadCoordinator()
         let session = LocationSession(locationClient: client, locationManager: manager,
@@ -943,7 +957,7 @@ struct LocationSessionTests {
             return updates.stream
         })
         let source = LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
-        let manager = LocationManager(manager: source, onUpdate: { _ in })
+        let manager = LocationManager(manager: source, onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: client, locationManager: manager,
                                       locationContextResolver: resolver,
@@ -978,7 +992,7 @@ struct LocationSessionTests {
             return updates.stream
         })
         let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-                                      onUpdate: { _ in })
+                                      onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
         let session = LocationSession(locationClient: client, locationManager: manager,
                                       locationContextResolver: resolver,
@@ -1022,7 +1036,7 @@ struct LocationSessionTests {
         )
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = ControlledResolver()
         let session = LocationSession(
@@ -1082,7 +1096,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
 
         let context = LocationContext(
@@ -1146,7 +1160,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
 
         let context = LocationContext(
@@ -1212,7 +1226,7 @@ struct LocationSessionTests {
     func updateLocationSharingPreference_whenEnabling_requestsAlwaysUpgradeAndEmitsSingleForcedSettingsSync() async throws {
         let provider = LocationProvider()
         let authManager = LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
-        let manager = LocationManager(manager: authManager, onUpdate: { _ in })
+        let manager = LocationManager(manager: authManager, onUpdate: { _ in .accepted })
         let context = LocationContext(
             snapshot: LocationSnapshot(
                 coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
@@ -1273,7 +1287,7 @@ struct LocationSessionTests {
     func updateLocationSharingPreference_whenDisabling_syncsPreferenceWithoutRequestingAlwaysUpgrade() async throws {
         let provider = LocationProvider()
         let authManager = LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways)
-        let manager = LocationManager(manager: authManager, onUpdate: { _ in })
+        let manager = LocationManager(manager: authManager, onUpdate: { _ in .accepted })
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let uploader = StubUploadCoordinator()
         let session = LocationSession(
@@ -1305,7 +1319,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let uploader = StubUploadCoordinator()
@@ -1337,7 +1351,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let uploader = StubUploadCoordinator()
@@ -1369,7 +1383,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
 
         let context = LocationContext(
@@ -1431,7 +1445,7 @@ struct LocationSessionTests {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let uploader = StubUploadCoordinator()
@@ -1472,7 +1486,7 @@ struct LocationSessionTests {
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let manager = LocationManager(
-            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in }
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in .accepted }
         )
         let session = LocationSession(
             locationClient: .init(snapshot: { providerSnapshot }, updates: { AsyncStream { $0.finish() } }),
@@ -1512,7 +1526,7 @@ struct LocationSessionTests {
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(
                 status: variant == "denied" ? .denied : .authorizedWhenInUse
-            ), onUpdate: { _ in }
+            ), onUpdate: { _ in .accepted }
         )
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider), locationManager: manager,
@@ -1554,7 +1568,7 @@ struct LocationSessionTests {
         )
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let session = LocationSession(
@@ -1606,7 +1620,7 @@ struct LocationSessionTests {
         )
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
-            onUpdate: { _ in }
+            onUpdate: { _ in .accepted }
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let session = LocationSession(
@@ -1654,7 +1668,7 @@ struct LocationSessionTests {
         durableCache.save(cachedContext)
         let movedSnapshot = LocationSnapshot(coordinates: .init(latitude: 40, longitude: -105), timestamp: now, accuracy: 20, placemarkSummary: nil, h3Cell: 2)
         let providerClient = LocationClient(snapshot: { movedSnapshot }, updates: { AsyncStream { $0.finish() } })
-        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in .accepted })
         let resolver = StubResolver(context: nil, error: .locationTimeout)
         let session = LocationSession(locationClient: providerClient, locationManager: manager, locationContextResolver: resolver, locationUploadCoordinator: NoOpLocationUploadCoordinator(), durableContextCache: durableCache)
         session.currentSnapshot = nil
@@ -1674,7 +1688,7 @@ struct LocationSessionTests {
             status: .authorizedWhenInUse,
             accuracy: .reducedAccuracy
         )
-        let locationManager = LocationManager(manager: manager, onUpdate: { _ in })
+        let locationManager = LocationManager(manager: manager, onUpdate: { _ in .accepted })
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: locationManager,
