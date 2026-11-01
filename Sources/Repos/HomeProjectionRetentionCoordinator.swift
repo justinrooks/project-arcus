@@ -84,8 +84,12 @@ final class HomeProjectionRetentionCoordinator: @unchecked Sendable {
     }
 
     @MainActor
-    func publish(_ context: LocationContext?, updating update: () -> Void) async {
-        guard Task.isCancelled == false else { return }
+    func publish(
+        _ context: LocationContext?,
+        when isCurrent: () -> Bool = { true },
+        updating update: () -> Void
+    ) async {
+        guard Task.isCancelled == false, isCurrent() else { return }
         setActiveProjectionKey(context.map(HomeProjection.projectionKey(for:)))
         // Publish observable location state before waiting on background cache maintenance.
         update()
