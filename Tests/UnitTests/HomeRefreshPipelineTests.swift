@@ -8,6 +8,95 @@ import ArcusCore
 @Suite("Home Refresh Pipeline", .serialized)
 @MainActor
 struct HomeRefreshPipelineTests {
+    private final class PresenceScenario {
+        var now = Date()
+    }
+
+    private final class PresenceAuthorization: CLLocationManager {
+        override var authorizationStatus: CLAuthorizationStatus { .authorizedWhenInUse }
+    }
+
+    private actor PresenceRecorder: LocationPresenceEnqueuing {
+        var count = 0
+        var succeeds = false
+        func enqueuePresence(_ observation: LocationSnapshot, source: LocationUploadSource,
+                             reason: LocationUploadReason) async -> Bool {
+            count += 1
+            return succeeds
+        }
+        func recordedCount() -> Int { count }
+        func succeed() { succeeds = true }
+    }
+
+    private struct PresenceContextResolver: LocationContextResolving {
+        let context: LocationContext
+        func prepareCurrentContext(requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
+                                   authorizationTimeout: Double, locationTimeout: Double,
+                                   maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double) async throws -> LocationContext {
+            context
+        }
+        func resolveContext(from snapshot: LocationSnapshot, maximumAcceptedLocationAge: TimeInterval?,
+                            placemarkTimeout: Double) async throws -> LocationContext { context }
+    }
+
+    @Test("same-cell presence refresh and admission retry do not duplicate Home ingestion")
+    func presenceRefreshDoesNotDuplicateHomeIngestion() async throws {
+        let scenario = PresenceScenario()
+        let context = makeContext(timestamp: scenario.now.timeIntervalSince1970)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let presence = PresenceRecorder()
+        let session = LocationSession(
+            locationClient: LocationClient(snapshot: { context.snapshot }, updates: {
+                subscribed.continuation.yield(())
+                return updates.stream
+            }),
+            locationManager: LocationManager(manager: PresenceAuthorization(), onUpdate: { _ in .accepted }),
+            locationContextResolver: PresenceContextResolver(context: context),
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            presenceEnqueuer: presence, presenceNow: { scenario.now }
+        )
+        session.currentContext = context
+        session.startupState = .ready
+        session.handleScenePhaseChange(.active)
+        var subscription = subscribed.stream.makeAsyncIterator()
+        _ = await subscription.next()
+        subscribed.continuation.finish()
+        let spc = FakeSpcProvider()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(
+            locationContext: context, locationSnapshot: context.snapshot, refreshKey: context.refreshKey
+        ))
+        let environment = HomeRefreshPipeline.Environment(
+            logger: Logger(subsystem: "SkyAwareTests", category: "PresenceIsolation"),
+            sync: spc, outlooks: spc, coordinator: coordinator, locationSession: session
+        )
+        let pipeline = HomeRefreshPipeline()
+        await pipeline.handleContextRefreshKeyChange(context.refreshKey, scenePhase: .active, environment: environment)
+        await pipeline.waitForIdle()
+        let baseline = await coordinator.requests().count
+        #expect(baseline > 0)
+        try #require(await waitUntil { await presence.recordedCount() == 1 })
+        scenario.now.addTimeInterval(30)
+        await presence.succeed()
+        try #require(await waitUntil {
+            session.handleScenePhaseChange(.active)
+            return await presence.recordedCount() == 2
+        })
+        scenario.now.addTimeInterval(300)
+        var refreshed = context.snapshot
+        refreshed = LocationSnapshot(coordinates: refreshed.coordinates, timestamp: scenario.now,
+                                     accuracy: refreshed.accuracy, placemarkSummary: refreshed.placemarkSummary,
+                                     h3Cell: refreshed.h3Cell)
+        updates.continuation.yield(refreshed)
+        try #require(await waitUntil { await presence.recordedCount() == 3 })
+        // Drive the same observer boundary HomeView uses, using the session's actual context.
+        await pipeline.handleContextRefreshKeyChange(session.currentContext?.refreshKey,
+                                                     scenePhase: .active, environment: environment)
+        await pipeline.waitForIdle()
+        #expect(await coordinator.requests().count == baseline)
+    }
+
     @Test("current eligibility overrides a retained terminal outcome after same-location skipped refreshes",
           arguments: [HomeStormSetupRefreshResult.failure, .timeout])
     func stormSetupPresentation_clearedEligibilitySupersedesRetainedFailure(result: HomeStormSetupRefreshResult) async {

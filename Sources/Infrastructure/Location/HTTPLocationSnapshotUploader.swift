@@ -52,6 +52,11 @@ struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
 }
 
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
+    enum ProtocolVersion {
+        case legacyV3
+        case geographyInvalidatingV4
+    }
+
     private let consent: InstallationConsentStore
     private let endpoint: URL
     private let http: HTTPClient
@@ -62,10 +67,12 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
 
     init(baseURL: URL, http: HTTPClient = URLSessionHTTPClient(),
         enrollment: InstallationEnrollmentCoordinator = .shared,
-        consent: InstallationConsentStore = .shared) {
+        consent: InstallationConsentStore = .shared,
+        protocolVersion: ProtocolVersion = .legacyV3) {
         guard let endpoint = ArcusSignalConfiguration.url(
             from: baseURL,
-            path: ArcusSignalConfiguration.locationSnapshotsPath
+            path: protocolVersion == .geographyInvalidatingV4
+                ? "/v4/devices/location-snapshots" : ArcusSignalConfiguration.locationSnapshotsPath
         ) else {
             preconditionFailure("Invalid Arcus signal base URL")
         }

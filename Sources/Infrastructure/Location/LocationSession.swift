@@ -32,6 +32,9 @@ final class LocationSession: Sendable {
     private let locationManager: LocationManager
     private let locationContextResolver: any LocationContextResolving
     private let locationUploadCoordinator: any LocationUploadCoordinating
+    private let presenceEnqueuer: (any LocationPresenceEnqueuing)?
+    private let presenceNow: @MainActor @Sendable () -> Date
+    @ObservationIgnored private var presenceAttempt: (snapshot: LocationSnapshot, at: Date, failed: Bool)?
     private let durableContextCache: any DurableLocationContextCaching
     private let retentionCoordinator: HomeProjectionRetentionCoordinator
     private let onContextPublished: @Sendable () async -> Void
@@ -69,6 +72,8 @@ final class LocationSession: Sendable {
         locationManager: LocationManager,
         locationContextResolver: any LocationContextResolving,
         locationUploadCoordinator: any LocationUploadCoordinating,
+        presenceEnqueuer: (any LocationPresenceEnqueuing)? = nil,
+        presenceNow: @escaping @MainActor @Sendable () -> Date = { .now },
         durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache(),
         retentionCoordinator: HomeProjectionRetentionCoordinator = HomeProjectionRetentionCoordinator(),
         onContextPublished: @escaping @Sendable () async -> Void = {}
@@ -77,6 +82,8 @@ final class LocationSession: Sendable {
         self.locationManager = locationManager
         self.locationContextResolver = locationContextResolver
         self.locationUploadCoordinator = locationUploadCoordinator
+        self.presenceEnqueuer = presenceEnqueuer
+        self.presenceNow = presenceNow
         self.durableContextCache = durableContextCache
         self.retentionCoordinator = retentionCoordinator
         self.onContextPublished = onContextPublished
@@ -95,6 +102,7 @@ final class LocationSession: Sendable {
                 let initialSnapshot = await locationClient.snapshot()
                 if Task.isCancelled { return }
                 self.currentSnapshot = initialSnapshot
+                if let initialSnapshot { self.enqueueForegroundPresence(initialSnapshot) }
 
                 let stream = await locationClient.updates()
                 for await snapshot in stream {
@@ -109,6 +117,7 @@ final class LocationSession: Sendable {
         currentScenePhase = phase
         syncAuthorizationStatus()
         locationManager.updateMode(for: phase)
+        if phase == .active, let currentSnapshot { enqueueForegroundPresence(currentSnapshot) }
         if phase == .active, pendingResolutionSnapshot == nil { scheduleAuthorizationRecoveryIfNeeded() }
         if phase == .active, let pending = pendingResolutionSnapshot {
             pendingResolutionSnapshot = nil
@@ -442,6 +451,7 @@ final class LocationSession: Sendable {
         }
 
         guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized else { return }
+        enqueueForegroundPresence(snapshot)
         switch startupState {
         case .ready, .failed:
             break
@@ -479,6 +489,7 @@ final class LocationSession: Sendable {
                 if await self.processPendingSnapshot(generation: generation), self.startupState != .ready { return }
                 guard await self.reconcileResolvedContext(context, generation: generation) else { return }
                 self.startupState = .ready
+                // Independent presence must still be followed by current geographic enrichment.
                 await self.locationUploadCoordinator.enqueue(
                     context,
                     source: .foregroundLocationChange,
@@ -493,6 +504,33 @@ final class LocationSession: Sendable {
                 self.startupState = .failed(Self.failureCode(for: error))
                 await self.publishCurrentContext(nil)
             }
+        }
+    }
+
+    /// Admission is independent of context resolution and transport completion. The outbox owns delivery retry.
+    private func enqueueForegroundPresence(_ snapshot: LocationSnapshot) {
+        guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
+              let presenceEnqueuer, snapshot.h3Cell != nil else { return }
+        let now = presenceNow()
+        if let previous = presenceAttempt {
+            guard snapshot.timestamp >= previous.snapshot.timestamp else { return }
+            if snapshot.h3Cell == previous.snapshot.h3Cell {
+                let elapsed = now.timeIntervalSince(previous.at)
+                if previous.failed {
+                    guard elapsed >= 30 else { return }
+                } else {
+                    guard snapshot.timestamp > previous.snapshot.timestamp, elapsed >= 5 * 60 else { return }
+                }
+            }
+        }
+        presenceAttempt = (snapshot, now, false)
+        Task { [weak self] in
+            let retained = await presenceEnqueuer.enqueuePresence(
+                snapshot, source: .foregroundLocationChange, reason: .locationChanged
+            )
+            guard let self, self.presenceAttempt?.snapshot.hasSameObservation(as: snapshot) == true,
+                  self.presenceAttempt?.at == now else { return }
+            self.presenceAttempt?.failed = !retained
         }
     }
 
