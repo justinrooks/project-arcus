@@ -445,20 +445,23 @@ struct LocationProviderTests {
 
     private actor RacingGeocoder: LocationGeocoding {
         private var callCount = 0
-        private var firstContinuation: CheckedContinuation<String, Never>?
+        private var firstContinuation: CheckedContinuation<String, any Error>?
 
         func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
             callCount += 1
             if callCount == 1 {
-                return await withCheckedContinuation { continuation in
+                return try await withCheckedThrowingContinuation { continuation in
                     firstContinuation = continuation
                 }
             }
             return "Latest City"
         }
 
-        func resolveFirst(with value: String) {
-            firstContinuation?.resume(returning: value)
+        func hasStarted() -> Bool { callCount > 0 }
+
+        func resolveFirst(with value: String, fails: Bool = false) {
+            if fails { firstContinuation?.resume(throwing: GeocodeError.noResults) }
+            else { firstContinuation?.resume(returning: value) }
             firstContinuation = nil
         }
     }
@@ -626,6 +629,8 @@ struct LocationProviderTests {
             return ""
         }
 
+        func callCount() -> Int { calls }
+
         func finish() { release?.resume(returning: "Old"); release = nil }
     }
 
@@ -637,16 +642,16 @@ struct LocationProviderTests {
             hasher: MockHasher(mode: .success(sampleH3Cell)), nowProvider: { now })
         await provider.send(update: makeUpdate(lat: 39, lon: -104, timestamp: now.addingTimeInterval(-10), accuracy: 25))
         #expect(await waitUntilLocationSnapshot(timeout: .seconds(1)) {
-            await provider.snapshot()?.placemarkSummary == ""
+            await gate.callCount() == 1
         })
-        let enrichment = Task { await provider.ensurePlacemark(for: .init(latitude: 39, longitude: -104)) }
+        let original = try #require(await provider.snapshot())
+        let enrichment = Task { await provider.ensurePlacemark(for: original) }
         var started = gate.started.makeAsyncIterator()
         _ = await started.next()
         await provider.send(update: makeUpdate(lat: 41, lon: -106, timestamp: now, accuracy: 25, forceAcceptance: true))
         await gate.finish()
         let enriched = await enrichment.value
-        #expect(enriched.timestamp == now)
-        #expect(enriched.coordinates.latitude == 41)
+        #expect(enriched == original)
         #expect(await provider.snapshot()?.timestamp == now)
         #expect(await provider.snapshot()?.coordinates.latitude == 41)
     }
@@ -2635,24 +2640,25 @@ struct LocationProviderTests {
         let coord = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
 
         await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude, timestamp: Date(), accuracy: 50))
-        let snap = await provider.ensurePlacemark(for: coord, timeout: 1)
+        let observation = try #require(await provider.snapshot())
+        let snap = await provider.ensurePlacemark(for: observation, timeout: 1)
         #expect(snap.placemarkSummary == "Denver, CO")
     }
 
     @Test("ensurePlacemark returns last snapshot when geocoding fails")
     func ensurePlacemark_returnsLastSnapshotOnFailure() async throws {
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)))
-        let coord = CLLocationCoordinate2D(latitude: 39.0, longitude: -104.0)
         let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
 
-        let snap = await provider.ensurePlacemark(for: coord, timeout: 1)
+        let observation = try #require(await provider.snapshot())
+        let snap = await provider.ensurePlacemark(for: observation, timeout: 1)
         #expect(snap.timestamp == t0)
         #expect(snap.placemarkSummary == nil)
     }
 
     @Test("ensurePlacemark falls back when timeout elapses")
-    func ensurePlacemark_timesOutAndFallsBack() async {
+    func ensurePlacemark_timesOutAndFallsBack() async throws {
         let provider = LocationProvider(
             geocoder: MockGeocoder(mode: .delay(seconds: 10.0, then: .success("Late City")))
         )
@@ -2660,21 +2666,24 @@ struct LocationProviderTests {
 
         await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude,
                                               timestamp: Date(), accuracy: 50))
-        let snap = await provider.ensurePlacemark(for: coord, timeout: 0.1)
-        #expect(snap.placemarkSummary == nil)
+        let observation = try #require(await provider.snapshot())
+        let snap = await provider.ensurePlacemark(for: observation, timeout: 0.1)
+        #expect(snap == observation)
+        #expect(await provider.snapshot() == observation)
     }
 
     @Test("placemark requests cannot replace accepted coordinates or observation time")
     func ensurePlacemark_preservesAcceptedObservation() async throws {
-        let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Yukon, OK")))
+        let provider = LocationProvider(geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)))
         let t0 = Date(timeIntervalSince1970: 1_000)
         await provider.send(update: makeUpdate(lat: 39, lon: -104, timestamp: t0, accuracy: 50))
-        let snap = await provider.ensurePlacemark(
-            for: CLLocationCoordinate2D(latitude: 35.506, longitude: -97.762), timeout: 1
-        )
-        #expect(snap.coordinates.latitude == 39)
+        let original = try #require(await provider.snapshot())
+        let unrelated = LocationSnapshot(coordinates: .init(latitude: 35.506, longitude: -97.762),
+                                         timestamp: t0, accuracy: 50, placemarkSummary: nil, h3Cell: sampleH3Cell)
+        let snap = await provider.ensurePlacemark(for: unrelated, timeout: 1)
+        #expect(snap == unrelated)
+        #expect(await provider.snapshot() == original)
         #expect(snap.timestamp == t0)
-        #expect(await provider.snapshot() == snap)
     }
 
     @Test("ensurePlacemark preserves timestamp when coordinate does not change")
@@ -2685,10 +2694,13 @@ struct LocationProviderTests {
 
         await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude, timestamp: t0, accuracy: 50))
 
-        let snap = await provider.ensurePlacemark(for: coord, timeout: 1)
+        let observation = try #require(await provider.snapshot())
+        let snap = await provider.ensurePlacemark(for: observation, timeout: 1)
         #expect(snap.coordinates.latitude == coord.latitude)
         #expect(snap.coordinates.longitude == coord.longitude)
         #expect(snap.timestamp == t0)
+        #expect(snap.accuracy == observation.accuracy)
+        #expect(snap.h3Cell == observation.h3Cell)
         #expect(snap.placemarkSummary == "Bennett, CO")
     }
 
@@ -2712,7 +2724,7 @@ struct LocationProviderTests {
             nowProvider: { timestamp }
         )
 
-        let resolved = await provider.ensurePlacemark(for: coord, timeout: 1)
+        let resolved = await provider.ensurePlacemark(for: snapshot, timeout: 1)
 
         #expect(resolved == snapshot)
         #expect(cache.saveCount == 0)
@@ -2752,7 +2764,7 @@ struct LocationProviderTests {
         #expect(accepted.coordinates.longitude == coordB.longitude)
         #expect(accepted.placemarkSummary == nil)
 
-        let resolved = await provider.ensurePlacemark(for: coordB, timeout: 1)
+        let resolved = await provider.ensurePlacemark(for: accepted, timeout: 1)
         #expect(resolved.placemarkSummary == "B City")
         #expect(await geocoder.callCountValue() == 2)
 
@@ -2783,7 +2795,8 @@ struct LocationProviderTests {
         let coord = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
         await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude,
                                               timestamp: Date(timeIntervalSince1970: 2_000), accuracy: 50))
-        let seeded = await provider.ensurePlacemark(for: coord, timeout: 1)
+        let observation = try #require(await provider.snapshot())
+        let seeded = await provider.ensurePlacemark(for: observation, timeout: 1)
 
         let stream = await provider.updates()
         var iterator = stream.makeAsyncIterator()
@@ -2855,14 +2868,37 @@ struct LocationProviderTests {
         #expect(final.accuracy == 20)
     }
 
+    @Test("completed background enrichment preserves cached display on empty response or failure",
+          arguments: ["", "   ", "failure"])
+    func backgroundEnrichment_preservesCachedDisplay(response: String) async throws {
+        let original = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                        timestamp: Date(), accuracy: 25,
+                                        placemarkSummary: "Cached City", h3Cell: sampleH3Cell)
+        let cache = MockSnapshotCache(storedSnapshot: original)
+        let geocoder = RacingGeocoder()
+        let provider = LocationProvider(geocoder: geocoder, hasher: MockHasher(mode: .success(sampleH3Cell)),
+                                        snapshotCache: cache)
+        let enrichment = Task { await provider.updatePlacemarkIfNeeded(for: original) }
+        #expect(await waitUntilLocationSnapshot { await geocoder.hasStarted() })
+        await geocoder.resolveFirst(with: response, fails: response == "failure")
+        await enrichment.value
+        #expect(await provider.snapshot() == original)
+        #expect(cache.storedSnapshot == original)
+        #expect(cache.saveCount == 0)
+    }
+
     @Test("late geocode completion does not regress snapshot recency")
     func lateGeocodeCompletion_doesNotRegressSnapshotRecency() async throws {
         let geocoder = RacingGeocoder()
-        let provider = LocationProvider(geocoder: geocoder)
         let t0 = Date().addingTimeInterval(-120)
         let t1 = t0.addingTimeInterval(70)
-
-        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
+        let original = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                        timestamp: t0, accuracy: 50, placemarkSummary: nil, h3Cell: sampleH3Cell)
+        let cache = MockSnapshotCache(storedSnapshot: original)
+        let provider = LocationProvider(geocoder: geocoder, hasher: MockHasher(mode: .success(sampleH3Cell)),
+                                        snapshotCache: cache)
+        let enrichment = Task { await provider.updatePlacemarkIfNeeded(for: original) }
+        #expect(await waitUntilLocationSnapshot { await geocoder.hasStarted() })
 
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t1, accuracy: 50))
 
@@ -2881,18 +2917,12 @@ struct LocationProviderTests {
 
         await geocoder.resolveFirst(with: "Old City")
 
-        let finalReady = await waitUntilLocationSnapshot(timeout: .seconds(1)) {
-            if let snapshot = await provider.snapshot() {
-                snapshot.timestamp == t1 && snapshot.placemarkSummary == "Latest City"
-            } else {
-                false
-            }
-        }
-        #expect(finalReady == true)
+        await enrichment.value
 
         let final = try #require(await provider.snapshot())
         #expect(final.timestamp == t1)
         #expect(final.placemarkSummary == "Latest City")
+        #expect(cache.storedSnapshot == final)
     }
 }
 

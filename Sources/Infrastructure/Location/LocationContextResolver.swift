@@ -186,7 +186,7 @@ actor LocationContextResolver: LocationContextResolving {
         }
 
         let enrichedSnapshot = await locationProvider.ensurePlacemark(
-            for: snapshot.coordinates,
+            for: snapshot,
             timeout: placemarkTimeout
         )
 

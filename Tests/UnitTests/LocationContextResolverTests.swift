@@ -53,6 +53,27 @@ struct LocationContextResolverTests {
         }
     }
 
+    private actor MovementGeocoder: LocationGeocoding {
+        private var continuation: CheckedContinuation<String, any Error>?
+        private var started = false
+
+        func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+            if coord.latitude != 35.2226 { return "New City" }
+            return try await withCheckedThrowingContinuation {
+                continuation = $0
+                started = true
+            }
+        }
+
+        func hasStarted() -> Bool { started }
+
+        func finish(fails: Bool) {
+            if fails { continuation?.resume(throwing: TestError.geocodeFailed) }
+            else { continuation?.resume(returning: "Norman, OK") }
+            continuation = nil
+        }
+    }
+
     private struct TestHasher: LocationHashing {
         let h3Cell: Int64?
 
@@ -216,6 +237,53 @@ struct LocationContextResolverTests {
                 """.utf8
             )
         }
+    }
+
+    @Test("late enrichment keeps context and NWS metadata tied to the requested observation", arguments: [false, true])
+    func movedObservationDuringEnrichment(fails: Bool) async throws {
+        let original = LocationSnapshot(coordinates: .init(latitude: 35.2226, longitude: -97.4395),
+                                        timestamp: Date().addingTimeInterval(-10), accuracy: 15,
+                                        placemarkSummary: nil, h3Cell: sampleH3Cell)
+        let geocoder = MovementGeocoder()
+        let provider = LocationProvider(geocoder: geocoder, hasher: TestHasher(h3Cell: sampleH3Cell),
+                                        snapshotCache: MockSnapshotCache(storedSnapshot: original))
+        let gridProvider = GridPointProvider(client: ResolverNwsClient(
+            pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
+            countyName: "Oklahoma County", fireZoneName: "Central Oklahoma"), repo: NwsMetadataRepo())
+        let resolver = LocationContextResolver(locationClient: makeLocationClient(provider: provider),
+            locationProvider: provider, gridPointProvider: gridProvider,
+            authorizationStatusProvider: { .authorizedWhenInUse }, authorizationRequester: { _ in },
+            refreshCurrentLocation: { _ in false })
+        let resolution = Task { try await resolver.resolveContext(from: original) }
+        #expect(await waitUntil { await geocoder.hasStarted() })
+        await provider.send(update: .init(coordinates: .init(latitude: 40, longitude: -105),
+                                         timestamp: Date(), accuracy: 25, forceAcceptance: true))
+        #expect(await waitUntil { await provider.snapshot()?.placemarkSummary == "New City" })
+        let newer = try #require(await provider.snapshot())
+        await geocoder.finish(fails: fails)
+        let context = try await resolution.value
+        #expect(context.snapshot == original)
+        #expect(context.grid.latitude == original.coordinates.latitude)
+        #expect(context.grid.longitude == original.coordinates.longitude)
+        #expect(await provider.snapshot() == newer)
+    }
+
+    @Test("cached placemark identity cannot replace a supplied observation's provenance")
+    func cachedMetadataPreservesObservationIdentity() async throws {
+        let original = LocationSnapshot(coordinates: .init(latitude: 35.2226, longitude: -97.4395),
+                                        timestamp: Date().addingTimeInterval(-10), accuracy: 15,
+                                        placemarkSummary: "Cached City", h3Cell: sampleH3Cell)
+        let provider = LocationProvider(geocoder: TestGeocoder(result: .failure(.geocodeFailed)),
+            hasher: TestHasher(h3Cell: sampleH3Cell), snapshotCache: MockSnapshotCache(storedSnapshot: original))
+        let newer = LocationSnapshot(coordinates: original.coordinates, timestamp: Date(), accuracy: 20,
+                                     placemarkSummary: "Newer City", h3Cell: sampleH3Cell)
+        await provider.send(update: .init(coordinates: newer.coordinates, timestamp: newer.timestamp,
+                                         accuracy: newer.accuracy, forceAcceptance: true))
+        let enriched = await provider.ensurePlacemark(for: original)
+        #expect(enriched == original)
+        let current = try #require(await provider.snapshot())
+        #expect(current.hasSameObservation(as: newer))
+        #expect(current.placemarkSummary == "Cached City")
     }
 
     @Test("resolves county and fire-zone labels concurrently")
