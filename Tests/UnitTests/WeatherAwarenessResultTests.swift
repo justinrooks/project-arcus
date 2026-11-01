@@ -180,7 +180,7 @@ struct WeatherAwarenessResultTests {
         #expect(assessment(await file.read(now: now))?.location.projectionKey == HomeProjection.projectionKey(for: first))
         let session = LocationSession(
             locationClient: .init(snapshot: { nil }, updates: { AsyncStream { $0.finish() } }),
-            locationManager: LocationManager(onUpdate: { _ in }),
+            locationManager: LocationManager(onUpdate: { _ in .accepted }),
             locationContextResolver: AwarenessLocationResolver(context: second),
             locationUploadCoordinator: NoOpLocationUploadCoordinator(), retentionCoordinator: retention,
             onContextPublished: { await home.publishAcceptedAwareness() }

@@ -561,6 +561,96 @@ struct LocationProviderTests {
         )
     }
 
+    @Test("invalid and out-of-order fixes preserve accepted evidence", arguments: [false, true])
+    func send_validatesBeforeForce(force: Bool) async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success(sampleH3Cell)), nowProvider: { now }
+        )
+        let initial = makeUpdate(lat: 39, lon: -104, timestamp: now, accuracy: 25)
+        #expect(await provider.send(update: initial) == .accepted)
+        for (lat, accuracy, timestamp) in [
+            (91.0, 25.0, now), (Double.nan, 25.0, now),
+            (39.0, -1.0, now), (39.0, 0.0, now), (39.0, Double.nan, now), (39.0, Double.infinity, now),
+            (39.0, 25.0, now.addingTimeInterval(1)),
+            (39.0, 25.0, now.addingTimeInterval(-1))
+        ] {
+            #expect(await provider.send(update: makeUpdate(
+                lat: lat, lon: -104, timestamp: timestamp, accuracy: accuracy,
+                forceAcceptance: force
+            )) == .rejected)
+        }
+        #expect(await provider.send(update: initial) == .redundant)
+        #expect(await provider.snapshot()?.timestamp == now)
+    }
+
+    private struct MovementFailureHasher: LocationHashing {
+        let cell: Int64
+
+        func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64 {
+            guard coord.latitude == 39, coord.longitude == -104 else { throw GeocodeError.noResults }
+            return cell
+        }
+    }
+
+    @Test("H3 failure after movement cannot reuse a previous cell")
+    func send_rejectsUnresolvableMovement() async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let cached = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                      timestamp: now.addingTimeInterval(-10), accuracy: 25,
+                                      placemarkSummary: nil, h3Cell: sampleH3Cell)
+        let provider = LocationProvider(
+            hasher: MovementFailureHasher(cell: sampleH3Cell),
+            snapshotCache: MockSnapshotCache(storedSnapshot: cached), nowProvider: { now }
+        )
+        #expect(await provider.send(update: makeUpdate(
+            lat: 40, lon: -105, timestamp: now, accuracy: 25, forceAcceptance: true
+        )) == .rejected)
+        #expect(await provider.snapshot() == cached)
+    }
+
+    private actor PlacemarkGate: LocationGeocoding {
+        private var calls = 0
+        private var release: CheckedContinuation<String, Never>?
+        let started: AsyncStream<Void>
+        private let signal: AsyncStream<Void>.Continuation
+
+        init() { (started, signal) = AsyncStream.makeStream() }
+
+        func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+            calls += 1
+            if calls == 2 {
+                return await withCheckedContinuation { release = $0; signal.yield(()) }
+            }
+            return ""
+        }
+
+        func finish() { release?.resume(returning: "Old"); release = nil }
+    }
+
+    @Test("suspended placemark enrichment preserves newer accepted evidence")
+    func ensurePlacemark_preservesNewerEvidenceDuringOverlap() async throws {
+        let gate = PlacemarkGate()
+        let now = Date(timeIntervalSince1970: 10_000)
+        let provider = LocationProvider(geocoder: gate,
+            hasher: MockHasher(mode: .success(sampleH3Cell)), nowProvider: { now })
+        await provider.send(update: makeUpdate(lat: 39, lon: -104, timestamp: now.addingTimeInterval(-10), accuracy: 25))
+        #expect(await waitUntilLocationSnapshot(timeout: .seconds(1)) {
+            await provider.snapshot()?.placemarkSummary == ""
+        })
+        let enrichment = Task { await provider.ensurePlacemark(for: .init(latitude: 39, longitude: -104)) }
+        var started = gate.started.makeAsyncIterator()
+        _ = await started.next()
+        await provider.send(update: makeUpdate(lat: 41, lon: -106, timestamp: now, accuracy: 25, forceAcceptance: true))
+        await gate.finish()
+        let enriched = await enrichment.value
+        #expect(enriched.timestamp == now)
+        #expect(enriched.coordinates.latitude == 41)
+        #expect(await provider.snapshot()?.timestamp == now)
+        #expect(await provider.snapshot()?.coordinates.latitude == 41)
+    }
+
     @Test("snapshot is nil before any updates")
     func snapshot_isNilInitially() async {
         let provider = LocationProvider()
@@ -579,7 +669,8 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: cached)
-        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+        let provider = LocationProvider(hasher: MockHasher(mode: .success(sampleH3Cell)),
+                                        snapshotCache: cache, nowProvider: { now })
         
         let snapshot = try #require(await provider.snapshot())
         #expect(snapshot.coordinates.latitude == cached.coordinates.latitude)
@@ -587,6 +678,35 @@ struct LocationProviderTests {
         #expect(snapshot.timestamp == now)
         #expect(snapshot.placemarkSummary == "Oklahoma City, OK")
         #expect(snapshot.h3Cell == sampleH3Cell)
+    }
+
+    @Test("recent cache must satisfy accepted accuracy and spatial identity",
+          arguments: [0, 1, 2, 3, 4, 5, 6, 7])
+    func snapshot_rejectsInvalidCachedEvidence(scenario: Int) async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let cached = LocationSnapshot(
+            coordinates: .init(latitude: scenario == 6 ? 91 : 39, longitude: -104),
+            timestamp: now.addingTimeInterval(-30),
+            accuracy: [25, 0, -1, Double.nan, Double.infinity, 150, 25, 25][scenario],
+            placemarkSummary: "Cached", h3Cell: scenario == 7 ? nil : sampleH3Cell
+        )
+        // Scenario 0 reproduces legacy coordinates paired with a previous location's cell.
+        let hasher = MockHasher(mode: .success(scenario == 0 ? sampleH3Cell + 1 : sampleH3Cell))
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let provider = LocationProvider(hasher: hasher, snapshotCache: cache, nowProvider: { now })
+        #expect(await provider.snapshot() == nil)
+        #expect(cache.saveCount == 0)
+        #expect(cache.storedSnapshot?.timestamp == cached.timestamp)
+    }
+
+    @Test("cache restoration fails closed when H3 derivation fails")
+    func snapshot_rejectsCacheOnHashFailure() async {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let cached = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                      timestamp: now, accuracy: 25, placemarkSummary: nil, h3Cell: sampleH3Cell)
+        let provider = LocationProvider(hasher: MockHasher(mode: .failure(GeocodeError.noResults)),
+            snapshotCache: MockSnapshotCache(storedSnapshot: cached), nowProvider: { now })
+        #expect(await provider.snapshot() == nil)
     }
 
     @Test("snapshot ignores stale cached snapshot at startup")
@@ -601,7 +721,8 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: cached)
-        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+        let provider = LocationProvider(hasher: MockHasher(mode: .success(sampleH3Cell)),
+                                        snapshotCache: cache, nowProvider: { now })
 
         let snapshot = await provider.snapshot()
         #expect(snapshot == nil)
@@ -702,7 +823,7 @@ struct LocationProviderTests {
         let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
-            locationManager: LocationManager(onUpdate: { _ in }),
+            locationManager: LocationManager(onUpdate: { _ in .accepted }),
             locationContextResolver: UnavailableContextResolver(), locationUploadCoordinator: pusher
         )
         await session.drainPendingLocationUploads()
@@ -2441,7 +2562,7 @@ struct LocationProviderTests {
     @Test("send suppresses rapid updates inside minSeconds window")
     func send_suppressesBurstingUpdates() async throws {
         let provider = LocationProvider()
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
 
         let t1 = t0.addingTimeInterval(1)
@@ -2457,7 +2578,7 @@ struct LocationProviderTests {
     @Test("send accepts update after maxSilenceSeconds even without movement")
     func send_acceptsAfterMaxSilence() async throws {
         let provider = LocationProvider()
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
 
         let t1 = t0.addingTimeInterval(70)
@@ -2471,7 +2592,7 @@ struct LocationProviderTests {
     @Test("send accepts movement beyond distance threshold")
     func send_acceptsLargeMovement() async throws {
         let provider = LocationProvider()
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 0.0, lon: 0.0, timestamp: t0, accuracy: 50))
 
         let t1 = t0.addingTimeInterval(10)
@@ -2488,7 +2609,7 @@ struct LocationProviderTests {
     @Test("updates stream yields last snapshot then subsequent accepted updates")
     func updates_streamYieldsSnapshots() async throws {
         let provider = LocationProvider()
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 40.0, lon: -105.0, timestamp: t0, accuracy: 50))
 
         let stream = await provider.updates()
@@ -2513,6 +2634,7 @@ struct LocationProviderTests {
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Denver, CO")))
         let coord = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
 
+        await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude, timestamp: Date(), accuracy: 50))
         let snap = await provider.ensurePlacemark(for: coord, timeout: 1)
         #expect(snap.placemarkSummary == "Denver, CO")
     }
@@ -2521,7 +2643,7 @@ struct LocationProviderTests {
     func ensurePlacemark_returnsLastSnapshotOnFailure() async throws {
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)))
         let coord = CLLocationCoordinate2D(latitude: 39.0, longitude: -104.0)
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
 
         let snap = await provider.ensurePlacemark(for: coord, timeout: 1)
@@ -2536,29 +2658,23 @@ struct LocationProviderTests {
         )
         let coord = CLLocationCoordinate2D(latitude: 39.0, longitude: -104.0)
 
+        await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude,
+                                              timestamp: Date(), accuracy: 50))
         let snap = await provider.ensurePlacemark(for: coord, timeout: 0.1)
         #expect(snap.placemarkSummary == nil)
     }
 
-    @Test("ensurePlacemark aligns snapshot to requested coordinates and refreshes timestamp when coordinate changes")
-    func ensurePlacemark_alignsCoordinatesAndRefreshesTimestampOnCoordinateChange() async throws {
+    @Test("placemark requests cannot replace accepted coordinates or observation time")
+    func ensurePlacemark_preservesAcceptedObservation() async throws {
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Yukon, OK")))
         let t0 = Date(timeIntervalSince1970: 1_000)
-
-        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
-
-        let requested = CLLocationCoordinate2D(latitude: 35.506, longitude: -97.762)
-        let snap = await provider.ensurePlacemark(for: requested, timeout: 1)
-
-        #expect(snap.coordinates.latitude == requested.latitude)
-        #expect(snap.coordinates.longitude == requested.longitude)
-        #expect(snap.timestamp > t0)
-        #expect(snap.placemarkSummary == "Yukon, OK")
-
-        let stored = try #require(await provider.snapshot())
-        #expect(stored.coordinates.latitude == requested.latitude)
-        #expect(stored.coordinates.longitude == requested.longitude)
-        #expect(stored.timestamp == snap.timestamp)
+        await provider.send(update: makeUpdate(lat: 39, lon: -104, timestamp: t0, accuracy: 50))
+        let snap = await provider.ensurePlacemark(
+            for: CLLocationCoordinate2D(latitude: 35.506, longitude: -97.762), timeout: 1
+        )
+        #expect(snap.coordinates.latitude == 39)
+        #expect(snap.timestamp == t0)
+        #expect(await provider.snapshot() == snap)
     }
 
     @Test("ensurePlacemark preserves timestamp when coordinate does not change")
@@ -2649,7 +2765,7 @@ struct LocationProviderTests {
         let stream = await provider.updates()
         var iterator = stream.makeAsyncIterator()
 
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 40.0, lon: -105.0, timestamp: t0, accuracy: 50))
 
         let first = await iterator.next()
@@ -2665,6 +2781,8 @@ struct LocationProviderTests {
     func updatePlacemark_noChangeWhenSameSummary() async throws {
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Denver, CO")))
         let coord = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        await provider.send(update: makeUpdate(lat: coord.latitude, lon: coord.longitude,
+                                              timestamp: Date(timeIntervalSince1970: 2_000), accuracy: 50))
         let seeded = await provider.ensurePlacemark(for: coord, timeout: 1)
 
         let stream = await provider.updates()
@@ -2694,7 +2812,7 @@ struct LocationProviderTests {
     @Test("updatePlacemarkIfNeeded ignores geocoding failures")
     func updatePlacemark_handlesFailure() async throws {
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)))
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         await provider.send(update: makeUpdate(lat: 40.0, lon: -105.0, timestamp: t0, accuracy: 50))
 
         let snapshotReady = await waitUntilLocationSnapshot(timeout: .seconds(1)) {
@@ -2709,7 +2827,7 @@ struct LocationProviderTests {
         #expect(snap?.placemarkSummary == nil)
     }
 
-    @Test("forced update is ignored when it duplicates a recent accepted snapshot")
+    @Test("newer forced same-cell evidence refreshes the observation")
     func send_skipsRedundantForcedUpdate() async throws {
         let provider = LocationProvider(
             geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
@@ -2732,14 +2850,16 @@ struct LocationProviderTests {
         )
 
         let final = try #require(await provider.snapshot())
-        #expect(final == first)
+        #expect(final.timestamp == t1)
+        #expect(final.h3Cell == first.h3Cell)
+        #expect(final.accuracy == 20)
     }
 
     @Test("late geocode completion does not regress snapshot recency")
     func lateGeocodeCompletion_doesNotRegressSnapshotRecency() async throws {
         let geocoder = RacingGeocoder()
         let provider = LocationProvider(geocoder: geocoder)
-        let t0 = Date()
+        let t0 = Date().addingTimeInterval(-120)
         let t1 = t0.addingTimeInterval(70)
 
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
@@ -2846,7 +2966,7 @@ extension LocationProviderTests {
         )
         let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
         let session = LocationSession(locationClient: makeLocationClient(provider: provider),
-            locationManager: LocationManager(onUpdate: { _ in }), locationContextResolver: UnavailableContextResolver(),
+            locationManager: LocationManager(onUpdate: { _ in .accepted }), locationContextResolver: UnavailableContextResolver(),
             locationUploadCoordinator: pusher)
         let older = session.captureNotificationPreferenceChange(enabled: !finalEnabled)
         let newer = session.captureNotificationPreferenceChange(enabled: finalEnabled)
