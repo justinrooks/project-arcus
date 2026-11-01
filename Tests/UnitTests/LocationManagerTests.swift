@@ -298,6 +298,123 @@ struct LocationManagerTests {
 
 @Suite("LocationSession")
 struct LocationSessionTests {
+    @MainActor private final class PresenceClock {
+        var now = Date()
+    }
+
+    private actor RecordingPresence: LocationPresenceEnqueuing {
+        var observations: [(LocationSnapshot, LocationUploadSource, LocationUploadReason)] = []
+        var succeeds = true
+        func enqueuePresence(_ observation: LocationSnapshot, source: LocationUploadSource,
+                             reason: LocationUploadReason) async -> Bool {
+            observations.append((observation, source, reason))
+            return succeeds
+        }
+        func setSuccess(_ value: Bool) { succeeds = value }
+        func count() -> Int { observations.count }
+        func recorded() -> [(LocationSnapshot, LocationUploadSource, LocationUploadReason)] { observations }
+    }
+
+    @MainActor
+    @Test("presence proceeds while context is blocked, with bounded freshness and reactivation", arguments: [false, true])
+    func independentForegroundPresence(contextFails: Bool) async throws {
+        let clock = PresenceClock()
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { nil }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in .accepted }
+        )
+        let resolver = ControlledResolver()
+        let presence = RecordingPresence()
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: resolver, locationUploadCoordinator: uploader,
+                                      presenceEnqueuer: presence, presenceNow: { clock.now })
+        session.handleScenePhaseChange(.active)
+        session.startupState = .failed("location-timeout")
+        var subscription = subscribed.stream.makeAsyncIterator()
+        _ = await subscription.next()
+        subscribed.continuation.finish()
+        let first = durableContext(timestamp: clock.now)
+        updates.continuation.yield(first.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        try #require(await waitUntilAsync { await presence.count() == 1 })
+        // Home is still blocked; newer same-cell callbacks do not enqueue every capture.
+        clock.now.addTimeInterval(10)
+        let redundant = durableContext(timestamp: clock.now)
+        updates.continuation.yield(redundant.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == redundant.snapshot })
+        #expect(await presence.count() == 1)
+        clock.now.addTimeInterval(300)
+        let refreshed = durableContext(timestamp: clock.now)
+        updates.continuation.yield(refreshed.snapshot)
+        try #require(await waitUntilAsync { await presence.count() == 2 })
+        session.handleScenePhaseChange(.inactive)
+        clock.now.addTimeInterval(1)
+        let moved = durableContext(timestamp: clock.now, h3Cell: 2)
+        updates.continuation.yield(moved.snapshot)
+        try #require(await waitUntilAsync { session.currentSnapshot == moved.snapshot })
+        #expect(await presence.count() == 2)
+        session.handleScenePhaseChange(.active)
+        try #require(await waitUntilAsync { await presence.count() == 3 })
+        let oldID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: oldID, with: contextFails ? .failure(.locationTimeout) : .success(first))
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let newID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: newID, with: .success(moved))
+        try #require(await waitUntilAsync { session.currentContext == moved && session.startupState == .ready })
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+        let intents = await presence.recorded()
+        #expect(intents.map { $0.0 } == [first.snapshot, refreshed.snapshot, moved.snapshot])
+        #expect(intents.allSatisfy { $0.1 == .foregroundLocationChange && $0.2 == .locationChanged })
+    }
+
+    @MainActor
+    @Test("failed presence admission retries on reactivation after bounded backoff")
+    func failedPresenceAdmissionRetries() async throws {
+        let clock = PresenceClock()
+        let snapshot = durableContext(timestamp: clock.now).snapshot
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { snapshot }, updates: {
+            subscribed.continuation.yield(())
+            return AsyncStream { $0.finish() }
+        })
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in .accepted }
+        )
+        let presence = RecordingPresence()
+        await presence.setSuccess(false)
+        let session = LocationSession(locationClient: client, locationManager: manager,
+                                      locationContextResolver: StubResolver(context: nil, error: .locationTimeout),
+                                      locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+                                      presenceEnqueuer: presence, presenceNow: { clock.now })
+        session.handleScenePhaseChange(.active)
+        var subscription = subscribed.stream.makeAsyncIterator()
+        _ = await subscription.next()
+        subscribed.continuation.finish()
+        try #require(await waitUntilAsync { await presence.count() == 1 })
+        session.handleScenePhaseChange(.inactive)
+        session.handleScenePhaseChange(.active)
+        #expect(await presence.count() == 1)
+        await presence.setSuccess(true)
+        clock.now.addTimeInterval(30)
+        session.handleScenePhaseChange(.inactive)
+        session.handleScenePhaseChange(.active)
+        // Repeat the external trigger until the observable retry completes; no assumption about task turns.
+        try #require(await waitUntilAsync {
+            session.handleScenePhaseChange(.active)
+            return await presence.count() == 2
+        })
+    }
+
     private func durableContext(
         timestamp: Date,
         accuracy: Double = 20,
