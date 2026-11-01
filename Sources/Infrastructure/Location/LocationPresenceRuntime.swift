@@ -79,9 +79,7 @@ final class BackgroundPresenceDelivery {
 
     static func run(
         begin: @MainActor (@escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier = { expire in
-            UIApplication.shared.beginBackgroundTask(withName: "Location presence") {
-                Task { @MainActor in expire() }
-            }
+            UIApplication.shared.beginBackgroundTask(withName: "Location presence", expirationHandler: expire)
         },
         end: @escaping @MainActor (UIBackgroundTaskIdentifier) -> Void = { UIApplication.shared.endBackgroundTask($0) },
         operation: @escaping @Sendable () async -> LocationAcceptance

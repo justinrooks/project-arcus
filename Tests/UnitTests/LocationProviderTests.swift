@@ -1189,6 +1189,7 @@ struct LocationProviderTests {
         let first = makeUpdate(lat: 39, lon: -104, timestamp: now.addingTimeInterval(-120), accuracy: 25)
         let newest = makeUpdate(lat: 39, lon: -104, timestamp: now, accuracy: 25)
         let grant = ManualBackgroundGrant()
+        let workCancelled = Mutex(false)
         let (weatherStarted, started) = AsyncStream<Void>.makeStream()
         let (weatherGate, _) = AsyncStream<Void>.makeStream()
         let delivery = Task {
@@ -1201,9 +1202,13 @@ struct LocationProviderTests {
                 #expect(persisted.count == 1)
                 #expect(persisted.first?.source == .backgroundLocationChange)
                 async let transport: Void = pusher.drainPendingUploads()
-                started.yield(())
                 // Represents the discretionary handler remaining active during another delivery.
-                for await _ in weatherGate { }
+                await withTaskCancellationHandler {
+                    started.yield(()) // The cancellation handler is installed before the test expires the grant.
+                    for await _ in weatherGate { }
+                } onCancel: {
+                    workCancelled.withLock { $0 = true }
+                }
                 await transport
                 return accepted
             }
@@ -1215,7 +1220,14 @@ struct LocationProviderTests {
             newest, provider: provider, enqueuer: enqueuer, now: now
         )
         #expect(accepted == .accepted)
-        if expire { grant.expiration?() } else { delivery.cancel() }
+        if expire {
+            grant.expiration?()
+            // No actor turn or suspension may intervene between expiration and cleanup.
+            #expect(workCancelled.withLock { $0 })
+            #expect(grant.ended == 1)
+        } else {
+            delivery.cancel()
+        }
         await uploader.unblock()
         #expect(await delivery.value == .rejected)
         #expect(grant.ended == 1)
@@ -1231,6 +1243,19 @@ struct LocationProviderTests {
         await restored.drainPendingUploads()
         #expect(await restoredUploads.uploadedPayloads().map(\.capturedAt) == [newest.timestamp])
         #expect(await reopenedStore.loadPendingRequests().isEmpty)
+    }
+
+    @Test("background grant normal completion ends exactly once")
+    @MainActor
+    func backgroundPresenceNormalCompletionEndsOnce() async {
+        let grant = ManualBackgroundGrant()
+        let result = await BackgroundPresenceDelivery.run(begin: grant.begin, end: grant.end) { .accepted }
+        #expect(result == .accepted)
+        #expect(grant.ended == 1)
+        // A late/repeated expiration must not end a completed assertion again.
+        grant.expiration?()
+        grant.expiration?()
+        #expect(grant.ended == 1)
     }
 
     private struct UnavailableContextResolver: LocationContextResolving {
