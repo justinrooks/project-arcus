@@ -327,6 +327,7 @@ final class Dependencies: Sendable {
     static func live(
         arcusReachabilityTracker: any ArcusSignalReachabilityReporting = NoOpArcusSignalReachabilityReporter()
     ) throws -> Dependencies {
+        let locationRuntime = LocationPresenceRuntime.shared
         let logger = Logger.appDependencies
         let appRefreshID = liveAppRefreshID
         let isUITestStaticHome = ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
@@ -392,22 +393,11 @@ final class Dependencies: Sendable {
         let airQualityClient = AirQualityHTTPClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()
 
-        let snapshotUploader = HTTPLocationSnapshotUploader(
-            baseURL: arcusBaseURL, http: httpClient, protocolVersion: .geographyInvalidatingV4
-        )
-        let preferenceUploader = HTTPDevicePreferenceSyncUploader(baseURL: arcusBaseURL, http: httpClient)
-        let locationUploadCoordinator = LocationSnapshotPusher(
-            locationUploader: snapshotUploader,
-            preferenceUploader: preferenceUploader
-        )
-        logger.info("Location snapshot push enabled host=\(arcusBaseURL.host ?? "unknown", privacy: .public)")
-        
-        // Location
-        let locationProvider = LocationProvider(snapshotCache: LocationSnapshotCache())
-        let sink: LocationSink = { [locationProvider] update in await locationProvider.send(update: update) }
-        let locationManager = LocationManager(onUpdate: sink)
-        logger.info("LocationManager configured")
-        
+        // The same location authority survives weather-store startup failure and relaunch.
+        let locationUploadCoordinator = locationRuntime.pusher
+        let locationProvider = locationRuntime.provider
+        let locationManager = locationRuntime.manager
+
         // Create our data layer repos
         let outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)
         let mesoRepo       = MesoRepo(modelContainer: container)

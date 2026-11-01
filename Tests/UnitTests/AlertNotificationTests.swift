@@ -191,8 +191,8 @@ struct AlertNotificationTests {
         #expect(message.subtitle == "For your area")
     }
 
-    @Test("background location change waits for unified ingestion before sending a alert notification")
-    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async {
+    @Test("background location change waits for ingestion and respects cancellation", arguments: [false, true])
+    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification(cancel: Bool) async {
         let sender = RecordingSender()
         let watchEngine = WatchEngine(
             rule: WatchRule(),
@@ -223,7 +223,7 @@ struct AlertNotificationTests {
             )
         )
 
-        async let handleLocationChange = handler.handleLocationChange()
+        let handleLocationChange = Task { await handler.handleLocationChange() }
 
         let requestStarted = await waitUntil(timeout: .seconds(5)) {
             await coordinator.requestCount() == 1
@@ -235,10 +235,11 @@ struct AlertNotificationTests {
         #expect(requests.count == 1)
         #expect(requests.first?.trigger == .backgroundLocationChange)
 
+        if cancel { handleLocationChange.cancel() }
         await gate.open()
-        await handleLocationChange
+        await handleLocationChange.value
 
-        #expect((await sender.sent()).count == 1)
+        #expect((await sender.sent()).count == (cancel ? 0 : 1))
     }
 
     @Test("background location change skips ingestion when persistent storage is unavailable")

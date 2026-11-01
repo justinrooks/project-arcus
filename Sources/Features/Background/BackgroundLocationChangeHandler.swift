@@ -32,6 +32,7 @@ actor BackgroundLocationChangeHandler {
     }
 
     func handleLocationChange() async {
+        guard !Task.isCancelled else { return }
         guard await allowsBackgroundIngestion() else {
             logger.error("Skipping background location-change ingestion because persistent storage is unavailable")
             return
@@ -56,6 +57,7 @@ actor BackgroundLocationChangeHandler {
                     locationContext: nil,
                     remoteAlertContext: nil
                 )
+                try Task.checkCancellation()
                 guard let locationSnapshot = snapshot.locationSnapshot else {
                     logger.notice("Skipping background location-change watch evaluation because no location snapshot was returned")
                     return
@@ -71,12 +73,16 @@ actor BackgroundLocationChangeHandler {
                     alerts: snapshot.alerts
                 )
 
+                try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
+                try Task.checkCancellation()
                 _ = await riskChangeEngine.run(
                     change: snapshot.riskProfileChange,
                     isEnabled: settings.riskChangeNotificationsEnabled,
                     activeLocationKey: snapshot.riskComparisonLocationKey
                 )
+            } catch is CancellationError {
+                // Expiration stops discretionary notification work; presence is already retained.
             } catch {
                 logger.error(
                     "Failed to execute background location-change ingestion: \(error.localizedDescription, privacy: .public)"
@@ -85,7 +91,11 @@ actor BackgroundLocationChangeHandler {
         }
 
         activeTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         activeTask = nil
     }
 }
