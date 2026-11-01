@@ -377,7 +377,7 @@ extension InstallationEnrollmentTests {
             requestedAt: Date(timeIntervalSince1970: 1000), isSubscribed: true, authorizationState: "always",
             apnsToken: "token", operation: .preferenceSync, mesoNotificationsEnabled: true
         )
-        await queue.savePendingRequests([request])
+        try await queue.savePendingRequests([request])
         let store = EnrollmentMemoryStore()
         let http = EnrollmentHTTPClient(mismatchedIdentity ? [] : [-1, 200, 202])
         func reopened() -> LocationSnapshotPusher {
