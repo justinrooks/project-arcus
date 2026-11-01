@@ -41,11 +41,13 @@ protocol PendingLocationUploadDraining: Sendable {
 
 /// Presence admission needs accepted observation evidence, independently of weather context.
 protocol LocationPresenceEnqueuing: Sendable {
+    /// True when the intent is durably retained (possibly superseded) or already acknowledged.
+    @discardableResult
     func enqueuePresence(
         _ observation: LocationSnapshot,
         source: LocationUploadSource,
         reason: LocationUploadReason
-    ) async
+    ) async -> Bool
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
@@ -119,11 +121,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private var queue: [QueuedUpload] = []
     private var isProcessing = false
     private var lastObservedConsent: DeviceConsentSnapshotV3?
-    private var lastUploadBySemanticKey: [DeduplicationKey: Date] = [:]
+    private var lastUploadBySemanticKey: [DeduplicationKey: (uploadedAt: Date, capturedAt: Date?)] = [:]
     private var pendingByCoalescingKey: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var queuedOrActiveCoalescingKeys: Set<PendingCoalescingKey> = []
+    private var activeRequests: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var preparedKeys: [PendingCoalescingKey: DeduplicationKey] = [:]
     private var hasLoadedPersistedPending = false
+    private var newestCaptureByCoalescingKey: [PendingCoalescingKey: Date] = [:]
+    private var pendingLoad: Task<[PersistedLocationUploadRequest], Never>?
+    private var pendingSave: Task<Bool, Never>?
     // An opt-out may restrict lagging defaults. An opt-in requires confirmation
     // from the setting provider: asynchronous callbacks can arrive out of order.
     private var subscriptionOverride: (value: Bool, baseline: Bool)?
@@ -183,16 +189,17 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         reason: LocationUploadReason,
         forceUpload: Bool = false
     ) async {
-        await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason, forceUpload: forceUpload)
+        _ = await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason, forceUpload: forceUpload)
     }
 
+    @discardableResult
     func enqueuePresence(
         _ observation: LocationSnapshot,
         source: LocationUploadSource,
         reason: LocationUploadReason
-    ) async {
-        guard let context = PersistedLocationContext(observation: observation, now: nowProvider()) else { return }
-        await enqueueLocation(context, source: source, reason: reason, forceUpload: false)
+    ) async -> Bool {
+        guard let context = PersistedLocationContext(observation: observation, now: nowProvider()) else { return false }
+        return await enqueueLocation(context, source: source, reason: reason, forceUpload: false)
     }
 
     private func enqueueLocation(
@@ -200,7 +207,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         source: LocationUploadSource,
         reason: LocationUploadReason,
         forceUpload: Bool
-    ) async {
+    ) async -> Bool {
         logger.info(
             "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
         )
@@ -209,7 +216,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             logger.notice(
                 "Location upload request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
-            return
+            return false
         }
 
         await ensurePersistedPendingLoaded()
@@ -218,7 +225,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             try await preferenceUploader.reconcileConsent(installationId: installationId)
         } catch {
             logger.error("Consent persistence unavailable; device sync deferred")
-            return
+            return false
         }
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let isSubscribed = currentSubscription()
@@ -226,7 +233,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         let now = nowProvider()
         let mesoNotificationsEnabled = mesoNotificationEnabledProvider()
         observeConsent(subscribed: isSubscribed, authorization: authorizationStatus)
-        let persisted = PersistedLocationUploadRequest(
+        var persisted = PersistedLocationUploadRequest(
             source: source,
             reason: reason,
             forceUpload: forceUpload,
@@ -253,19 +260,23 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             authorizationState: Self.authorizationName(for: authorizationStatus),
             forceUpload: forceUpload
         )
-        if shouldDedupeRequest(for: dedupeKey, now: now) {
+        if shouldDedupeRequest(for: dedupeKey, now: now, capturedAt: context.capturedAt) {
             logger.notice(
                 "Location upload request deduped source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
-            return
+            return true
         }
         let coalescingKey = coalescingKey(for: persisted)
-        if pendingByCoalescingKey[coalescingKey] == nil {
-            logger.debug(
-                "Location upload request persisted persistReason=queued source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
-            )
-            await upsertPending(persisted)
+        if let newest = newestCaptureByCoalescingKey[coalescingKey], newest > context.capturedAt {
+            return await persistPendingState()
         }
+        newestCaptureByCoalescingKey[coalescingKey] = context.capturedAt
+        if let existing = pendingByCoalescingKey[coalescingKey], capturedAt(of: existing) == context.capturedAt {
+            persisted = existing
+        }
+        guard await upsertPending(persisted) else { return false }
+        // Persistence suspends: a newer observation may already own this key.
+        guard pendingByCoalescingKey[coalescingKey] == persisted else { return true }
         guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
                 request: persisted,
@@ -274,10 +285,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 reason: reason,
                 source: source.rawValue
             )
-        ) else { return }
+        ) else { return true }
 
-        guard !isProcessing else { return }
+        guard !isProcessing else { return true }
         await processQueue()
+        return true
     }
 
     func acceptSubscriptionIntent(enabled: Bool) async {
@@ -319,7 +331,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         let now = nowProvider()
         let mesoNotificationsEnabled = mesoNotificationEnabledProvider()
         observeConsent(subscribed: isSubscribed, authorization: authorizationStatus)
-        let persisted = PersistedLocationUploadRequest(
+        var persisted = PersistedLocationUploadRequest(
             source: source,
             reason: requestReason,
             forceUpload: forceUpload,
@@ -354,8 +366,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             logger.debug(
                 "Preference sync request persisted persistReason=queued source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
             )
-            await upsertPending(persisted)
+            guard await upsertPending(persisted) else { return }
         }
+        if let retained = pendingByCoalescingKey[coalescingKey] { persisted = retained }
         guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
                 request: persisted,
@@ -391,7 +404,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 authorizationState: pending.authorizationState,
                 forceUpload: pending.forceUpload
             )
-            if consentMatchesRequest(pending), shouldDedupeRequest(for: dedupeKey, now: now) {
+            if consentMatchesRequest(pending),
+               shouldDedupeRequest(for: dedupeKey, now: now, capturedAt: capturedAt(of: pending)) {
                 dedupedCount += 1
                 pendingByCoalescingKey.removeValue(forKey: coalescingKey(for: pending))
                 await persistPendingState()
@@ -455,7 +469,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 authorizationState: pending.authorizationState,
                 forceUpload: pending.forceUpload
             )
-            if consentMatchesRequest(pending), shouldDedupeRequest(for: dedupeKey, now: now) {
+            if consentMatchesRequest(pending),
+               shouldDedupeRequest(for: dedupeKey, now: now, capturedAt: capturedAt(of: pending)) {
                 pendingByCoalescingKey.removeValue(forKey: coalescingKey)
                 await persistPendingState()
                 continue
@@ -475,12 +490,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 preparedKeys.removeValue(forKey: coalescingKey)
             }
 
+            activeRequests[workItem.coalescingKey] = workItem.request
+            defer { activeRequests.removeValue(forKey: workItem.coalescingKey) }
             let outcome = await uploadWithRetry(workItem, deadline: budget.deadline)
             if outcome != .pending {
                 if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
-                    lastUploadBySemanticKey[semanticDedupeKey] = nowProvider()
+                    lastUploadBySemanticKey[semanticDedupeKey] = (nowProvider(), capturedAt(of: workItem.request))
                 }
-                if !queue.contains(where: { $0.coalescingKey == coalescingKey }) {
+                if pendingByCoalescingKey[coalescingKey] == workItem.request,
+                   !queue.contains(where: { $0.coalescingKey == coalescingKey }) {
                     pendingByCoalescingKey.removeValue(forKey: coalescingKey)
                 }
                 await persistPendingState()
@@ -496,10 +514,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         !Task.isCancelled && ContinuousClock().now < deadline
     }
 
-    private func shouldDedupeRequest(for key: DeduplicationKey, now: Date) -> Bool {
+    private func shouldDedupeRequest(for key: DeduplicationKey, now: Date, capturedAt: Date? = nil) -> Bool {
         guard dedupeWindowSeconds > 0 else { return false }
-        guard let lastUploadAt = lastUploadBySemanticKey[key] else { return false }
-        return now.timeIntervalSince(lastUploadAt) <= dedupeWindowSeconds
+        guard let last = lastUploadBySemanticKey[key], last.capturedAt == capturedAt else { return false }
+        return now.timeIntervalSince(last.uploadedAt) <= dedupeWindowSeconds
     }
 
     private nonisolated static func authorizationName(for status: CLAuthorizationStatus) -> String {
@@ -541,15 +559,18 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 queuedOrActiveCoalescingKeys.remove(workItem.coalescingKey)
                 preparedKeys.removeValue(forKey: workItem.coalescingKey)
             }
+            activeRequests[workItem.coalescingKey] = workItem.request
+            defer { activeRequests.removeValue(forKey: workItem.coalescingKey) }
             let outcome = await uploadWithRetry(workItem)
             if outcome != .pending {
                 logger.notice(
                     "Location upload work completed source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
                 if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
-                    lastUploadBySemanticKey[semanticDedupeKey] = nowProvider()
+                    lastUploadBySemanticKey[semanticDedupeKey] = (nowProvider(), capturedAt(of: workItem.request))
                 }
-                if !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) {
+                if pendingByCoalescingKey[workItem.coalescingKey] == workItem.request,
+                   !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) {
                     pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
                 }
                 await persistPendingState()
@@ -566,10 +587,20 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     }
 
     private func enqueueIfNotQueuedOrActive(_ workItem: QueuedUpload) -> Bool {
+        if let index = queue.firstIndex(where: { $0.coalescingKey == workItem.coalescingKey }),
+           capturedAt(of: workItem.request) != nil {
+            queue[index] = workItem
+            return true
+        }
         let inserted = queuedOrActiveCoalescingKeys.insert(workItem.coalescingKey).inserted
         if !inserted {
             // A replay may have prepared different consent from its historical key.
             // Keep one durable follow-up when current intent differs from the active transfer.
+            if let active = activeRequests[workItem.coalescingKey],
+               let old = capturedAt(of: active), let new = capturedAt(of: workItem.request), new > old {
+                queue.append(workItem)
+                return true
+            }
             guard let prepared = preparedKeys[workItem.coalescingKey],
                   prepared != workItem.semanticDedupeKey,
                   !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) else { return false }
@@ -727,6 +758,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     ) async throws -> LocationSnapshotPushPayload {
         let osVersion = await osVersionProvider()
         try checkTransfer(deadline: deadline)
+        guard pendingByCoalescingKey[coalescingKey(for: request)] == request else {
+            throw TransferSuppressed.obsolete
+        }
         let authorization = authorizationStatusProvider()
         observeConsent(subscribed: currentSubscription(), authorization: authorization)
         guard locationUploadEnabledProvider(),
@@ -838,25 +872,54 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         )
     }
 
+    private func capturedAt(of request: PersistedLocationUploadRequest) -> Date? {
+        if case .locationSnapshot(let context) = request.operation { return context.capturedAt }
+        return nil
+    }
+
     private func ensurePersistedPendingLoaded() async {
-        guard hasLoadedPersistedPending == false else { return }
-        hasLoadedPersistedPending = true
-        let loaded = await queueStore.loadPendingRequests()
-        // Legacy requests use the original meso default for stable queue identity.
-        // Merge collisions deterministically when loading older pending representations.
-        for request in loaded.sorted(by: { $0.requestedAt < $1.requestedAt }) {
-            pendingByCoalescingKey[coalescingKey(for: request)] = request
+        guard !hasLoadedPersistedPending else { return }
+        if pendingLoad == nil {
+            pendingLoad = Task { await queueStore.loadPendingRequests() }
         }
+        guard let pendingLoad else { return }
+        let loaded = await pendingLoad.value
+        guard !hasLoadedPersistedPending else { return }
+        for request in loaded.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+            let key = coalescingKey(for: request)
+            if let existing = pendingByCoalescingKey[key],
+               let old = capturedAt(of: existing), let new = capturedAt(of: request), old >= new { continue }
+            pendingByCoalescingKey[key] = request
+            newestCaptureByCoalescingKey[key] = capturedAt(of: request)
+        }
+        hasLoadedPersistedPending = true
+        self.pendingLoad = nil
     }
 
-    private func upsertPending(_ request: PersistedLocationUploadRequest) async {
+    @discardableResult
+    private func upsertPending(_ request: PersistedLocationUploadRequest) async -> Bool {
         pendingByCoalescingKey[coalescingKey(for: request)] = request
-        await persistPendingState()
+        return await persistPendingState()
     }
 
-    private func persistPendingState() async {
+    @discardableResult
+    private func persistPendingState() async -> Bool {
         let requests = pendingByCoalescingKey.values.sorted(by: { $0.requestedAt < $1.requestedAt })
-        await queueStore.savePendingRequests(requests)
+        let previous = pendingSave
+        let store = queueStore
+        let save = Task {
+            _ = await previous?.value
+            do {
+                try await store.savePendingRequests(requests)
+                return true
+            } catch {
+                return false
+            }
+        }
+        pendingSave = save
+        let saved = await save.value
+        if !saved { logger.error("Presence outbox persistence failed; durable enqueue unavailable") }
+        return saved
     }
 
     private func coalescingKey(for request: PersistedLocationUploadRequest) -> PendingCoalescingKey {

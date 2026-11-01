@@ -7,7 +7,7 @@ import Foundation
 
 protocol LocationUploadQueueStoring: Sendable {
     func loadPendingRequests() async -> [PersistedLocationUploadRequest]
-    func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async
+    func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async throws
 }
 
 actor UserDefaultsLocationUploadQueueStore: LocationUploadQueueStoring {
@@ -28,13 +28,12 @@ actor UserDefaultsLocationUploadQueueStore: LocationUploadQueueStoring {
         return (try? decoder.decode([PersistedLocationUploadRequest].self, from: data)) ?? []
     }
 
-    func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async {
+    func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async throws {
         if requests.isEmpty {
             defaults.removeObject(forKey: key)
             return
         }
-        if let data = try? encoder.encode(requests) {
-            defaults.set(data, forKey: key)
-        }
+        let data = try encoder.encode(requests)
+        defaults.set(data, forKey: key)
     }
 }

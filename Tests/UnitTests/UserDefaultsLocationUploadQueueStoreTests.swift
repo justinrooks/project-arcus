@@ -7,7 +7,7 @@ import ArcusCore
 @Suite("UserDefaultsLocationUploadQueueStore")
 struct UserDefaultsLocationUploadQueueStoreTests {
     @Test("round-trips durable operations and clears an empty queue")
-    func saveLoadAndClear_roundTripsDurableOperations() async {
+    func saveLoadAndClear_roundTripsDurableOperations() async throws {
         let suiteName = "UserDefaultsLocationUploadQueueStoreTests.\(UUID().uuidString)"
         let key = "pending-requests"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -74,12 +74,12 @@ struct UserDefaultsLocationUploadQueueStoreTests {
         ]
 
         let store = UserDefaultsLocationUploadQueueStore(suiteName: suiteName, key: key)
-        await store.savePendingRequests(requests)
+        try await store.savePendingRequests(requests)
 
         let reinitializedStore = UserDefaultsLocationUploadQueueStore(suiteName: suiteName, key: key)
         #expect(await reinitializedStore.loadPendingRequests() == requests)
 
-        await reinitializedStore.savePendingRequests([])
+        try await reinitializedStore.savePendingRequests([])
         let clearedStore = UserDefaultsLocationUploadQueueStore(suiteName: suiteName, key: key)
         #expect(await clearedStore.loadPendingRequests().isEmpty)
     }
