@@ -39,6 +39,15 @@ protocol PendingLocationUploadDraining: Sendable {
     func drainPendingUploads(using budget: PendingLocationUploadDrainBudget) async -> PendingLocationUploadDrainOutcome
 }
 
+/// Presence admission needs accepted observation evidence, independently of weather context.
+protocol LocationPresenceEnqueuing: Sendable {
+    func enqueuePresence(
+        _ observation: LocationSnapshot,
+        source: LocationUploadSource,
+        reason: LocationUploadReason
+    ) async
+}
+
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
     func acceptSubscriptionIntent(enabled: Bool) async
     func enqueue(
@@ -79,7 +88,7 @@ enum LocationPushError: Error {
     case presenceNotAccepted
 }
 
-actor LocationSnapshotPusher: LocationUploadCoordinating {
+actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueuing {
     typealias APNsTokenProvider = @Sendable () -> String
     typealias InstallationIDProvider = @Sendable () async -> String
     typealias SubscriptionStatusProvider = @Sendable () -> Bool
@@ -174,6 +183,24 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         reason: LocationUploadReason,
         forceUpload: Bool = false
     ) async {
+        await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason, forceUpload: forceUpload)
+    }
+
+    func enqueuePresence(
+        _ observation: LocationSnapshot,
+        source: LocationUploadSource,
+        reason: LocationUploadReason
+    ) async {
+        guard let context = PersistedLocationContext(observation: observation, now: nowProvider()) else { return }
+        await enqueueLocation(context, source: source, reason: reason, forceUpload: false)
+    }
+
+    private func enqueueLocation(
+        _ context: PersistedLocationContext,
+        source: LocationUploadSource,
+        reason: LocationUploadReason,
+        forceUpload: Bool
+    ) async {
         logger.info(
             "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
         )
@@ -208,7 +235,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             isSubscribed: isSubscribed,
             authorizationState: Self.authorizationName(for: authorizationStatus),
             apnsToken: apnsToken,
-            operation: .locationSnapshot(context: PersistedLocationContext(context)),
+            operation: .locationSnapshot(context: context),
             mesoNotificationsEnabled: mesoNotificationsEnabled
         )
 
@@ -217,9 +244,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             apnsToken: apnsToken,
             operation: .locationSnapshot(
                 h3Cell: context.h3Cell,
-                county: context.grid.countyCode,
-                fireZone: context.grid.fireZone,
-                forecastZone: context.grid.forecastZone
+                county: context.county,
+                fireZone: context.fireZone,
+                forecastZone: context.forecastZone
             ),
             isSubscribed: isSubscribed,
             mesoNotificationsEnabled: persisted.mesoNotificationsEnabled,

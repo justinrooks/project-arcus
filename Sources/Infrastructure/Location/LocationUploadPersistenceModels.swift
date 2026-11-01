@@ -5,6 +5,7 @@
 
 import Foundation
 import ArcusCore
+import CoreLocation
 
 struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
     let source: LocationUploadSource
@@ -158,6 +159,24 @@ struct PersistedLocationContext: Sendable, Codable, Equatable {
     let forecastZone: String?
     let countyLabel: String?
     let fireZoneLabel: String?
+
+    /// Reuse the existing queue representation without retaining coordinates or inventing region metadata.
+    init?(observation: LocationSnapshot, now: Date) {
+        guard CLLocationCoordinate2DIsValid(observation.coordinates),
+              observation.accuracy.isFinite, observation.accuracy > 0,
+              observation.timestamp.timeIntervalSince1970.isFinite, observation.timestamp <= now,
+              let cell = observation.h3Cell,
+              let derivedCell = try? SwiftyH3Hasher().h3Cell(for: observation.coordinates),
+              cell == derivedCell else { return nil }
+        capturedAt = observation.timestamp
+        horizontalAccuracyMeters = observation.accuracy
+        h3Cell = cell
+        county = nil
+        fireZone = nil
+        forecastZone = nil
+        countyLabel = nil
+        fireZoneLabel = nil
+    }
 
     init(_ context: LocationContext) {
         self.capturedAt = context.snapshot.timestamp

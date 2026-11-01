@@ -1,4 +1,5 @@
 import ArcusCore
+import CoreLocation
 import Foundation
 import Synchronization
 import Testing
@@ -16,6 +17,65 @@ func isolatedConsentStore(
 @Suite("Installation consent revisions")
 struct InstallationConsentTests {
     let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+
+    @Test("minimal presence uses authenticated V3 admission and honors revocation", arguments: [false, true])
+    func minimalPresence_authenticatedTransport(revokeDuringAdmission: Bool) async throws {
+        let suite = "minimal-presence-http-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let sharing = Mutex(true)
+        let store = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                  locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .whenInUse)
+        }, markerExists: { false }, createMarker: {})
+        let http = ConsentHTTP()
+        if revokeDuringAdmission { await http.pauseFirst() }
+        let base = URL(string: "https://arcus.example.com")!
+        let now = Date(timeIntervalSince1970: 10_000)
+        let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        let snapshot = LocationSnapshot(coordinates: coordinates, timestamp: now.addingTimeInterval(-30),
+            accuracy: 25, placemarkSummary: nil, h3Cell: try SwiftyH3Hasher().h3Cell(for: coordinates))
+        let pusher = LocationSnapshotPusher(
+            locationUploader: HTTPLocationSnapshotUploader(baseURL: base, http: http,
+                enrollment: enrolledTestCoordinator(), consent: store),
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http,
+                enrollment: enrolledTestCoordinator(), consent: store),
+            apnsTokenProvider: { "" }, installationIdProvider: { id },
+            locationUploadEnabledProvider: { sharing.withLock { $0 } },
+            authorizationStatusProvider: { .authorizedWhenInUse },
+            nowProvider: { now }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        )
+        let presence: any LocationPresenceEnqueuing = pusher
+        let upload = Task {
+            await presence.enqueuePresence(snapshot, source: .foregroundLocationChange, reason: .locationChanged)
+        }
+        if revokeDuringAdmission {
+            while await http.recorded().isEmpty { await Task.yield() }
+            sharing.withLock { $0 = false }
+            await http.release()
+        }
+        await upload.value
+        let requests = await http.recorded()
+        if revokeDuringAdmission {
+            #expect(requests.allSatisfy { $0.path == "/v3/devices/preferences" })
+            #expect(await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+                .loadPendingRequests().isEmpty)
+            return
+        }
+        #expect(requests.map(\.path) == ["/v3/devices/preferences", "/v3/devices/location-snapshots"])
+        let request = try #require(requests.last)
+        #expect(request.headers["Authorization"] == "Bearer \(String(repeating: "A", count: 43))")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let body = try #require(request.body)
+        let payload = try decoder.decode(DeviceLocationSnapshotV3Payload.self, from: body)
+        #expect(payload.capturedAt == snapshot.timestamp && payload.locationAgeSeconds == 30)
+        #expect(payload.horizontalAccuracyMeters == 25 && payload.source == .foregroundLocationChange)
+        #expect(payload.cellScheme == "h3" && payload.h3Cell == snapshot.h3Cell && payload.h3Resolution == 8)
+        #expect(payload.county == nil && payload.zone == nil && payload.fireZone == nil)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["apnsDeviceToken"] == nil && json["isSubscribed"] == nil && json["consent"] == nil)
+    }
 
     @Test("atomic revisions survive restart and change only with the four consent values")
     func revisions() async throws {
