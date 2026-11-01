@@ -204,11 +204,21 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         return await enqueueLocation(context, source: source, reason: reason, forceUpload: false)
     }
 
+    /// Retains background evidence without spending the delivery grant on transport first.
+    func retainBackgroundPresence(_ observation: LocationSnapshot) async -> Bool {
+        guard let context = PersistedLocationContext(observation: observation, now: nowProvider()) else { return false }
+        return await enqueueLocation(
+            context, source: .backgroundLocationChange, reason: .locationChanged,
+            forceUpload: false, processImmediately: false
+        )
+    }
+
     private func enqueueLocation(
         _ context: PersistedLocationContext,
         source: LocationUploadSource,
         reason: LocationUploadReason,
-        forceUpload: Bool
+        forceUpload: Bool,
+        processImmediately: Bool = true
     ) async -> Bool {
         logger.info(
             "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
@@ -290,7 +300,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             )
         ) else { return true }
 
-        guard !isProcessing else { return true }
+        guard processImmediately, !isProcessing else { return true }
         await processQueue()
         return true
     }

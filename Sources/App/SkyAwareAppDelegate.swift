@@ -37,6 +37,9 @@ final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Scene-based launches may have no launch options. Restore authorized monitoring
+        // on every launch; the foreground scene subsequently selects foreground mode.
+        LocationPresenceRuntime.shared.restoreBackgroundMonitoring()
         UNUserNotificationCenter.current().delegate = self
         application.registerForRemoteNotifications()
         return true

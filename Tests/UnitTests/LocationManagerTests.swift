@@ -12,6 +12,10 @@ struct LocationManagerTests {
         private(set) var requestWhenInUseCount = 0
         private(set) var requestAlwaysCount = 0
         private(set) var requestLocationCount = 0
+        private(set) var significantStartCount = 0
+        private(set) var significantStopCount = 0
+        override func startMonitoringSignificantLocationChanges() { significantStartCount += 1 }
+        override func stopMonitoringSignificantLocationChanges() { significantStopCount += 1 }
 
         override func requestLocation() { requestLocationCount += 1 }
 
@@ -36,6 +40,126 @@ struct LocationManagerTests {
         override func requestAlwaysAuthorization() {
             requestAlwaysCount += 1
         }
+    }
+
+    @Test(arguments: [CLAuthorizationStatus.denied, .authorizedWhenInUse]) @MainActor
+    func backgroundMonitoringRestartsAfterStopAndRespectsRevocation(revoked: CLAuthorizationStatus) {
+        let core = StubAuthorizationManager(status: .authorizedAlways)
+        let manager = LocationManager(manager: core, onUpdate: { _ in .accepted })
+        manager.updateMode(for: .background)
+        manager.stopAll()
+        manager.updateMode(for: .background)
+        #expect(core.significantStartCount == 2)
+        core.stubStatus = revoked
+        manager.updateMode(for: .inactive)
+        #expect(core.significantStopCount >= 2)
+        manager.updateMode(for: .background)
+        #expect(core.significantStartCount == 2)
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func backgroundAdmissionCompletesBeforeDiscretionaryHandler(inactive: Bool) async throws {
+        let core = StubAuthorizationManager(status: .authorizedAlways)
+        let (events, record) = AsyncStream<String>.makeStream()
+        let manager = LocationManager(
+            manager: core,
+            onUpdate: { _ in record.yield("wrong-lane"); return .rejected },
+            onBackgroundUpdate: { _ in
+                record.yield("presence-retained")
+                return .accepted
+            }
+        )
+        manager.setBackgroundLocationChangeHandler {
+            record.yield("weather")
+            record.finish()
+        }
+        manager.updateMode(for: .background)
+        if inactive { manager.updateMode(for: .inactive) }
+        manager.locationManager(core, didUpdateLocations: [
+            CLLocation(latitude: 39.75, longitude: -104.99)
+        ])
+        var iterator = events.makeAsyncIterator()
+        #expect(await iterator.next() == "presence-retained")
+        #expect(await iterator.next() == "weather")
+        manager.stopAll()
+    }
+
+    @Test @MainActor
+    func backgroundOneShotCompletesBeforeBlockedWeather() async {
+        let core = StubAuthorizationManager(status: .authorizedAlways)
+        let manager = LocationManager(manager: core, onUpdate: { _ in .accepted })
+        let (weatherGate, releaseWeather) = AsyncStream<Void>.makeStream()
+        manager.setBackgroundLocationChangeHandler { for await _ in weatherGate { } }
+        manager.updateMode(for: .background)
+        let caller = Task { await manager.refreshCurrentLocation() }
+        #expect(await waitUntil { core.requestLocationCount == 1 })
+        manager.locationManager(core, didUpdateLocations: [CLLocation(latitude: 39, longitude: -104)])
+        let accepted = await result(of: caller, sut: manager, manager: core)
+        releaseWeather.finish()
+        #expect(accepted)
+        manager.stopAll()
+    }
+
+    private actor DeliveryCounter {
+        var count = 0
+        func accept() -> LocationAcceptance { count += 1; return .accepted }
+    }
+
+    @Test(arguments: [CLAuthorizationStatus.denied, .authorizedWhenInUse]) @MainActor
+    func queuedBackgroundDeliveryRechecksAuthorization(revoked: CLAuthorizationStatus) async {
+        let core = StubAuthorizationManager(status: .authorizedAlways)
+        let delivered = DeliveryCounter()
+        let manager = LocationManager(manager: core, onUpdate: { _ in await delivered.accept() })
+        manager.updateMode(for: .background)
+        let caller = Task { await manager.refreshCurrentLocation() }
+        #expect(await waitUntil { core.requestLocationCount == 1 })
+        // The callback was queued before the authorization-change delegate updates mode.
+        core.stubStatus = revoked
+        manager.updateMode(for: .background) // Monitoring is already stopped before queued delivery.
+        manager.locationManager(core, didUpdateLocations: [CLLocation(latitude: 39, longitude: -104)])
+        #expect(await result(of: caller, sut: manager, manager: core) == false)
+        #expect(await delivered.count == 0)
+        #expect(core.requestWhenInUseCount == 0 && core.requestAlwaysCount == 0)
+        manager.stopAll()
+    }
+
+    private struct OfflineGeocoder: LocationGeocoding {
+        func reverseGeocode(_ coordinate: CLLocationCoordinate2D) async throws -> String { "Test" }
+    }
+
+    private actor PresenceRecorder: LocationPresenceEnqueuing {
+        var observations: [LocationSnapshot] = []
+        let retained: Bool
+        init(retained: Bool = true) { self.retained = retained }
+        func enqueuePresence(_ observation: LocationSnapshot, source: LocationUploadSource,
+                             reason: LocationUploadReason) -> Bool {
+            observations.append(observation)
+            return retained
+        }
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func backgroundAdmissionRejectsCachedOlderAndDuplicateEvidence(retained: Bool) async {
+        let provider = LocationProvider(geocoder: OfflineGeocoder())
+        let recorder = PresenceRecorder(retained: retained)
+        let now = Date.now
+        func update(_ seconds: TimeInterval) -> LocationUpdate {
+            .init(coordinates: .init(latitude: 39.75, longitude: -104.99),
+                  timestamp: now.addingTimeInterval(seconds), accuracy: 10)
+        }
+        let cached = await LocationPresenceRuntime.acceptBackgroundUpdate(
+            update(-3600), provider: provider, enqueuer: recorder, now: now)
+        #expect(cached == .rejected)
+        let accepted = await LocationPresenceRuntime.acceptBackgroundUpdate(
+            update(0), provider: provider, enqueuer: recorder, now: now)
+        #expect(accepted == .accepted)
+        let duplicate = await LocationPresenceRuntime.acceptBackgroundUpdate(
+            update(0), provider: provider, enqueuer: recorder, now: now)
+        #expect(duplicate == .redundant)
+        let older = await LocationPresenceRuntime.acceptBackgroundUpdate(
+            update(-60), provider: provider, enqueuer: recorder, now: now)
+        #expect(older == .rejected)
+        #expect(await recorder.observations.count == 1)
     }
 
     @MainActor

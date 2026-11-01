@@ -32,6 +32,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let authorizationOverride: CLAuthorizationStatus?
     private let logger = Logger.locationManager
     private let onUpdate: LocationSink
+    private let onBackgroundUpdate: LocationSink
+    private let drainBackgroundPresence: @Sendable () async -> Void
     private var onBackgroundLocationChange: (@Sendable () async -> Void)?
     private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus, CLAccuracyAuthorization?) -> Void)?
     private var streamTask: Task<Void, Never>?
@@ -49,6 +51,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     init(
         manager: CLLocationManager = CLLocationManager(),
         onUpdate: @escaping LocationSink,
+        onBackgroundUpdate: LocationSink? = nil,
+        drainBackgroundPresence: @escaping @Sendable () async -> Void = {},
         oneShotTimeoutSleep: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
         }
@@ -56,6 +60,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         self.manager = manager
         self.authorizationOverride = Self.authorizationOverrideFromEnvironment()
         self.onUpdate = onUpdate
+        self.onBackgroundUpdate = onBackgroundUpdate ?? onUpdate
+        self.drainBackgroundPresence = drainBackgroundPresence
         self.oneShotTimeoutSleep = oneShotTimeoutSleep
         
         super.init()
@@ -157,7 +163,14 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         lastPhase = phase
         let status = currentAuthorizationStatus()
         
-        if phase == .inactive { return }
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+            stopAll()
+            return
+        }
+        if phase == .inactive {
+            if currentMode == .background, status != .authorizedAlways { stopAll() }
+            return
+        }
         
         let desired: Mode = {
             switch (phase, status) {
@@ -191,6 +204,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     func stopAll() {
         stopForegroundStreaming()
         manager.stopMonitoringSignificantLocationChanges()
+        currentMode = .stopped
         logger.debug("Location services stopped")
     }
     
@@ -217,7 +231,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         Task { @MainActor [weak self, onUpdate] in
-            let shouldHandleBackgroundLocationChange = self?.currentMode == .background
+            // Authorization can stop monitoring before a queued background callback runs.
+            // The scene still owns the delivery's authorization requirements.
+            let shouldHandleBackgroundLocationChange = self?.lastPhase == .background || self?.currentMode == .background
             // Snapshot ownership before acceptance suspends: later callers need a later delivery.
             let waiterIDs = self.map { Array($0.awaitingRefreshLocationIDs) } ?? []
             self?.awaitingRefreshLocationIDs.removeAll()
@@ -227,15 +243,33 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 accuracy: loc.horizontalAccuracy,
                 forceAcceptance: !waiterIDs.isEmpty
             )
-            let acceptance = await onUpdate(update)
+            // Recheck authority at delivery, including callbacks queued before revocation.
+            let status = self?.currentAuthorizationStatus()
+            guard (status == .authorizedAlways || status == .authorizedWhenInUse),
+                  !shouldHandleBackgroundLocationChange || status == .authorizedAlways else {
+                self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: false)
+                return
+            }
+            let acceptance: LocationAcceptance
+            if shouldHandleBackgroundLocationChange {
+                guard status == .authorizedAlways, let self else { return }
+                acceptance = await BackgroundPresenceDelivery.run {
+                    let acceptance = await self.onBackgroundUpdate(update)
+                    await self.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: acceptance == .accepted)
+                    guard acceptance == .accepted, !Task.isCancelled else { return acceptance }
+                    async let drain: Void = self.drainBackgroundPresence()
+                    await self.onBackgroundLocationChange?()
+                    await drain
+                    return acceptance
+                }
+            } else {
+                acceptance = await onUpdate(update)
+            }
 
-            if update.forceAcceptance {
+            if update.forceAcceptance, !shouldHandleBackgroundLocationChange {
                 self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: acceptance == .accepted)
             }
 
-            if shouldHandleBackgroundLocationChange {
-                await self?.onBackgroundLocationChange?()
-            }
         }
     }
 

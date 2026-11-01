@@ -2,6 +2,7 @@ import Foundation
 import CoreLocation
 import Testing
 import Synchronization
+import UIKit
 import ArcusCore
 @testable import SkyAware
 
@@ -1112,8 +1113,8 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
-    @Test("minimal presence preserves observation evidence through durable queue reopen")
-    func minimalPresence_reopensWithoutRegionMetadata() async throws {
+    @Test("minimal presence preserves observation evidence through durable queue reopen", arguments: [false, true])
+    func minimalPresence_reopensWithoutRegionMetadata(background: Bool) async throws {
         let now = Date(timeIntervalSince1970: 10_000)
         let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
         let snapshot = LocationSnapshot(coordinates: coordinates, timestamp: now.addingTimeInterval(-45),
@@ -1126,7 +1127,16 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now }, retryDelaysSeconds: [0],
             queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
         )
-        await first.enqueuePresence(snapshot, source: .foregroundLocationChange, reason: .locationChanged)
+        if background {
+            let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Test")), nowProvider: { now })
+            let accepted = await LocationPresenceRuntime.acceptBackgroundUpdate(
+                LocationUpdate(coordinates: coordinates, timestamp: snapshot.timestamp, accuracy: snapshot.accuracy),
+                provider: provider, enqueuer: BackgroundPresenceEnqueuer(pusher: first), now: now
+            )
+            #expect(accepted == .accepted)
+        } else {
+            await first.enqueuePresence(snapshot, source: .foregroundLocationChange, reason: .locationChanged)
+        }
         let uploads = MockSnapshotUploader()
         let reopenedStore = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
         #expect(await reopenedStore.loadPendingRequests().count == 1)
@@ -1145,6 +1155,107 @@ struct LocationProviderTests {
         #expect(payload.county == nil && payload.zone == nil && payload.fireZone == nil)
         #expect(payload.countyLabel == nil && payload.fireZoneLabel == nil)
         #expect(await reopenedStore.loadPendingRequests().isEmpty)
+    }
+
+    @MainActor
+    private final class ManualBackgroundGrant {
+        var expiration: (@MainActor @Sendable () -> Void)?
+        var ended = 0
+        func begin(_ expiration: @escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier {
+            self.expiration = expiration
+            return UIBackgroundTaskIdentifier(rawValue: 1)
+        }
+        func end(_ identifier: UIBackgroundTaskIdentifier) { ended += 1 }
+    }
+
+    @Test("background grant preserves durable newest intent during blocked transport and weather",
+          arguments: [false, true])
+    @MainActor
+    func backgroundPresenceExpiresWithoutLosingIntent(expire: Bool) async throws {
+        // The production queue's ISO8601 encoding stores whole-second timestamps.
+        let now = Date(timeIntervalSince1970: 10_000)
+        let suite = "background-presence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let uploader = GateableSnapshotUploader(failFirst: true)
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
+            installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now },
+            retryDelaysSeconds: [0], queueStore: store
+        )
+        let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Test")), nowProvider: { now })
+        let enqueuer = BackgroundPresenceEnqueuer(pusher: pusher)
+        let first = makeUpdate(lat: 39, lon: -104, timestamp: now.addingTimeInterval(-120), accuracy: 25)
+        let newest = makeUpdate(lat: 39, lon: -104, timestamp: now, accuracy: 25)
+        let grant = ManualBackgroundGrant()
+        let workCancelled = Mutex(false)
+        let (weatherStarted, started) = AsyncStream<Void>.makeStream()
+        let (weatherGate, _) = AsyncStream<Void>.makeStream()
+        let delivery = Task {
+            await BackgroundPresenceDelivery.run(begin: grant.begin, end: grant.end) {
+                let accepted = await LocationPresenceRuntime.acceptBackgroundUpdate(
+                    first, provider: provider, enqueuer: enqueuer, now: now
+                )
+                #expect(accepted == .accepted)
+                let persisted = await store.loadPendingRequests()
+                #expect(persisted.count == 1)
+                #expect(persisted.first?.source == .backgroundLocationChange)
+                async let transport: Void = pusher.drainPendingUploads()
+                // Represents the discretionary handler remaining active during another delivery.
+                await withTaskCancellationHandler {
+                    started.yield(()) // The cancellation handler is installed before the test expires the grant.
+                    for await _ in weatherGate { }
+                } onCancel: {
+                    workCancelled.withLock { $0 = true }
+                }
+                await transport
+                return accepted
+            }
+        }
+        var events = weatherStarted.makeAsyncIterator()
+        await events.next()
+        await uploader.waitForFirstAttempt()
+        let accepted = await LocationPresenceRuntime.acceptBackgroundUpdate(
+            newest, provider: provider, enqueuer: enqueuer, now: now
+        )
+        #expect(accepted == .accepted)
+        if expire {
+            grant.expiration?()
+            // No actor turn or suspension may intervene between expiration and cleanup.
+            #expect(workCancelled.withLock { $0 })
+            #expect(grant.ended == 1)
+        } else {
+            delivery.cancel()
+        }
+        await uploader.unblock()
+        #expect(await delivery.value == .rejected)
+        #expect(grant.ended == 1)
+        let restoredUploads = MockSnapshotUploader()
+        let reopenedStore = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        #expect(await reopenedStore.loadPendingRequests().count == 1)
+        let restored = LocationSnapshotPusher(
+            locationUploader: restoredUploads, preferenceUploader: MockPreferenceUploader(),
+            installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now },
+            retryDelaysSeconds: [0], queueStore: reopenedStore
+        )
+        await restored.drainPendingUploads()
+        #expect(await restoredUploads.uploadedPayloads().map(\.capturedAt) == [newest.timestamp])
+        #expect(await reopenedStore.loadPendingRequests().isEmpty)
+    }
+
+    @Test("background grant normal completion ends exactly once")
+    @MainActor
+    func backgroundPresenceNormalCompletionEndsOnce() async {
+        let grant = ManualBackgroundGrant()
+        let result = await BackgroundPresenceDelivery.run(begin: grant.begin, end: grant.end) { .accepted }
+        #expect(result == .accepted)
+        #expect(grant.ended == 1)
+        // A late/repeated expiration must not end a completed assertion again.
+        grant.expiration?()
+        grant.expiration?()
+        #expect(grant.ended == 1)
     }
 
     private struct UnavailableContextResolver: LocationContextResolving {
