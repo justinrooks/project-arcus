@@ -101,7 +101,7 @@ actor LocationProvider {
         self.hasher = hasher
         self.snapshotCache = snapshotCache
         self.nowProvider = nowProvider
-        lastSnapshot = Self.restoredSnapshotIfFresh(snapshotCache.load(), nowProvider: nowProvider)
+        lastSnapshot = Self.restoredSnapshotIfFresh(snapshotCache.load(), hasher: hasher, nowProvider: nowProvider)
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
@@ -246,9 +246,16 @@ actor LocationProvider {
 
     private static func restoredSnapshotIfFresh(
         _ snapshot: LocationSnapshot?,
+        hasher: LocationHashing,
         nowProvider: @Sendable () -> Date
     ) -> LocationSnapshot? {
-        guard let snapshot else { return nil }
+        guard let snapshot,
+              CLLocationCoordinate2DIsValid(snapshot.coordinates),
+              snapshot.accuracy.isFinite, snapshot.accuracy > 0,
+              snapshot.accuracy <= LocationThrottleConfig().minAccuracy,
+              let storedCell = snapshot.h3Cell,
+              let derivedCell = try? hasher.h3Cell(for: snapshot.coordinates),
+              storedCell == derivedCell else { return nil }
 
         let age = nowProvider().timeIntervalSince(snapshot.timestamp)
         guard age >= 0, age <= Self.cachedSnapshotMaxAge else {

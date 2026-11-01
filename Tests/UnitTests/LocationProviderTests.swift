@@ -585,6 +585,15 @@ struct LocationProviderTests {
         #expect(await provider.snapshot()?.timestamp == now)
     }
 
+    private struct MovementFailureHasher: LocationHashing {
+        let cell: Int64
+
+        func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64 {
+            guard coord.latitude == 39, coord.longitude == -104 else { throw GeocodeError.noResults }
+            return cell
+        }
+    }
+
     @Test("H3 failure after movement cannot reuse a previous cell")
     func send_rejectsUnresolvableMovement() async throws {
         let now = Date(timeIntervalSince1970: 10_000)
@@ -592,7 +601,7 @@ struct LocationProviderTests {
                                       timestamp: now.addingTimeInterval(-10), accuracy: 25,
                                       placemarkSummary: nil, h3Cell: sampleH3Cell)
         let provider = LocationProvider(
-            hasher: MockHasher(mode: .failure(GeocodeError.noResults)),
+            hasher: MovementFailureHasher(cell: sampleH3Cell),
             snapshotCache: MockSnapshotCache(storedSnapshot: cached), nowProvider: { now }
         )
         #expect(await provider.send(update: makeUpdate(
@@ -660,7 +669,8 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: cached)
-        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+        let provider = LocationProvider(hasher: MockHasher(mode: .success(sampleH3Cell)),
+                                        snapshotCache: cache, nowProvider: { now })
         
         let snapshot = try #require(await provider.snapshot())
         #expect(snapshot.coordinates.latitude == cached.coordinates.latitude)
@@ -668,6 +678,35 @@ struct LocationProviderTests {
         #expect(snapshot.timestamp == now)
         #expect(snapshot.placemarkSummary == "Oklahoma City, OK")
         #expect(snapshot.h3Cell == sampleH3Cell)
+    }
+
+    @Test("recent cache must satisfy accepted accuracy and spatial identity",
+          arguments: [0, 1, 2, 3, 4, 5, 6, 7])
+    func snapshot_rejectsInvalidCachedEvidence(scenario: Int) async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let cached = LocationSnapshot(
+            coordinates: .init(latitude: scenario == 6 ? 91 : 39, longitude: -104),
+            timestamp: now.addingTimeInterval(-30),
+            accuracy: [25, 0, -1, Double.nan, Double.infinity, 150, 25, 25][scenario],
+            placemarkSummary: "Cached", h3Cell: scenario == 7 ? nil : sampleH3Cell
+        )
+        // Scenario 0 reproduces legacy coordinates paired with a previous location's cell.
+        let hasher = MockHasher(mode: .success(scenario == 0 ? sampleH3Cell + 1 : sampleH3Cell))
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let provider = LocationProvider(hasher: hasher, snapshotCache: cache, nowProvider: { now })
+        #expect(await provider.snapshot() == nil)
+        #expect(cache.saveCount == 0)
+        #expect(cache.storedSnapshot?.timestamp == cached.timestamp)
+    }
+
+    @Test("cache restoration fails closed when H3 derivation fails")
+    func snapshot_rejectsCacheOnHashFailure() async {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let cached = LocationSnapshot(coordinates: .init(latitude: 39, longitude: -104),
+                                      timestamp: now, accuracy: 25, placemarkSummary: nil, h3Cell: sampleH3Cell)
+        let provider = LocationProvider(hasher: MockHasher(mode: .failure(GeocodeError.noResults)),
+            snapshotCache: MockSnapshotCache(storedSnapshot: cached), nowProvider: { now })
+        #expect(await provider.snapshot() == nil)
     }
 
     @Test("snapshot ignores stale cached snapshot at startup")
@@ -682,7 +721,8 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: cached)
-        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+        let provider = LocationProvider(hasher: MockHasher(mode: .success(sampleH3Cell)),
+                                        snapshotCache: cache, nowProvider: { now })
 
         let snapshot = await provider.snapshot()
         #expect(snapshot == nil)
