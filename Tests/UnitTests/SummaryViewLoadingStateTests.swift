@@ -7,6 +7,39 @@ import Testing
 @Suite("Today Resolving Surface State")
 @MainActor
 struct TodayResolvingSurfaceStateTests {
+    @Test("authorized unavailable fix offers retry instead of permission instructions",
+          arguments: [CLAuthorizationStatus.authorizedAlways, .authorizedWhenInUse])
+    func authorizedFixUnavailable(status: CLAuthorizationStatus) {
+        let state = SummaryLocationUnavailableState(reliability: .init(
+            authorizationStatus: status, accuracyAuthorization: .fullAccuracy))
+        #expect(state == .fixUnavailable)
+        #expect(String(localized: state.title) == "Location Unavailable")
+        #expect(String(localized: state.actionTitle) == "Try Again")
+    }
+
+    @Test("denied and restricted access direct the user to Settings",
+          arguments: [CLAuthorizationStatus.denied, .restricted])
+    func deniedPermission(status: CLAuthorizationStatus) {
+        let state = SummaryLocationUnavailableState(reliability: .init(
+            authorizationStatus: status, accuracyAuthorization: .reducedAccuracy))
+        #expect(state == .permissionDenied)
+        #expect(String(localized: state.actionTitle) == "Open Settings")
+    }
+
+    @Test("permission not requested offers authorization and reduced accuracy offers Settings")
+    func permissionAndPrecisionActions() {
+        let initial = SummaryLocationUnavailableState(reliability: .init(
+            authorizationStatus: .notDetermined, accuracyAuthorization: nil))
+        #expect(initial == .permissionNotRequested)
+        #expect(String(localized: initial.actionTitle) == "Enable Location")
+        let reduced = SummaryLocationUnavailableState(reliability: .init(
+            authorizationStatus: .authorizedAlways, accuracyAuthorization: .reducedAccuracy))
+        #expect(reduced == .preciseLocationRequired)
+        #expect(String(localized: reduced.actionTitle) == "Open Settings")
+        #expect(SummaryLocationUnavailableState(reliability: .init(
+            authorizationStatus: .authorizedWhenInUse, accuracyAuthorization: nil)) == .fixUnavailable)
+    }
+
     @Test("no content with active refresh shows full-screen resolving")
     func showsEmptyResolving_noContentActiveRefresh() {
         #expect(
