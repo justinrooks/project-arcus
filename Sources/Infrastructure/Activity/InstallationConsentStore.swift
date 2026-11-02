@@ -52,9 +52,9 @@ actor InstallationConsentStore {
         self.now = now
         let fence = LocationEvidenceFence(suiteName: suiteName, flush: flush)
         self.evidenceFence = fence
-        // Restore with fresh evidence even if permission changed and changed back while terminated.
+        // Restart is not a permission transition: retain valid pre-launch and offline observations.
         _ = try? fence.capturePreferenceIntent()
-        _ = try? fence.reconcile(state: Self.evidenceState(settings(), accuracy()), at: now(), invalidate: true)
+        _ = try? fence.reconcile(state: Self.evidenceState(settings(), accuracy()), at: now())
     }
 
     nonisolated var hasPendingPreferenceIntent: Bool { evidenceFence.hasPendingPreferenceIntent }
@@ -304,9 +304,9 @@ private struct LocationEvidenceFence: Sendable {
             guard date.timeIntervalSince1970.isFinite else { throw InstallationConsentStore.Failure.unavailable }
             let changed = invalidate || (old?["state"] as? String) != state
             let previous = old?["cutoff"] as? Double
-            let cutoff = changed || previous == nil
-                ? max(previous ?? date.timeIntervalSince1970, date.timeIntervalSince1970)
-                : (previous ?? date.timeIntervalSince1970)
+            // No prior marker means no known invalidation. Acquisition still validates observation evidence.
+            let baseline = old != nil || invalidate ? date.timeIntervalSince1970 : Date.distantPast.timeIntervalSince1970
+            let cutoff = changed ? max(previous ?? baseline, baseline) : (previous ?? baseline)
             // Unchanged reads follow current()'s domain flush; only mutations require another disk write.
             if !changed, let previous {
                 guard flush?() ?? true else { throw InstallationConsentStore.Failure.unavailable }

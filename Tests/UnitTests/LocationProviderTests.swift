@@ -847,6 +847,59 @@ struct LocationProviderTests {
         #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [fresh.snapshot.timestamp])
     }
 
+    @Test("unchanged consent preserves eligible pre-startup and durable offline presence", arguments: ["first-launch", "relaunch", "offline"])
+    func unchangedConsentPreservesPresence(scenario: String) async throws {
+        let suite = "unchanged-consent-presence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let time = Mutex(Date(timeIntervalSince1970: 100))
+        func consentStore() -> InstallationConsentStore {
+            InstallationConsentStore(suiteName: suite, settings: {
+                .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                    locationSharingEnabled: true, locationAuthorization: .always)
+            }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { time.withLock { $0 } })
+        }
+        let http = ConsentHTTP()
+        let queue = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        func pusher(_ consent: InstallationConsentStore, uploader: any LocationSnapshotUploading) -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: uploader,
+                preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: URL(string: "https://arcus.example.com")!,
+                    http: http, enrollment: enrolledTestCoordinator(), consent: consent),
+                apnsTokenProvider: { "" }, installationIdProvider: { id },
+                subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+                accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { time.withLock { $0 } },
+                retryDelaysSeconds: [0], queueStore: queue)
+        }
+        if scenario != "first-launch" {
+            let original = consentStore()
+            if scenario == "offline" {
+                time.withLock { $0 = Date(timeIntervalSince1970: 150) }
+                await pusher(original, uploader: OfflineSnapshotUploader()).enqueue(
+                    makeContext(timestamp: Date(timeIntervalSince1970: 110)),
+                    source: .backgroundLocationChange, reason: .locationChanged)
+                #expect(await queue.loadPendingRequests().count == 1)
+            }
+        }
+        time.withLock { $0 = Date(timeIntervalSince1970: 200) }
+        let restored = consentStore()
+        let uploader = MockSnapshotUploader()
+        let delivery = pusher(restored, uploader: uploader)
+        let capturedAt = Date(timeIntervalSince1970: scenario == "offline" ? 110 : 199)
+        if scenario != "offline" {
+            let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Test location")),
+                nowProvider: { time.withLock { $0 } })
+            let accepted = await LocationPresenceRuntime.acceptBackgroundUpdate(
+                .init(coordinates: .init(latitude: 39, longitude: -104), timestamp: capturedAt, accuracy: 20),
+                provider: provider, enqueuer: BackgroundPresenceEnqueuer(pusher: delivery), now: time.withLock { $0 })
+            #expect(accepted == .accepted)
+            #expect(await queue.loadPendingRequests().count == 1)
+        }
+        await delivery.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [capturedAt])
+        #expect(await queue.loadPendingRequests().isEmpty)
+    }
+
     @Test("background drain restores preference intent captured before termination", arguments: [false, true])
     func synchronousPreferenceIntentSurvivesRelaunch(staleLocation: Bool) async throws {
         let suite = "terminated-preference-\(UUID())"

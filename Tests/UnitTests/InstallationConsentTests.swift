@@ -84,7 +84,7 @@ struct InstallationConsentTests {
         #expect(json["apnsDeviceToken"] == nil && json["isSubscribed"] == nil && json["consent"] == nil)
     }
 
-    @Test("location cutoff survives state reversals and process restoration", arguments: ["sharing", "authorization", "accuracy"])
+    @Test("location cutoff survives state reversals without advancing on unchanged restart", arguments: ["sharing", "authorization", "accuracy"])
     func locationEvidenceCutoffSurvivesReversal(kind: String) async throws {
         let suite = "evidence-cutoff-\(UUID())"
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
@@ -98,7 +98,7 @@ struct InstallationConsentTests {
                 now: { time.withLock { $0 } })
         }
         let store = reopen()
-        #expect(try await store.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 100))
+        #expect(try await store.locationEvidenceCutoff(installationId: id) == .distantPast)
         time.withLock { $0 = Date(timeIntervalSince1970: 200) }
         if kind == "accuracy" { precision.withLock { $0 = .reducedAccuracy } }
         else {
@@ -120,7 +120,16 @@ struct InstallationConsentTests {
         #expect(try store.savedLocationEvidenceCutoff() == Date(timeIntervalSince1970: 300))
         time.withLock { $0 = Date(timeIntervalSince1970: 400) }
         let restored = reopen()
-        #expect(try await restored.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 400))
+        #expect(try await restored.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 300))
+        time.withLock { $0 = Date(timeIntervalSince1970: 500) }
+        if kind == "accuracy" { precision.withLock { $0 = .reducedAccuracy } }
+        else {
+            settings.withLock { $0 = .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                locationSharingEnabled: kind != "sharing",
+                locationAuthorization: kind == "authorization" ? .denied : .always) }
+        }
+        let changed = reopen()
+        #expect(try await changed.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 500))
     }
 
     @Test("location evidence storage corruption and failed flush fail closed", arguments: [false, true])
