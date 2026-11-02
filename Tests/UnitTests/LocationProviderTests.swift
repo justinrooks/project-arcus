@@ -787,6 +787,180 @@ struct LocationProviderTests {
         #expect(await store.loadPendingRequests().isEmpty)
     }
 
+    @Test("sharing reversal suppresses prepared and reopened evidence while preferences remain deliverable", arguments: [false, true])
+    func sharingReversalDoesNotReviveEvidence(relaunch: Bool) async throws {
+        let suite = "sharing-reversal-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let sharing = Mutex(true)
+        let time = Mutex(Date(timeIntervalSince1970: 100))
+        func consentStore() -> InstallationConsentStore {
+            InstallationConsentStore(suiteName: suite, settings: {
+                .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                    locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .always)
+            }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { time.withLock { $0 } })
+        }
+        let store = consentStore()
+        let http = ConsentHTTP()
+        let uploader = MockSnapshotUploader()
+        let gate = PreparationGate()
+        func pusher(_ consent: InstallationConsentStore, block: Bool) -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: uploader,
+                preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: URL(string: "https://arcus.example.com")!,
+                    http: http, enrollment: enrolledTestCoordinator(), consent: consent),
+                apnsTokenProvider: { "token" }, installationIdProvider: { id },
+                subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
+                locationUploadEnabledProvider: { sharing.withLock { $0 } }, authorizationStatusProvider: { .authorizedAlways },
+                accuracyAuthorizationProvider: { .fullAccuracy },
+                osVersionProvider: { block ? await gate.version() : "test" },
+                nowProvider: { time.withLock { $0 } }, retryDelaysSeconds: [0],
+                queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending"))
+        }
+        let first = pusher(store, block: true)
+        time.withLock { $0 = Date(timeIntervalSince1970: 150) }
+        let old = makeContext(timestamp: Date(timeIntervalSince1970: 110))
+        let active = Task { await first.enqueue(old, source: .manualRefresh, reason: .locationChanged) }
+        while await !gate.hasStarted() { await Task.yield() }
+        time.withLock { $0 = Date(timeIntervalSince1970: 200) }
+        sharing.withLock { $0 = false }
+        first.invalidateLocationEvidence(at: time.withLock { $0 })
+        time.withLock { $0 = Date(timeIntervalSince1970: 201) }
+        sharing.withLock { $0 = true }
+        first.invalidateLocationEvidence(at: time.withLock { $0 })
+        await gate.release()
+        await active.value
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        let queue = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        #expect(await queue.loadPendingRequests().count == 1)
+        time.withLock { $0 = Date(timeIntervalSince1970: 300) }
+        let resumed = relaunch ? pusher(consentStore(), block: false) : first
+        await resumed.drainPendingUploads()
+        await resumed.enqueue(old, source: .manualRefresh, reason: .locationChanged)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await queue.loadPendingRequests().isEmpty)
+        await resumed.enqueuePreferenceSync(source: .manualRefresh, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "sharing")
+        #expect(await http.recorded().contains { $0.path == "/v3/devices/preferences" })
+        let fresh = makeContext(timestamp: Date(timeIntervalSince1970: 301))
+        time.withLock { $0 = Date(timeIntervalSince1970: 302) }
+        await resumed.enqueue(fresh, source: .manualRefresh, reason: .locationChanged)
+        #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [fresh.snapshot.timestamp])
+    }
+
+    @Test("background drain restores preference intent captured before termination", arguments: [false, true])
+    func synchronousPreferenceIntentSurvivesRelaunch(staleLocation: Bool) async throws {
+        let suite = "terminated-preference-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let sharing = Mutex(true)
+        let time = Mutex(Date(timeIntervalSince1970: 10))
+        func consentStore() -> InstallationConsentStore {
+            InstallationConsentStore(suiteName: suite, settings: {
+                .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                    locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .always)
+            }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { time.withLock { $0 } })
+        }
+        let beforeTermination = consentStore()
+        let queue = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        if staleLocation {
+            let offline = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
+                preferenceUploader: MockPreferenceUploader(), installationIdProvider: { id },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+                accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: queue)
+            await offline.enqueue(makeContext(timestamp: Date(timeIntervalSince1970: 11)),
+                source: .manualRefresh, reason: .locationChanged)
+        }
+        sharing.withLock { $0 = false }
+        time.withLock { $0 = Date(timeIntervalSince1970: 20) }
+        // Terminate here: no asynchronous preference request has been queued.
+        try beforeTermination.invalidateLocationEvidence(at: time.withLock { $0 })
+        time.withLock { $0 = Date(timeIntervalSince1970: 30) }
+        let restored = consentStore()
+        let http = ConsentHTTP()
+        let locations = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(locationUploader: locations,
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, enrollment: enrolledTestCoordinator(), consent: restored),
+            apnsTokenProvider: { "" }, installationIdProvider: { id },
+            locationUploadEnabledProvider: { false }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: queue)
+        await http.failOnce()
+        let budget = PendingLocationUploadDrainBudget(uploadQuota: 4, deadline: .now.advanced(by: .seconds(10)))
+        #expect(await pusher.drainPendingUploads(using: budget) == .remaining)
+        #expect(restored.hasPendingPreferenceIntent)
+        #expect(await queue.loadPendingRequests().count == 1)
+        await pusher.drainPendingUploads()
+        #expect(restored.hasPendingPreferenceIntent == false)
+        #expect(await queue.loadPendingRequests().isEmpty)
+        #expect(await locations.uploadedPayloads().isEmpty)
+        let requests = await http.recorded()
+        #expect(requests.count == 2 && requests.allSatisfy { $0.path == "/v3/devices/preferences" })
+        let payload = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: #require(requests.last?.body))
+        #expect(payload.consent.locationSharingEnabled == false && payload.apnsDeviceToken == nil)
+    }
+
+    @Test("preference recovery retries failed queue persistence without relaunch")
+    func preferenceRecoveryRetriesQueuePersistence() async throws {
+        let suite = "preference-save-retry-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let id = "f0465f55-f0a2-48a0-aac0-6a5c48a95891"
+        let consent = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: false, mesoNotificationsEnabled: false,
+                locationSharingEnabled: false, locationAuthorization: .denied)
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy })
+        let http = ConsentHTTP()
+        let queue = SuspendedQueueStore(failFirst: true)
+        let pusher = LocationSnapshotPusher(locationUploader: MockSnapshotUploader(),
+            preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, enrollment: enrolledTestCoordinator(), consent: consent),
+            installationIdProvider: { id }, locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .denied }, accuracyAuthorizationProvider: { .fullAccuracy },
+            retryDelaysSeconds: [0], queueStore: queue)
+        let first = Task { await pusher.drainPendingUploads() }
+        while await !queue.hasStarted() { await Task.yield() }
+        await queue.release()
+        await first.value
+        #expect(consent.hasPendingPreferenceIntent)
+        #expect(await http.recorded().isEmpty)
+        await pusher.drainPendingUploads()
+        #expect(consent.hasPendingPreferenceIntent == false)
+        #expect(await http.recorded().map(\.path) == ["/v3/devices/preferences"])
+        #expect(await queue.loadPendingRequests().isEmpty)
+    }
+
+    private actor CancellableLocationTransport: LocationSnapshotUploading {
+        private(set) var started = false
+        private(set) var cancelled = false
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            started = true
+            do { try await Task.sleep(for: .seconds(60)) }
+            catch { cancelled = Task.isCancelled; throw error }
+        }
+    }
+
+    @Test("synchronous revocation cancels an active location transport without cancelling preference sync")
+    func revocationCancelsActiveTransport() async {
+        let suite = "active-revocation-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let uploader = CancellableLocationTransport()
+        let preferences = MockPreferenceUploader()
+        let sharing = Mutex(true)
+        let pusher = LocationSnapshotPusher(locationUploader: uploader, preferenceUploader: preferences,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "install" },
+            locationUploadEnabledProvider: { sharing.withLock { $0 } }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending"))
+        let active = Task { await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationChanged) }
+        while await !uploader.started { await Task.yield() }
+        sharing.withLock { $0 = false }
+        pusher.invalidateLocationEvidence(at: .now)
+        await active.value
+        #expect(await uploader.cancelled)
+        await pusher.enqueuePreferenceSync(source: .manualRefresh, requestReason: .preferenceChanged,
+            forceUpload: true, detail: "revocation")
+        #expect(await preferences.uploadedPayloads().count == 1)
+    }
+
     @Test("accuracy downgrade suppresses pending transport after preparation suspends")
     func accuracyDowngradeDuringPreparation() async {
         let suite = "accuracy-transition-\(UUID())"
@@ -3515,7 +3689,7 @@ extension LocationProviderTests {
         let consent = InstallationConsentStore(suiteName: suite, settings: {
             .init(isSubscribed: finalEnabled, mesoNotificationsEnabled: true,
                   locationSharingEnabled: true, locationAuthorization: .always)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         #expect(try await consent.current(installationId: id).revision == 1)
         let http = ConsentHTTP()
         let pusher = LocationSnapshotPusher(

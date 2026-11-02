@@ -11,7 +11,7 @@ func isolatedConsentStore(
         locationSharingEnabled: true, locationAuthorization: .whenInUse)
 ) -> InstallationConsentStore {
     InstallationConsentStore(suiteName: suiteName, settings: { consent },
-                             markerExists: { false }, createMarker: {})
+                             markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
 }
 
 @Suite("Installation consent revisions")
@@ -26,7 +26,7 @@ struct InstallationConsentTests {
         let store = InstallationConsentStore(suiteName: suite, settings: {
             .init(isSubscribed: true, mesoNotificationsEnabled: true,
                   locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .whenInUse)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         let http = ConsentHTTP()
         let revokeDuringAdmission = outcome == "revoked"
         if revokeDuringAdmission { await http.pauseFirst() }
@@ -82,6 +82,112 @@ struct InstallationConsentTests {
         #expect(payload.county == nil && payload.zone == nil && payload.fireZone == nil)
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
         #expect(json["apnsDeviceToken"] == nil && json["isSubscribed"] == nil && json["consent"] == nil)
+    }
+
+    @Test("location cutoff survives state reversals and process restoration", arguments: ["sharing", "authorization", "accuracy"])
+    func locationEvidenceCutoffSurvivesReversal(kind: String) async throws {
+        let suite = "evidence-cutoff-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let settings = Mutex(DeviceConsentSnapshotV3(isSubscribed: true, mesoNotificationsEnabled: true,
+            locationSharingEnabled: true, locationAuthorization: .always))
+        let precision = Mutex(CLAccuracyAuthorization.fullAccuracy)
+        let time = Mutex(Date(timeIntervalSince1970: 100))
+        func reopen() -> InstallationConsentStore {
+            InstallationConsentStore(suiteName: suite, settings: { settings.withLock { $0 } },
+                markerExists: { false }, createMarker: {}, accuracy: { precision.withLock { $0 } },
+                now: { time.withLock { $0 } })
+        }
+        let store = reopen()
+        #expect(try await store.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 100))
+        time.withLock { $0 = Date(timeIntervalSince1970: 200) }
+        if kind == "accuracy" { precision.withLock { $0 = .reducedAccuracy } }
+        else {
+            settings.withLock { value in
+                value = .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                    locationSharingEnabled: kind != "sharing",
+                    locationAuthorization: kind == "authorization" ? .denied : .always)
+            }
+        }
+        try store.invalidateLocationEvidence(at: time.withLock { $0 })
+        time.withLock { $0 = Date(timeIntervalSince1970: 300) }
+        precision.withLock { $0 = .fullAccuracy }
+        settings.withLock { $0 = .init(isSubscribed: true, mesoNotificationsEnabled: true,
+            locationSharingEnabled: true, locationAuthorization: .always) }
+        // Both synchronous transitions can precede any asynchronous consent reconciliation.
+        try store.invalidateLocationEvidence(at: time.withLock { $0 })
+        #expect(try await store.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 300))
+        try store.invalidateLocationEvidence(at: Date(timeIntervalSince1970: 250))
+        #expect(try store.savedLocationEvidenceCutoff() == Date(timeIntervalSince1970: 300))
+        time.withLock { $0 = Date(timeIntervalSince1970: 400) }
+        let restored = reopen()
+        #expect(try await restored.locationEvidenceCutoff(installationId: id) == Date(timeIntervalSince1970: 400))
+    }
+
+    @Test("location evidence storage corruption and failed flush fail closed", arguments: [false, true])
+    func locationEvidencePersistenceFailsClosed(corrupt: Bool) async throws {
+        let suite = "evidence-failure-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let succeeds = Mutex(true)
+        let sharing = Mutex(true)
+        let store = InstallationConsentStore(suiteName: suite, settings: {
+            .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .always)
+        }, markerExists: { false }, createMarker: {}, flush: { succeeds.withLock { $0 } },
+            accuracy: { .fullAccuracy }, now: { Date(timeIntervalSince1970: 100) })
+        _ = try await store.current(installationId: id)
+        if corrupt {
+            UserDefaults(suiteName: suite)?.set("invalid", forKey: "locationEvidenceFence.v1")
+            sharing.withLock { $0 = false }
+        }
+        else { succeeds.withLock { $0 = false } }
+        #expect(throws: InstallationConsentStore.Failure.unavailable) {
+            try store.invalidateLocationEvidence(at: Date(timeIntervalSince1970: 200))
+        }
+        await #expect(throws: InstallationConsentStore.Failure.unavailable) {
+            try await store.locationEvidenceCutoff(installationId: id)
+        }
+        if corrupt {
+            let http = ConsentHTTP()
+            try await store.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, credential: "test")
+            let request = try #require(await http.recorded().last)
+            let payload = try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: #require(request.body))
+            #expect(payload.consent.locationSharingEnabled == false && payload.consentRevision == 2)
+            let restored = InstallationConsentStore(suiteName: suite, settings: {
+                .init(isSubscribed: true, mesoNotificationsEnabled: true,
+                    locationSharingEnabled: false, locationAuthorization: .always)
+            }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy })
+            await #expect(throws: InstallationConsentStore.Failure.unavailable) {
+                try await restored.locationEvidenceCutoff(installationId: id)
+            }
+            try await restored.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, credential: "test")
+            #expect(await http.recorded().count == 2)
+        }
+    }
+
+    @Test("same-revision acknowledgment cannot clear a newer captured preference intent")
+    func supersededPreferenceAcknowledgmentRetainsIntent() async throws {
+        let suite = "preference-ack-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = isolatedConsentStore(suiteName: suite)
+        let http = ConsentHTTP()
+        await http.pauseFirst()
+        let send = Task {
+            try await store.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+                http: http, credential: "test")
+        }
+        while await http.recorded().isEmpty { await Task.yield() }
+        try store.invalidateLocationEvidence(at: .now)
+        await http.release()
+        try await send.value
+        #expect(store.hasPendingPreferenceIntent)
+        try await store.synchronize(installationId: id, baseURL: URL(string: "https://arcus.example.com")!,
+            http: http, credential: "test")
+        #expect(store.hasPendingPreferenceIntent == false)
+        let requests = await http.recorded()
+        let payloads = try requests.map { try JSONDecoder().decode(DevicePreferencesV3Payload.self, from: #require($0.body)) }
+        #expect(payloads.map(\.consentRevision) == [1, 1])
     }
 
     @Test("atomic revisions survive restart and change only with the four consent values")
@@ -140,7 +246,7 @@ struct InstallationConsentTests {
         let store = InstallationConsentStore(suiteName: "consent-restriction-\(UUID())", settings: {
             .init(isSubscribed: enabled.withLock { $0 }, mesoNotificationsEnabled: true,
                   locationSharingEnabled: true, locationAuthorization: .always)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         await store.restrictSubscription()
         #expect(try await store.current(installationId: id).consent.isSubscribed == false)
         #expect(try await store.current(installationId: id).revision == 1)
@@ -293,7 +399,7 @@ extension InstallationConsentTests {
         let store = InstallationConsentStore(suiteName: suite, settings: {
             .init(isSubscribed: enabled.withLock { $0 }, mesoNotificationsEnabled: true,
                   locationSharingEnabled: true, locationAuthorization: .always)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         let http = ConsentHTTP()
         await http.pauseFirst()
         let base = URL(string: "https://arcus.example.com")!
@@ -349,7 +455,7 @@ extension InstallationConsentTests {
         let store = InstallationConsentStore(suiteName: suite, settings: {
             .init(isSubscribed: enabled.withLock { $0 }, mesoNotificationsEnabled: true,
                   locationSharingEnabled: true, locationAuthorization: .always)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         let http = ConsentHTTP()
         await http.pauseFirst()
         let task = Task {
@@ -418,7 +524,7 @@ extension InstallationConsentTests {
         let store = InstallationConsentStore(suiteName: suite, settings: {
             .init(isSubscribed: true, mesoNotificationsEnabled: true,
                   locationSharingEnabled: sharing.withLock { $0 }, locationAuthorization: .always)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         let http = ConsentHTTP()
         await http.pauseFirst()
         let uploader = HTTPLocationSnapshotUploader(baseURL: URL(string: "https://arcus.example.com")!,

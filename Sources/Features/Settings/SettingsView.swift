@@ -330,6 +330,7 @@ struct SettingsView: View {
 
     private func setLocationSharingPreference(_ enabled: Bool) {
         sendL8nToSignal = enabled
+        locationSession.captureLocationSharingPreferenceChange(enabled: enabled)
         handleNotificationToggle(enabled, for: "Share Approximate Location for Alerts")
         if enabled {
             Task { await locationSession.updateLocationSharingPreference(enabled: true) }

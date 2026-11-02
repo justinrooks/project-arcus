@@ -86,6 +86,7 @@ final class LocationSession: Sendable {
         self.locationUploadCoordinator = locationUploadCoordinator
         self.presenceEnqueuer = presenceEnqueuer
         self.presenceNow = presenceNow
+        self.observationNotBefore = locationUploadCoordinator.minimumLocationObservationTimestamp
         self.durableContextCache = durableContextCache
         self.retentionCoordinator = retentionCoordinator
         self.onContextPublished = onContextPublished
@@ -333,6 +334,19 @@ final class LocationSession: Sendable {
         await syncPreference(forceUpload: true, reason: "meso-notification")
     }
 
+    /// Synchronous with the Settings write; transport callbacks cannot erase an intermediate reversal.
+    func captureLocationSharingPreferenceChange(enabled: Bool) {
+        let cutoff = presenceNow()
+        locationUploadCoordinator.invalidateLocationEvidence(at: cutoff)
+        presenceAttempt = nil
+        if enabled {
+            observationNotBefore = cutoff
+            _ = beginLocationResolutionAttempt()
+            startupState = .failed("location-evidence-required")
+            scheduleAuthorizationRecoveryIfNeeded()
+        }
+    }
+
     func syncLocationSharingPreference(enabled _: Bool) async {
         await syncPreference(forceUpload: true, reason: "location-sharing")
     }
@@ -398,6 +412,9 @@ final class LocationSession: Sendable {
     }
 
     private func syncAuthorizationStatus() {
+        if observationNotBefore == .distantFuture {
+            observationNotBefore = locationUploadCoordinator.minimumLocationObservationTimestamp
+        }
         applyAuthorizationSnapshot(
             status: locationManager.authStatus,
             accuracy: locationManager.accuracyAuthorization,
@@ -433,6 +450,9 @@ final class LocationSession: Sendable {
 
         // A permission transition invalidates pending work, not the accepted Home projection.
         observationNotBefore = presenceNow()
+        if let observationNotBefore {
+            locationUploadCoordinator.invalidateLocationEvidence(at: observationNotBefore)
+        }
         presenceAttempt = nil
         let generation = beginLocationResolutionAttempt()
         if status.isLocationAuthorized == false || accuracy == .reducedAccuracy {

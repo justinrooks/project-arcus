@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import Testing
+import Synchronization
 import ArcusCore
 @testable import SkyAware
 
@@ -496,6 +497,52 @@ struct LocationSessionTests {
         #expect(await resolver.recordedPrepareCallCount() == 0)
     }
 
+    @Test @MainActor
+    func sharingCapturesFenceStaleContextAndPermitFreshSameCellRecovery() async throws {
+        let clock = PresenceClock()
+        clock.now = Date(timeIntervalSince1970: 10)
+        let old = durableContext(timestamp: Date(timeIntervalSince1970: 9))
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let client = LocationClient(snapshot: { old.snapshot }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in .accepted })
+        let resolver = ControlledResolver()
+        let uploads = StubUploadCoordinator()
+        let presence = RecordingPresence()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: uploads,
+            presenceEnqueuer: presence, presenceNow: { clock.now })
+        session.currentContext = old
+        session.startupState = .ready
+        session.captureLocationSharingPreferenceChange(enabled: false)
+        clock.now = Date(timeIntervalSince1970: 20)
+        session.captureLocationSharingPreferenceChange(enabled: true)
+        #expect(uploads.evidenceCutoffs.withLock { $0 } == [Date(timeIntervalSince1970: 10), clock.now])
+        session.handleScenePhaseChange(.active)
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        subscribed.continuation.finish()
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let pending = try #require(await resolver.pendingIDs(for: .prepare).first)
+        #expect(await resolver.lastPreparationMinimumTimestamp == clock.now)
+        await resolver.complete(id: pending, with: .success(old))
+        try #require(await waitUntilAsync { session.startupState == .failed("location-evidence-required") })
+        #expect(session.currentContext == old) // Accepted Home cache remains available for local presentation.
+        #expect(await presence.count() == 0)
+        let fresh = durableContext(timestamp: Date(timeIntervalSince1970: 21))
+        updates.continuation.yield(fresh.snapshot)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let resolution = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: resolution, with: .success(fresh))
+        try #require(await waitUntilAsync { session.startupState == .ready && session.currentContext == fresh })
+        #expect(await presence.count() == 1)
+    }
+
     @MainActor private final class PresenceClock {
         var now = Date()
     }
@@ -637,7 +684,7 @@ struct LocationSessionTests {
         let consent = InstallationConsentStore(suiteName: suite, settings: {
             .init(isSubscribed: true, mesoNotificationsEnabled: true,
                   locationSharingEnabled: true, locationAuthorization: .whenInUse)
-        }, markerExists: { false }, createMarker: {})
+        }, markerExists: { false }, createMarker: {}, accuracy: { .fullAccuracy }, now: { .distantPast })
         let http = ConsentHTTP()
         let base = URL(string: "https://arcus.example.com")!
         let queueStore = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
@@ -876,6 +923,9 @@ struct LocationSessionTests {
     }
 
     private actor StubUploadCoordinator: LocationUploadCoordinating {
+        nonisolated let evidenceCutoffs = Mutex<[Date]>([])
+        nonisolated var minimumLocationObservationTimestamp: Date? { evidenceCutoffs.withLock { $0.last } }
+        nonisolated func invalidateLocationEvidence(at date: Date) { evidenceCutoffs.withLock { $0.append(date) } }
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
         private var lastSource: LocationUploadSource?

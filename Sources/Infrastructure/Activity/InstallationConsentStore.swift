@@ -3,9 +3,10 @@ import CoreLocation
 import Foundation
 import OSLog
 import Security
+import Synchronization
 import UIKit
 
-/// Revision bookkeeping only. AppStorage and Core Location remain the consent authorities.
+/// Consent revisions and local evidence validity. AppStorage and Core Location remain the authorities.
 actor InstallationConsentStore {
     static let shared = InstallationConsentStore()
     static let recordKey = "installationConsent.v3"
@@ -21,6 +22,9 @@ actor InstallationConsentStore {
         case unavailable, identityMismatch, overflow, inconsistentAcknowledgment, consentConflictRequiresRecovery, rejected(Int)
     }
 
+    nonisolated private let evidenceFence: LocationEvidenceFence
+    private let accuracy: @Sendable () -> CLAccuracyAuthorization
+    private let now: @Sendable () -> Date
     private let defaults: UserDefaults
     private let settings: @Sendable () -> DeviceConsentSnapshotV3
     private let markerExists: @Sendable () throws -> Bool
@@ -35,13 +39,47 @@ actor InstallationConsentStore {
         settings: @escaping @Sendable () -> DeviceConsentSnapshotV3 = { InstallationConsentStore.readSettings() },
         markerExists: @escaping @Sendable () throws -> Bool = { try ConsentStateMarker.exists() },
         createMarker: @escaping @Sendable () throws -> Void = { try ConsentStateMarker.create() },
-        flush: (@Sendable () -> Bool)? = nil
+        flush: (@Sendable () -> Bool)? = nil,
+        accuracy: @escaping @Sendable () -> CLAccuracyAuthorization = { CLLocationManager().accuracyAuthorization },
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
         self.settings = settings
         self.markerExists = markerExists
         self.createMarker = createMarker
         self.flush = flush
+        self.accuracy = accuracy
+        self.now = now
+        let fence = LocationEvidenceFence(suiteName: suiteName, flush: flush)
+        self.evidenceFence = fence
+        // Restore with fresh evidence even if permission changed and changed back while terminated.
+        _ = try? fence.capturePreferenceIntent()
+        _ = try? fence.reconcile(state: Self.evidenceState(settings(), accuracy()), at: now(), invalidate: true)
+    }
+
+    nonisolated var hasPendingPreferenceIntent: Bool { evidenceFence.hasPendingPreferenceIntent }
+
+    nonisolated func savedLocationEvidenceCutoff() throws -> Date {
+        try evidenceFence.read()
+    }
+
+    nonisolated func invalidateLocationEvidence(at date: Date) throws {
+        var failure: (any Error)?
+        do { try evidenceFence.capturePreferenceIntent() } catch { failure = error }
+        do { _ = try evidenceFence.reconcile(state: Self.evidenceState(settings(), accuracy()), at: date, invalidate: true) }
+        catch { failure = error }
+        if let failure { throw failure }
+    }
+
+    func locationEvidenceCutoff(installationId: String) throws -> Date {
+        let record = try current(installationId: installationId)
+        return try evidenceFence.reconcile(state: Self.evidenceState(record.consent, accuracy()), at: now())
+    }
+
+    private nonisolated static func evidenceState(
+        _ consent: DeviceConsentSnapshotV3, _ accuracy: CLAccuracyAuthorization
+    ) -> String {
+        "\(consent.locationSharingEnabled)|\(consent.locationAuthorization.rawValue)|\(accuracy.rawValue)"
     }
 
     func restrictSubscription() {
@@ -135,6 +173,7 @@ actor InstallationConsentStore {
             try Task.checkCancellation()
             let preparedToken = try await checking()
             let record = try current(installationId: installationId)
+            let preferenceIntent = evidenceFence.pendingPreferenceIntent
             let currentToken = preparedToken ?? token ?? defaults.string(forKey: RemoteNotificationRegistrar.apnsDeviceTokenKey)
             let trimmedToken = currentToken?.trimmingCharacters(in: .whitespacesAndNewlines)
             let payload = try DevicePreferencesV3Payload(
@@ -169,6 +208,7 @@ actor InstallationConsentStore {
                 throw Failure.inconsistentAcknowledgment
             }
             guard latestOwnershipRequest == ownershipRequest else { return }
+            if let preferenceIntent { try? evidenceFence.acknowledgePreferenceIntent(preferenceIntent) }
             defaults.set(ack.serverOwnsMesoNotificationDelivery, forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey)
             return
         }
@@ -199,6 +239,89 @@ actor InstallationConsentStore {
             locationSharingEnabled: defaults?.object(forKey: "sendL8ntoSignal") as? Bool ?? true,
             locationAuthorization: authorization
         )
+    }
+}
+
+/// A primitive local marker, separate from the wire consent revision and location queue encoding.
+/// One lock orders synchronous UI captures against actor reconciliation and disk reads.
+private struct LocationEvidenceFence: Sendable {
+    private static let lock = Mutex<Void>(())
+    private static let key = "locationEvidenceFence.v1"
+    private static let preferenceKey = "pendingDevicePreferenceIntent.v1"
+    let suiteName: String
+    let flush: (@Sendable () -> Bool)?
+
+    var hasPendingPreferenceIntent: Bool {
+        Self.lock.withLock { _ in
+            (UserDefaults(suiteName: suiteName) ?? .standard).object(forKey: Self.preferenceKey) != nil
+        }
+    }
+
+    var pendingPreferenceIntent: String? {
+        Self.lock.withLock { _ in
+            (UserDefaults(suiteName: suiteName) ?? .standard).string(forKey: Self.preferenceKey)
+        }
+    }
+
+    func capturePreferenceIntent() throws {
+        try Self.lock.withLock { _ in
+            let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+            defaults.set(UUID().uuidString, forKey: Self.preferenceKey)
+            guard flush?() ?? defaults.synchronize() else { throw InstallationConsentStore.Failure.unavailable }
+        }
+    }
+
+    func acknowledgePreferenceIntent(_ token: String) throws {
+        try Self.lock.withLock { _ in
+            let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+            guard defaults.string(forKey: Self.preferenceKey) == token else { return }
+            defaults.removeObject(forKey: Self.preferenceKey)
+            guard flush?() ?? defaults.synchronize() else { throw InstallationConsentStore.Failure.unavailable }
+        }
+    }
+
+    func read() throws -> Date {
+        try Self.lock.withLock { _ in
+            let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+            guard let value = defaults.dictionary(forKey: Self.key),
+                  let cutoff = value["cutoff"] as? Double, cutoff.isFinite,
+                  value["state"] is String, flush?() ?? true else {
+                throw InstallationConsentStore.Failure.unavailable
+            }
+            return Date(timeIntervalSince1970: cutoff)
+        }
+    }
+
+    /// Explicit captures and state reconciliation share one monotonic cutoff.
+    func reconcile(state: String, at date: Date, invalidate: Bool = false) throws -> Date {
+        try Self.lock.withLock { _ in
+            let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+            let old = defaults.dictionary(forKey: Self.key)
+            if defaults.object(forKey: Self.key) != nil {
+                guard let old, let cutoff = old["cutoff"] as? Double, cutoff.isFinite,
+                      old["state"] is String else { throw InstallationConsentStore.Failure.unavailable }
+            }
+            guard date.timeIntervalSince1970.isFinite else { throw InstallationConsentStore.Failure.unavailable }
+            let changed = invalidate || (old?["state"] as? String) != state
+            let previous = old?["cutoff"] as? Double
+            let cutoff = changed || previous == nil
+                ? max(previous ?? date.timeIntervalSince1970, date.timeIntervalSince1970)
+                : (previous ?? date.timeIntervalSince1970)
+            // Unchanged reads follow current()'s domain flush; only mutations require another disk write.
+            if !changed, let previous {
+                guard flush?() ?? true else { throw InstallationConsentStore.Failure.unavailable }
+                return Date(timeIntervalSince1970: previous)
+            }
+            defaults.set(UUID().uuidString, forKey: Self.preferenceKey)
+            let value: [String: Any] = ["cutoff": cutoff, "state": state]
+            defaults.set(value, forKey: Self.key)
+            guard flush?() ?? defaults.synchronize(),
+                  defaults.dictionary(forKey: Self.key)?["cutoff"] as? Double == cutoff,
+                  defaults.dictionary(forKey: Self.key)?["state"] as? String == state else {
+                throw InstallationConsentStore.Failure.unavailable
+            }
+            return Date(timeIntervalSince1970: cutoff)
+        }
     }
 }
 

@@ -3,6 +3,10 @@ import ArcusCore
 
 protocol DevicePreferenceSyncUploading: Sendable {
     func upload(_ payload: DevicePreferenceSyncPayload) async throws
+    var hasPendingPreferenceIntent: Bool { get }
+    func savedLocationEvidenceCutoff() throws -> Date?
+    func invalidateLocationEvidence(at date: Date) throws
+    func locationEvidenceCutoff(installationId: String) async throws -> Date?
     func restrictSubscription() async
     func acceptSubscriptionIntent(installationId: String, enabled: Bool) async throws
     func reconcileConsent(installationId: String) async throws
@@ -10,6 +14,10 @@ protocol DevicePreferenceSyncUploading: Sendable {
 }
 
 extension DevicePreferenceSyncUploading {
+    var hasPendingPreferenceIntent: Bool { false }
+    func savedLocationEvidenceCutoff() throws -> Date? { nil }
+    func invalidateLocationEvidence(at date: Date) throws {}
+    func locationEvidenceCutoff(installationId: String) async throws -> Date? { nil }
     func restrictSubscription() async {}
     func acceptSubscriptionIntent(installationId: String, enabled: Bool) async throws {}
     func reconcileConsent(installationId: String) async throws {}
@@ -50,6 +58,21 @@ actor HTTPDevicePreferenceSyncUploader: DevicePreferenceSyncUploading {
         try await consent.synchronize(installationId: installationId, baseURL: baseURL,
                                       http: http, credential: credential,
                                       checking: { try await preparing().apnsDeviceToken })
+    }
+
+    nonisolated var hasPendingPreferenceIntent: Bool { consent.hasPendingPreferenceIntent }
+
+    nonisolated func savedLocationEvidenceCutoff() throws -> Date? {
+        try consent.savedLocationEvidenceCutoff()
+    }
+
+    nonisolated func invalidateLocationEvidence(at date: Date) throws {
+        try consent.invalidateLocationEvidence(at: date)
+    }
+
+    func locationEvidenceCutoff(installationId: String) async throws -> Date? {
+        try await enrollment.validateIdentity(for: installationId)
+        return try await consent.locationEvidenceCutoff(installationId: installationId)
     }
 
     func restrictSubscription() async {
