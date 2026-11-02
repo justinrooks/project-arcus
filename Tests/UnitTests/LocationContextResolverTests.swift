@@ -458,11 +458,11 @@ struct LocationContextResolverTests {
         #expect(await refreshTracker.value() == 0)
     }
 
-    @Test("requests a fresh location when the available snapshot is older than the startup reuse window")
-    func requestsFreshLocationWhenAvailableSnapshotIsOlderThanReuseWindow() async throws {
+    @Test("requests evidence newer than the reuse window or permission transition", arguments: [false, true])
+    func requestsFreshLocationWhenAvailableSnapshotIsOlderThanReuseWindow(afterTransition: Bool) async throws {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
         let refreshTracker = RefreshRequestTracker()
-        let staleTimestamp = Date().addingTimeInterval(-60)
+        let staleTimestamp = Date().addingTimeInterval(afterTransition ? -1 : -60)
         let refreshedTimestamp = Date()
         let cached = LocationSnapshot(
             coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
@@ -508,7 +508,8 @@ struct LocationContextResolverTests {
             authorizationTimeout: 0.1,
             locationTimeout: 0.5,
             maximumAcceptedLocationAge: 300,
-            placemarkTimeout: 0.1
+            placemarkTimeout: 0.1,
+            minimumObservationTimestamp: afterTransition ? refreshedTimestamp : nil
         )
 
         #expect(context.snapshot.timestamp == refreshedTimestamp)

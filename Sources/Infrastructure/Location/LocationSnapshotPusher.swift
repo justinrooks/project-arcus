@@ -8,6 +8,7 @@
 import CoreLocation
 import Foundation
 import OSLog
+import Synchronization
 import UIKit
 import ArcusCore
 
@@ -51,6 +52,8 @@ protocol LocationPresenceEnqueuing: Sendable {
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
+    var minimumLocationObservationTimestamp: Date? { get }
+    func invalidateLocationEvidence(at date: Date)
     func acceptSubscriptionIntent(enabled: Bool) async
     func enqueue(
         _ context: LocationContext,
@@ -68,6 +71,8 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 }
 
 extension LocationUploadCoordinating {
+    var minimumLocationObservationTimestamp: Date? { nil }
+    func invalidateLocationEvidence(at date: Date) {}
     func acceptSubscriptionIntent(enabled: Bool) async {}
     func enqueuePreferenceSync(
         source: LocationUploadSource,
@@ -111,6 +116,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private let mesoNotificationEnabledProvider: SubscriptionStatusProvider
     private let locationUploadEnabledProvider: LocationUploadEnabledProvider
     private let authorizationStatusProvider: AuthorizationStatusProvider
+    private let accuracyAuthorizationProvider: @Sendable () -> CLAccuracyAuthorization
     private let osVersionProvider: @Sendable () async -> String
     private let nowProvider: NowProvider
     private let retryDelaysSeconds: [UInt64]
@@ -118,9 +124,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private let queueStore: any LocationUploadQueueStoring
     private let logger = Logger.locationPushPusher
 
+    nonisolated private let locationTransfers = Mutex<[UUID: Task<Void, Error>]>([:])
+
     private var queue: [QueuedUpload] = []
     private var isProcessing = false
     private var lastObservedConsent: DeviceConsentSnapshotV3?
+    private var lastObservedEvidenceCutoff: Date?
     private var lastUploadBySemanticKey: [DeduplicationKey: (uploadedAt: Date, capturedAt: Date?)] = [:]
     private var pendingByCoalescingKey: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var queuedOrActiveCoalescingKeys: Set<PendingCoalescingKey> = []
@@ -161,6 +170,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         authorizationStatusProvider: @escaping AuthorizationStatusProvider = {
             CLLocationManager().authorizationStatus
         },
+        accuracyAuthorizationProvider: @escaping @Sendable () -> CLAccuracyAuthorization = {
+            CLLocationManager().accuracyAuthorization
+        },
         osVersionProvider: @escaping @Sendable () async -> String = { await UIDevice.current.systemVersion },
         nowProvider: @escaping NowProvider = { Date() },
         retryDelaysSeconds: [UInt64] = [0, 5, 15],
@@ -175,6 +187,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         self.subscriptionStatusProvider = subscriptionStatusProvider
         self.locationUploadEnabledProvider = locationUploadEnabledProvider
         self.authorizationStatusProvider = authorizationStatusProvider
+        self.accuracyAuthorizationProvider = accuracyAuthorizationProvider
         self.osVersionProvider = osVersionProvider
         self.nowProvider = nowProvider
         self.retryDelaysSeconds = retryDelaysSeconds
@@ -220,6 +233,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         forceUpload: Bool,
         processImmediately: Bool = true
     ) async -> Bool {
+        guard accuracyAuthorizationProvider() == .fullAccuracy,
+              context.horizontalAccuracyMeters.isFinite, context.horizontalAccuracyMeters > 0,
+              context.horizontalAccuracyMeters <= LocationThrottleConfig().minAccuracy else { return false }
         logger.info(
             "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
         )
@@ -235,6 +251,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         let installationId = await installationIdProvider()
         do {
             try await preferenceUploader.reconcileConsent(installationId: installationId)
+            if let cutoff = try await preferenceUploader.locationEvidenceCutoff(installationId: installationId),
+               context.capturedAt < cutoff { return false }
         } catch {
             logger.error("Consent persistence unavailable; device sync deferred")
             return false
@@ -305,6 +323,21 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         return true
     }
 
+    nonisolated var minimumLocationObservationTimestamp: Date? {
+        do { return try preferenceUploader.savedLocationEvidenceCutoff() }
+        catch { return .distantFuture }
+    }
+
+    nonisolated func invalidateLocationEvidence(at date: Date) {
+        // Registration and invalidation share a lock, including the durable cutoff write.
+        // A transfer either sees the new cutoff or is included in this cancellation set.
+        locationTransfers.withLock { transfers in
+            do { try preferenceUploader.invalidateLocationEvidence(at: date) }
+            catch { Logger.locationPushPusher.error("Location evidence invalidation could not be persisted") }
+            for transfer in transfers.values { transfer.cancel() }
+        }
+    }
+
     func acceptSubscriptionIntent(enabled: Bool) async {
         let installationId = await installationIdProvider()
         do {
@@ -321,6 +354,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         forceUpload: Bool,
         detail: String,
         isSubscribedOverride: Bool?
+    ) async {
+        await enqueuePreferenceSync(source: source, requestReason: requestReason, forceUpload: forceUpload,
+            detail: detail, isSubscribedOverride: isSubscribedOverride, processImmediately: true)
+    }
+
+    private func enqueuePreferenceSync(
+        source: LocationUploadSource, requestReason: LocationUploadReason, forceUpload: Bool,
+        detail: String, isSubscribedOverride: Bool?, processImmediately: Bool
     ) async {
         if isSubscribedOverride == false {
             subscriptionOverride = (false, subscriptionStatusProvider())
@@ -383,6 +424,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             guard await upsertPending(persisted) else { return }
         }
         if let retained = pendingByCoalescingKey[coalescingKey] { persisted = retained }
+        guard processImmediately else { return }
         guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
                 request: persisted,
@@ -397,7 +439,28 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         await processQueue()
     }
 
+    private func recoverPendingPreferenceIntent() async {
+        guard preferenceUploader.hasPendingPreferenceIntent else { return }
+        await ensurePersistedPendingLoaded()
+        // Saved preference requests already replay current consent. Preserve their identity/failure ordering.
+        guard !pendingByCoalescingKey.values.contains(where: {
+            if case .preferenceSync = $0.operation { return true }
+            return false
+        }) else {
+            if pendingByCoalescingKey != committedPending {
+                await waitForPendingSave()
+                _ = await persistPendingState()
+            }
+            return
+        }
+        let installationId = await installationIdProvider()
+        guard pendingByCoalescingKey.values.allSatisfy({ $0.installationId == installationId }) else { return }
+        await enqueuePreferenceSync(source: .unknown, requestReason: .preferenceChanged, forceUpload: true,
+            detail: "durable-consent-recovery", isSubscribedOverride: nil, processImmediately: false)
+    }
+
     func drainPendingUploads() async {
+        await recoverPendingPreferenceIntent()
         await ensurePersistedPendingLoaded()
 
         guard pendingSaveCount == 0 else { return }
@@ -452,10 +515,13 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     func drainPendingUploads(
         using budget: PendingLocationUploadDrainBudget
     ) async -> PendingLocationUploadDrainOutcome {
+        await recoverPendingPreferenceIntent()
         await ensurePersistedPendingLoaded()
 
         guard pendingSaveCount == 0 else { return .remaining }
-        guard !pendingByCoalescingKey.isEmpty else { return .drained }
+        guard !pendingByCoalescingKey.isEmpty else {
+            return preferenceUploader.hasPendingPreferenceIntent ? .remaining : .drained
+        }
         guard !isProcessing else { return .remaining }
         guard budget.uploadQuota > 0, shouldContinueDraining(before: budget.deadline) else {
             return .remaining
@@ -528,7 +594,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             guard shouldContinueDraining(before: budget.deadline) else { break }
         }
 
-        return pendingByCoalescingKey.isEmpty ? .drained : .remaining
+        return pendingByCoalescingKey.isEmpty && !preferenceUploader.hasPendingPreferenceIntent ? .drained : .remaining
     }
 
     private func shouldContinueDraining(before deadline: ContinuousClock.Instant) -> Bool {
@@ -675,22 +741,34 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             do {
                 switch workItem.request.operation {
                 case .locationSnapshot:
-                    do {
-                        try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
-                            try await self.checkTransfer(deadline: deadline)
-                        }) {
-                            try await self.currentLocationPayload(for: workItem.request, deadline: deadline)
+                    try await checkLocationEvidence(for: workItem.request)
+                    let transferID = UUID()
+                    let transfer = Task {
+                        do {
+                            try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
+                                try await self.checkTransfer(deadline: deadline)
+                            }) {
+                                try await self.currentLocationPayload(for: workItem.request, deadline: deadline)
+                            }
+                        } catch let error as LocationPushError {
+                            guard case .invalidResponseStatus(let status) = error,
+                                  status == 400 || status == 422,
+                                  workItem.source != "unknown" else { throw error }
+                            // A second transfer needs a fresh check, including after enrollment.
+                            try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
+                                try await self.checkTransfer(deadline: deadline)
+                            }) {
+                                try await self.currentLocationPayload(for: workItem.request, deadline: deadline, legacy: true)
+                            }
                         }
-                    } catch let error as LocationPushError {
-                        guard case .invalidResponseStatus(let status) = error,
-                              status == 400 || status == 422,
-                              workItem.source != "unknown" else { throw error }
-                        // A second transfer needs a fresh check, including after enrollment.
-                        try await locationUploader.upload(installationId: workItem.request.installationId, checking: {
-                            try await self.checkTransfer(deadline: deadline)
-                        }) {
-                            try await self.currentLocationPayload(for: workItem.request, deadline: deadline, legacy: true)
-                        }
+                        try Task.checkCancellation()
+                    }
+                    locationTransfers.withLock { $0[transferID] = transfer }
+                    defer { locationTransfers.withLock { $0.removeValue(forKey: transferID) } }
+                    try await withTaskCancellationHandler {
+                        try await transfer.value
+                    } onCancel: {
+                        transfer.cancel()
                     }
                 case .preferenceSync:
                     try await preferenceUploader.upload(installationId: workItem.request.installationId) {
@@ -754,9 +832,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             locationSharingEnabled: locationUploadEnabledProvider(),
             locationAuthorization: .init(rawValue: Self.authorizationName(for: authorization)) ?? .unknown
         )
-        if lastObservedConsent != consent {
+        let cutoff = minimumLocationObservationTimestamp
+        if lastObservedConsent != consent || lastObservedEvidenceCutoff != cutoff {
             lastUploadBySemanticKey.removeAll()
             lastObservedConsent = consent
+            lastObservedEvidenceCutoff = cutoff
         }
     }
 
@@ -775,12 +855,20 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         if let deadline, !shouldContinueDraining(before: deadline) { throw CancellationError() }
     }
 
+    private func checkLocationEvidence(for request: PersistedLocationUploadRequest) async throws {
+        let cutoff = try await preferenceUploader.locationEvidenceCutoff(installationId: request.installationId)
+        guard case .locationSnapshot(let context) = request.operation,
+              cutoff.map({ context.capturedAt >= $0 }) ?? true else { throw TransferSuppressed.obsolete }
+    }
+
     private func currentLocationPayload(
         for request: PersistedLocationUploadRequest,
         deadline: ContinuousClock.Instant?,
         legacy: Bool = false
     ) async throws -> LocationSnapshotPushPayload {
         let osVersion = await osVersionProvider()
+        try checkTransfer(deadline: deadline)
+        try await checkLocationEvidence(for: request)
         try checkTransfer(deadline: deadline)
         guard pendingSaveCount == 0 else { throw TransferSuppressed.persistencePending }
         guard committedPending[coalescingKey(for: request)] == request,
@@ -789,7 +877,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         }
         let authorization = authorizationStatusProvider()
         observeConsent(subscribed: currentSubscription(), authorization: authorization)
-        guard locationUploadEnabledProvider(),
+        guard locationUploadEnabledProvider(), accuracyAuthorizationProvider() == .fullAccuracy,
+              case .locationSnapshot(let context) = request.operation,
+              context.horizontalAccuracyMeters.isFinite, context.horizontalAccuracyMeters > 0,
+              context.horizontalAccuracyMeters <= LocationThrottleConfig().minAccuracy,
               authorization == .authorizedAlways || authorization == .authorizedWhenInUse else {
             throw TransferSuppressed.obsolete
         }

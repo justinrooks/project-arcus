@@ -6,6 +6,14 @@ Durable admission and transport have separate boundaries. The background pusher 
 
 Deterministic coverage includes real UserDefaults outbox reopen, a newer observation admitted while transport and discretionary weather are blocked, cancellation/expiration retaining the newest intent, grant cleanup, local notification suppression after cancellation, stale/duplicate/older observation rejection, and Always authorization downgrade/denial. These cases exercise source behavior without establishing OS wake behavior.
 
+## Permission evidence policy — LOC-07 / #849
+
+Process initialization is not a permission transition. When persisted sharing, authorization, and accuracy state match current state, restoration preserves the existing observation cutoff. Eligible Core Location fixes captured just before process startup and durable offline observations remain deliverable under current consent, without changing their captured timestamp. A first marker establishes the current state without inventing an earlier revocation; normal acquisition validity, spatial accuracy, and transport consent checks still apply.
+
+Explicit sharing captures and observed authorization/accuracy transitions advance the durable cutoff monotonically. A captured revocation or reversal remains effective across restart, even when the final Boolean settings match their original values. A different current state on restoration also advances the cutoff. Independent durable preference recovery remains available even with an empty or stale-only location queue.
+
+An OS authorization or accuracy change that is reversed entirely while the process is terminated cannot be inferred from the same final state. The app does not claim to detect that unobserved round trip. LOC-06 availability is preserved for unchanged observable state; enforcing rejection across every unobservable OS round trip would require a separately approved policy or additional authoritative evidence. Simulator store-reopen tests establish these app-side decisions, not actual OS relaunch delivery.
+
 ## Configuration and platform limits
 
 `Config/Info.plist` retains `UIBackgroundModes = location, fetch, processing, remote-notification`. `LocationManager` retains `allowsBackgroundLocationUpdates = true`, `pausesLocationUpdatesAutomatically = false`, and its existing accuracy/distance settings. No setting was removed without physical-device evidence. Significant-change delivery does not provide a fixed distance or cadence guarantee. Always authorization, service availability, Background App Refresh, system policy, and force quit affect eligibility. No continuous background stream or new scheduler is introduced.

@@ -149,7 +149,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     func refreshCurrentLocation(timeout: Double = 12) async -> Bool {
         let status = currentAuthorizationStatus()
-        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+        guard (status == .authorizedAlways || status == .authorizedWhenInUse),
+              currentAccuracyAuthorization() != .reducedAccuracy else {
             logger.notice("Skipping one-shot location refresh due to auth status=\(status.logName, privacy: .public)")
             return false
         }
@@ -246,6 +247,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             // Recheck authority at delivery, including callbacks queued before revocation.
             let status = self?.currentAuthorizationStatus()
             guard (status == .authorizedAlways || status == .authorizedWhenInUse),
+                  self?.currentAccuracyAuthorization() != .reducedAccuracy,
                   !shouldHandleBackgroundLocationChange || status == .authorizedAlways else {
                 self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: false)
                 return
