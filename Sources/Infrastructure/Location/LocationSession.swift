@@ -48,6 +48,8 @@ final class LocationSession: Sendable {
     @ObservationIgnored
     private var locationResolutionGeneration: UInt64 = 0
     @ObservationIgnored
+    private var observationNotBefore: Date?
+    @ObservationIgnored
     private var resolvingSnapshot: LocationSnapshot?
     @ObservationIgnored
     private var pendingResolutionSnapshot: LocationSnapshot?
@@ -155,7 +157,8 @@ final class LocationSession: Sendable {
         invalidateDurableContextIfMoved(by: currentSnapshot)
         let generation = beginLocationResolutionAttempt()
 
-        if authorizationStatus.isLocationAuthorized == false && showsAuthorizationPrompt == false {
+        if accuracyAuthorization == .reducedAccuracy ||
+            (authorizationStatus.isLocationAuthorized == false && showsAuthorizationPrompt == false) {
             startupState = .failed("location-unavailable")
             await publishCurrentContext(nil)
             return nil
@@ -167,12 +170,13 @@ final class LocationSession: Sendable {
 
         do {
             let context = try await locationContextResolver.prepareCurrentContext(
-                requiresFreshLocation: requiresFreshLocation,
+                requiresFreshLocation: requiresFreshLocation || observationNotBefore != nil,
                 showsAuthorizationPrompt: showsAuthorizationPrompt,
                 authorizationTimeout: authorizationTimeout,
                 locationTimeout: locationTimeout,
                 maximumAcceptedLocationAge: maximumAcceptedLocationAge,
-                placemarkTimeout: placemarkTimeout
+                placemarkTimeout: placemarkTimeout,
+                minimumObservationTimestamp: observationNotBefore
             )
             guard isCurrentLocationResolution(generation) else { return nil }
             if let pending = pendingResolutionSnapshot, pending.timestamp > context.snapshot.timestamp,
@@ -215,6 +219,16 @@ final class LocationSession: Sendable {
         syncAuthorizationStatus()
         let generation = beginLocationResolutionAttempt()
 
+        guard accuracyAuthorization != .reducedAccuracy, observationNotBefore == nil else {
+            // Background fresh acquisition retains the existing Always-only policy.
+            guard authorizationStatus == .authorizedAlways else { return nil }
+            return await prepareCurrentLocationContext(
+                requiresFreshLocation: true, showsAuthorizationPrompt: false,
+                uploadSource: uploadSource, uploadReason: uploadReason,
+                authorizationTimeout: authorizationTimeout, locationTimeout: locationTimeout,
+                maximumAcceptedLocationAge: maximumAcceptedLocationAge, placemarkTimeout: placemarkTimeout
+            )
+        }
         let providerSnapshot = await locationClient.snapshot()
         guard isCurrentLocationResolution(generation) else { return nil }
         let latestSnapshot = reconcileCurrentSnapshot(with: providerSnapshot)
@@ -417,26 +431,32 @@ final class LocationSession: Sendable {
             "Location reliability updated source=\(source, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public) nextAction=\(reliability.nextAction.logName, privacy: .public)"
         )
 
-        if status.isLocationAuthorized == false {
+        // A permission transition invalidates pending work, not the accepted Home projection.
+        observationNotBefore = presenceNow()
+        presenceAttempt = nil
+        let generation = beginLocationResolutionAttempt()
+        if status.isLocationAuthorized == false || accuracy == .reducedAccuracy {
             let hadContext = currentContext != nil
-            let generation = beginLocationResolutionAttempt()
             startupState = .failed("location-unavailable")
             Task { @MainActor [weak self] in
                 guard let self, self.isCurrentLocationResolution(generation) else { return }
                 await self.publishCurrentContext(nil)
             }
             logger.notice("Location access unavailable; currentContextReset=\(hadContext, privacy: .public)")
-        } else if hadAuthorizationChange {
+        } else {
+            startupState = .failed("location-evidence-required")
             scheduleAuthorizationRecoveryIfNeeded()
         }
     }
 
     private func scheduleAuthorizationRecoveryIfNeeded() {
         guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
+              accuracyAuthorization != .reducedAccuracy,
               case .failed = startupState else { return }
         Task { @MainActor [weak self] in
             guard let self, self.currentScenePhase == .active,
                   self.authorizationStatus.isLocationAuthorized,
+                  self.accuracyAuthorization != .reducedAccuracy,
                   case .failed = self.startupState else { return }
             _ = await self.prepareCurrentLocationContext(
                 requiresFreshLocation: true,
@@ -450,7 +470,8 @@ final class LocationSession: Sendable {
             currentSnapshot = snapshot
         }
 
-        guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized else { return }
+        guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
+              acceptsPrecisionEvidence(snapshot) else { return }
         enqueueForegroundPresence(snapshot)
         switch startupState {
         case .ready, .failed:
@@ -510,6 +531,7 @@ final class LocationSession: Sendable {
     /// Admission is independent of context resolution and transport completion. The outbox owns delivery retry.
     private func enqueueForegroundPresence(_ snapshot: LocationSnapshot) {
         guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
+              acceptsPrecisionEvidence(snapshot),
               let presenceEnqueuer, snapshot.h3Cell != nil else { return }
         let now = presenceNow()
         if let previous = presenceAttempt {
@@ -578,8 +600,16 @@ final class LocationSession: Sendable {
         } else {
             currentSnapshot = context.snapshot
         }
+        observationNotBefore = nil
         durableContextCache.save(context)
         return true
+    }
+
+    private func acceptsPrecisionEvidence(_ snapshot: LocationSnapshot) -> Bool {
+        accuracyAuthorization != .reducedAccuracy &&
+            snapshot.accuracy.isFinite && snapshot.accuracy > 0 &&
+            snapshot.accuracy <= LocationThrottleConfig().minAccuracy &&
+            (observationNotBefore.map { snapshot.timestamp >= $0 } ?? true)
     }
 
     private func matchesLatestGeography(_ context: LocationContext) -> Bool {
@@ -590,6 +620,10 @@ final class LocationSession: Sendable {
     private func reconcileResolvedContext(_ context: LocationContext, generation: UInt64) async -> Bool {
         let latest = await locationClient.snapshot()
         guard isCurrentLocationResolution(generation) else { return false }
+        guard authorizationStatus.isLocationAuthorized, acceptsPrecisionEvidence(context.snapshot) else {
+            startupState = .failed("location-evidence-required")
+            return false
+        }
         _ = reconcileCurrentSnapshot(with: latest)
         guard matchesLatestGeography(context) else {
             pendingResolutionSnapshot = currentSnapshot
@@ -693,7 +727,7 @@ final class LocationSession: Sendable {
     }
 
     private func shouldRefreshContext(for snapshot: LocationSnapshot) -> Bool {
-        guard let currentContext else { return true }
+        guard observationNotBefore == nil, let currentContext else { return true }
         guard let snapshotH3Cell = snapshot.h3Cell else { return false }
         return currentContext.h3Cell != snapshotH3Cell
     }

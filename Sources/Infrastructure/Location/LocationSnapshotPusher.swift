@@ -111,6 +111,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private let mesoNotificationEnabledProvider: SubscriptionStatusProvider
     private let locationUploadEnabledProvider: LocationUploadEnabledProvider
     private let authorizationStatusProvider: AuthorizationStatusProvider
+    private let accuracyAuthorizationProvider: @Sendable () -> CLAccuracyAuthorization
     private let osVersionProvider: @Sendable () async -> String
     private let nowProvider: NowProvider
     private let retryDelaysSeconds: [UInt64]
@@ -161,6 +162,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         authorizationStatusProvider: @escaping AuthorizationStatusProvider = {
             CLLocationManager().authorizationStatus
         },
+        accuracyAuthorizationProvider: @escaping @Sendable () -> CLAccuracyAuthorization = {
+            CLLocationManager().accuracyAuthorization
+        },
         osVersionProvider: @escaping @Sendable () async -> String = { await UIDevice.current.systemVersion },
         nowProvider: @escaping NowProvider = { Date() },
         retryDelaysSeconds: [UInt64] = [0, 5, 15],
@@ -175,6 +179,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         self.subscriptionStatusProvider = subscriptionStatusProvider
         self.locationUploadEnabledProvider = locationUploadEnabledProvider
         self.authorizationStatusProvider = authorizationStatusProvider
+        self.accuracyAuthorizationProvider = accuracyAuthorizationProvider
         self.osVersionProvider = osVersionProvider
         self.nowProvider = nowProvider
         self.retryDelaysSeconds = retryDelaysSeconds
@@ -220,6 +225,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         forceUpload: Bool,
         processImmediately: Bool = true
     ) async -> Bool {
+        guard accuracyAuthorizationProvider() == .fullAccuracy,
+              context.horizontalAccuracyMeters.isFinite, context.horizontalAccuracyMeters > 0,
+              context.horizontalAccuracyMeters <= LocationThrottleConfig().minAccuracy else { return false }
         logger.info(
             "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
         )
@@ -789,7 +797,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         }
         let authorization = authorizationStatusProvider()
         observeConsent(subscribed: currentSubscription(), authorization: authorization)
-        guard locationUploadEnabledProvider(),
+        guard locationUploadEnabledProvider(), accuracyAuthorizationProvider() == .fullAccuracy,
+              case .locationSnapshot(let context) = request.operation,
+              context.horizontalAccuracyMeters.isFinite, context.horizontalAccuracyMeters > 0,
+              context.horizontalAccuracyMeters <= LocationThrottleConfig().minAccuracy,
               authorization == .authorizedAlways || authorization == .authorizedWhenInUse else {
             throw TransferSuppressed.obsolete
         }

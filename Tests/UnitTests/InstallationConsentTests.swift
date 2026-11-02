@@ -45,7 +45,7 @@ struct InstallationConsentTests {
                 enrollment: enrolledTestCoordinator(), consent: store),
             apnsTokenProvider: { "" }, installationIdProvider: { id },
             locationUploadEnabledProvider: { sharing.withLock { $0 } },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { now }, retryDelaysSeconds: [0],
             queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
         )

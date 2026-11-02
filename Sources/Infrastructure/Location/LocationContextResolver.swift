@@ -46,7 +46,7 @@ protocol LocationContextResolving: Sendable {
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
-        placemarkTimeout: Double
+        placemarkTimeout: Double, minimumObservationTimestamp: Date?
     ) async throws -> LocationContext
 
     func resolveContext(
@@ -54,6 +54,21 @@ protocol LocationContextResolving: Sendable {
         maximumAcceptedLocationAge: TimeInterval?,
         placemarkTimeout: Double
     ) async throws -> LocationContext
+}
+
+extension LocationContextResolving {
+    func prepareCurrentContext(
+        requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
+        authorizationTimeout: Double, locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double
+    ) async throws -> LocationContext {
+        try await prepareCurrentContext(
+            requiresFreshLocation: requiresFreshLocation, showsAuthorizationPrompt: showsAuthorizationPrompt,
+            authorizationTimeout: authorizationTimeout, locationTimeout: locationTimeout,
+            maximumAcceptedLocationAge: maximumAcceptedLocationAge, placemarkTimeout: placemarkTimeout,
+            minimumObservationTimestamp: nil
+        )
+    }
 }
 
 actor LocationContextResolver: LocationContextResolving {
@@ -93,7 +108,7 @@ actor LocationContextResolver: LocationContextResolving {
         authorizationTimeout: Double = 30,
         locationTimeout: Double = 12,
         maximumAcceptedLocationAge: TimeInterval = 5 * 60,
-        placemarkTimeout: Double = 8
+        placemarkTimeout: Double = 8, minimumObservationTimestamp: Date? = nil
     ) async throws -> LocationContext {
         logger.info(
             "Preparing current location context requiresFreshLocation=\(requiresFreshLocation, privacy: .public) promptAuthorization=\(showsAuthorizationPrompt, privacy: .public)"
@@ -113,7 +128,8 @@ actor LocationContextResolver: LocationContextResolving {
            let currentSnapshot = await locationClient.snapshot(),
            Self.isAccepted(
                snapshot: currentSnapshot,
-               maximumAge: min(maximumAcceptedLocationAge, Self.freshLocationReuseMaxAge)
+               maximumAge: min(maximumAcceptedLocationAge, Self.freshLocationReuseMaxAge),
+               minimumTimestamp: minimumObservationTimestamp
            ) {
             logger.debug("Using recent live location snapshot for context resolution")
             return try await resolveContext(
@@ -129,7 +145,7 @@ actor LocationContextResolver: LocationContextResolving {
 
         if didRefreshCurrentLocation,
            let refreshedSnapshot = await locationClient.snapshot(),
-           Self.isAccepted(snapshot: refreshedSnapshot, maximumAge: maximumAcceptedLocationAge) {
+           Self.isAccepted(snapshot: refreshedSnapshot, maximumAge: maximumAcceptedLocationAge, minimumTimestamp: minimumObservationTimestamp) {
             logger.debug("Using freshly requested location snapshot for context resolution")
             return try await resolveContext(
                 from: refreshedSnapshot,
@@ -139,7 +155,7 @@ actor LocationContextResolver: LocationContextResolving {
         }
 
         if let cachedSnapshot = await locationClient.snapshot(),
-           Self.isAccepted(snapshot: cachedSnapshot, maximumAge: maximumAcceptedLocationAge) {
+           Self.isAccepted(snapshot: cachedSnapshot, maximumAge: maximumAcceptedLocationAge, minimumTimestamp: minimumObservationTimestamp) {
             logger.debug("Using cached location snapshot for context resolution")
             return try await resolveContext(
                 from: cachedSnapshot,
@@ -154,7 +170,7 @@ actor LocationContextResolver: LocationContextResolving {
         do {
             snapshot = try await withTimeout(timeout: locationTimeout) {
                 for await snapshot in stream {
-                    if Self.isAccepted(snapshot: snapshot, maximumAge: maximumAcceptedLocationAge) {
+                    if Self.isAccepted(snapshot: snapshot, maximumAge: maximumAcceptedLocationAge, minimumTimestamp: minimumObservationTimestamp) {
                         return snapshot
                     }
                 }
@@ -225,7 +241,9 @@ actor LocationContextResolver: LocationContextResolving {
         throw LocationContextError.authorizationTimeout
     }
 
-    private static func isAccepted(snapshot: LocationSnapshot, maximumAge: TimeInterval) -> Bool {
+    private static func isAccepted(snapshot: LocationSnapshot, maximumAge: TimeInterval,
+                                   minimumTimestamp: Date? = nil) -> Bool {
+        if let minimumTimestamp, snapshot.timestamp < minimumTimestamp { return false }
         let ageSeconds = max(0, Date().timeIntervalSince(snapshot.timestamp))
         return ageSeconds <= maximumAge
     }

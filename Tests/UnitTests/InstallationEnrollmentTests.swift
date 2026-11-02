@@ -389,7 +389,7 @@ extension InstallationEnrollmentTests {
                     enrollment: store.coordinator(), consent: consent),
                 apnsTokenProvider: { "token" }, installationIdProvider: { enrollmentTestID },
                 subscriptionStatusProvider: { false }, mesoNotificationEnabledProvider: { false },
-                authorizationStatusProvider: { .denied }, retryDelaysSeconds: [0],
+                authorizationStatusProvider: { .denied }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0],
                 queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
             )
         }

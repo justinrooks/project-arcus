@@ -759,7 +759,7 @@ private struct AwarenessLocationResolver: LocationContextResolving {
 
     func prepareCurrentContext(requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
                                authorizationTimeout: Double, locationTimeout: Double,
-                               maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double) async throws -> LocationContext {
+                               maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double, minimumObservationTimestamp: Date?) async throws -> LocationContext {
         context
     }
 

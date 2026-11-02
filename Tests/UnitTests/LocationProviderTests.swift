@@ -576,7 +576,7 @@ struct LocationProviderTests {
         let offline = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
             preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
             installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store)
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store)
         let old = makeContext(timestamp: Date(timeIntervalSince1970: 100))
         let newest = makeContext(timestamp: Date(timeIntervalSince1970: 200))
         await offline.enqueue(old, source: .foregroundLocationChange, reason: .locationChanged)
@@ -590,7 +590,7 @@ struct LocationProviderTests {
         let restored = LocationSnapshotPusher(locationUploader: uploader,
             preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
             installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: reopened)
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: reopened)
         #expect(await restored.drainPendingUploads(using: .init(uploadQuota: 1,
             deadline: ContinuousClock().now.advanced(by: .seconds(5)))) == .drained)
         #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [newest.snapshot.timestamp])
@@ -604,7 +604,7 @@ struct LocationProviderTests {
         let pusher = LocationSnapshotPusher(locationUploader: uploader,
             preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
             installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store)
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store)
         let old = makeContext(timestamp: Date(timeIntervalSince1970: 100))
         let newest = makeContext(timestamp: Date(timeIntervalSince1970: 300))
         let active = Task { await pusher.enqueue(old, source: .foregroundLocationChange, reason: .locationChanged) }
@@ -622,7 +622,7 @@ struct LocationProviderTests {
             let restored = LocationSnapshotPusher(locationUploader: restoredUploader,
                 preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
                 installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
-                authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store)
+                authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store)
             await restored.drainPendingUploads()
             #expect(await restoredUploader.uploadedPayloads().map(\.capturedAt) == [newest.snapshot.timestamp])
             #expect(await store.current().isEmpty)
@@ -672,7 +672,7 @@ struct LocationProviderTests {
         }
         let pusher = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
             preferenceUploader: MockPreferenceUploader(), installationIdProvider: { "install" },
-            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { admissions.withLock { $0 += 1 }; return Date(timeIntervalSince1970: 1000) },
             retryDelaysSeconds: [0], queueStore: store)
         let first = Task { await pusher.enqueuePresence(observation(100),
@@ -716,7 +716,7 @@ struct LocationProviderTests {
             LocationSnapshotPusher(locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
                 installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
                 mesoNotificationEnabledProvider: { true }, locationUploadEnabledProvider: { true },
-                authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store)
+                authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store)
         }
         let pusher = makePusher()
         let admission = Task { await pusher.enqueuePresence(newest,
@@ -738,6 +738,80 @@ struct LocationProviderTests {
             #expect(await uploader.uploadedPayloads().map(\.capturedAt) == [newest.timestamp])
         }
         #expect(await store.loadPendingRequests().isEmpty)
+    }
+
+    @Test("enriched context rejects reduced or inaccurate targeting", arguments: [0.0, 101, Double.infinity, Double.nan, 20])
+    func inaccurateEnrichedContextIsRejected(accuracy: Double) async {
+        let suite = "inaccurate-context-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(locationUploader: uploader,
+            preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
+            installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { accuracy == 20 ? .reducedAccuracy : .fullAccuracy },
+            retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending"))
+        let original = makeContext()
+        let snapshot = LocationSnapshot(coordinates: original.snapshot.coordinates,
+            timestamp: original.snapshot.timestamp, accuracy: accuracy, h3Cell: original.h3Cell)
+        await pusher.enqueue(LocationContext(snapshot: snapshot, h3Cell: original.h3Cell, grid: original.grid),
+            source: .manualRefresh, reason: .locationChanged)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending").loadPendingRequests().isEmpty)
+    }
+
+    @Test("reopened precise pending work is suppressed under reduced accuracy")
+    func reducedAccuracySuppressesReopenedQueue() async {
+        let suite = "accuracy-reopen-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let offline = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
+            preferenceUploader: MockPreferenceUploader(), installationIdProvider: { "install" },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store)
+        await offline.enqueue(makeContext(), source: .manualRefresh, reason: .locationChanged)
+        #expect(await store.loadPendingRequests().count == 1)
+        let uploader = MockSnapshotUploader()
+        let preferences = MockPreferenceUploader()
+        let reopened = LocationSnapshotPusher(locationUploader: uploader, preferenceUploader: preferences,
+            installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .reducedAccuracy }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending"))
+        await reopened.drainPendingUploads()
+        await reopened.enqueuePreferenceSync(source: .manualRefresh, requestReason: .locationChanged,
+            forceUpload: true, detail: "accuracy")
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await preferences.uploadedPayloads().count == 1)
+        #expect(await store.loadPendingRequests().isEmpty)
+    }
+
+    @Test("accuracy downgrade suppresses pending transport after preparation suspends")
+    func accuracyDowngradeDuringPreparation() async {
+        let suite = "accuracy-transition-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let accuracy = Mutex(CLAccuracyAuthorization.fullAccuracy)
+        let gate = PreparationGate()
+        let uploader = MockSnapshotUploader()
+        let preferences = MockPreferenceUploader()
+        let pusher = LocationSnapshotPusher(locationUploader: uploader,
+            preferenceUploader: preferences, apnsTokenProvider: { "token" },
+            installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { accuracy.withLock { $0 } },
+            osVersionProvider: { await gate.version() }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending"))
+        let active = Task { await pusher.enqueue(makeContext(timestamp: .now),
+            source: .foregroundLocationChange, reason: .locationChanged) }
+        while await !gate.hasStarted() { await Task.yield() }
+        accuracy.withLock { $0 = .reducedAccuracy }
+        await gate.release()
+        await active.value
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        await pusher.enqueuePreferenceSync(source: .foregroundLocationChange,
+            requestReason: .locationChanged, forceUpload: true, detail: "accuracy")
+        #expect(await preferences.uploadedPayloads().count == 1)
     }
 
     private actor PreparationGate {
@@ -767,7 +841,7 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(locationUploader: uploader,
             preferenceUploader: MockPreferenceUploader(), installationIdProvider: { "install" },
-            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             osVersionProvider: { await preparation.version() }, retryDelaysSeconds: [0], queueStore: store)
         let active = Task { await pusher.enqueuePresence(old,
             source: .foregroundLocationChange, reason: .locationChanged) }
@@ -816,7 +890,7 @@ struct LocationProviderTests {
         let pusher = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
             preferenceUploader: MockPreferenceUploader(), installationIdProvider: {
                 entries.withLock { $0 += 1 }; return "install"
-            }, locationUploadEnabledProvider: { admissions.withLock { $0 += 1 }; return true }, authorizationStatusProvider: { .authorizedAlways },
+            }, locationUploadEnabledProvider: { admissions.withLock { $0 += 1 }; return true }, authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], queueStore: store)
         let first = Task { await pusher.enqueue(old, source: .foregroundLocationChange, reason: .locationChanged) }
         while await store.loadCount() == 0 { await Task.yield() }
@@ -845,7 +919,7 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(locationUploader: uploader,
             preferenceUploader: MockPreferenceUploader(), installationIdProvider: { "install" },
-            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             queueStore: FailingQueueStore())
         let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
         let observation = LocationSnapshot(coordinates: coordinates, timestamp: Date(timeIntervalSince1970: 100),
@@ -1105,7 +1179,7 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
             locationUploader: uploads, preferenceUploader: MockPreferenceUploader(),
-            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { now }, retryDelaysSeconds: [0], queueStore: store
         )
         await pusher.enqueuePresence(snapshot, source: .foregroundLocationChange, reason: .locationChanged)
@@ -1124,7 +1198,7 @@ struct LocationProviderTests {
         let first = LocationSnapshotPusher(
             locationUploader: OfflineSnapshotUploader(), preferenceUploader: MockPreferenceUploader(),
             installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now }, retryDelaysSeconds: [0],
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now }, retryDelaysSeconds: [0],
             queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
         )
         if background {
@@ -1143,7 +1217,7 @@ struct LocationProviderTests {
         let reopened = LocationSnapshotPusher(
             locationUploader: uploads, preferenceUploader: MockPreferenceUploader(),
             installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now }, retryDelaysSeconds: [0],
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now }, retryDelaysSeconds: [0],
             queueStore: reopenedStore
         )
         await reopened.drainPendingUploads()
@@ -1181,7 +1255,7 @@ struct LocationProviderTests {
         let pusher = LocationSnapshotPusher(
             locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
             installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now },
             retryDelaysSeconds: [0], queueStore: store
         )
         let provider = LocationProvider(geocoder: MockGeocoder(mode: .success("Test")), nowProvider: { now })
@@ -1237,7 +1311,7 @@ struct LocationProviderTests {
         let restored = LocationSnapshotPusher(
             locationUploader: restoredUploads, preferenceUploader: MockPreferenceUploader(),
             installationIdProvider: { "installation" }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, nowProvider: { now },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now },
             retryDelaysSeconds: [0], queueStore: reopenedStore
         )
         await restored.drainPendingUploads()
@@ -1262,7 +1336,7 @@ struct LocationProviderTests {
         func prepareCurrentContext(
             requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
             authorizationTimeout: Double, locationTimeout: Double,
-            maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double
+            maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double, minimumObservationTimestamp: Date?
         ) async throws -> LocationContext { throw LocationContextError.locationUnavailable }
 
         func resolveContext(
@@ -1281,7 +1355,7 @@ struct LocationProviderTests {
             locationUploader: snapshots, preferenceUploader: preferences,
             apnsTokenProvider: { token.value() }, installationIdProvider: { "meso-install" },
             subscriptionStatusProvider: { false }, mesoNotificationEnabledProvider: { false },
-            locationUploadEnabledProvider: { false }, authorizationStatusProvider: { .denied },
+            locationUploadEnabledProvider: { false }, authorizationStatusProvider: { .denied }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], queueStore: store
         )
         let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
@@ -1309,7 +1383,7 @@ struct LocationProviderTests {
             locationUploader: MockSnapshotUploader(), preferenceUploader: uploader,
             apnsTokenProvider: { "token" }, installationIdProvider: { "meso-install" },
             mesoNotificationEnabledProvider: { state.value() == "true" },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0],
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0],
             queueStore: InMemoryUploadQueueStore()
         )
         let first = Task {
@@ -1347,7 +1421,7 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { true },
             mesoNotificationEnabledProvider: { state.value() == "true" },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store
         )
         await first.drainPendingUploads()
         state.set("false")
@@ -1357,7 +1431,7 @@ struct LocationProviderTests {
         let second = LocationSnapshotPusher(
             locationUploader: snapshots, preferenceUploader: MockPreferenceUploader(),
             apnsTokenProvider: { "token" }, mesoNotificationEnabledProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: reopened
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: reopened
         )
         await second.drainPendingUploads()
         #expect(await reopened.loadPendingRequests().isEmpty)
@@ -1379,7 +1453,7 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { false },
             mesoNotificationEnabledProvider: { enabled },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1400,7 +1474,7 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { false },
             mesoNotificationEnabledProvider: { !enabled },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], queueStore: reopened
         )
         let outcome = await second.drainPendingUploads(
@@ -1423,7 +1497,7 @@ struct LocationProviderTests {
             locationUploader: MockSnapshotUploader(), preferenceUploader: uploader,
             apnsTokenProvider: { "token" }, installationIdProvider: { "meso-install" },
             mesoNotificationEnabledProvider: { state.value() == "true" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
         )
         await pusher.enqueuePreferenceSync(
@@ -1452,7 +1526,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -1482,7 +1556,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1504,7 +1578,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1531,7 +1605,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1563,7 +1637,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1602,7 +1676,7 @@ struct LocationProviderTests {
             locationUploader: locations, preferenceUploader: preferences,
             apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false }, locationUploadEnabledProvider: { denied },
-            authorizationStatusProvider: { denied ? .denied : .authorizedAlways },
+            authorizationStatusProvider: { denied ? .denied : .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], queueStore: store
         )
         await pusher.drainPendingUploads()
@@ -1634,7 +1708,7 @@ struct LocationProviderTests {
                 locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
                 apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
                 subscriptionStatusProvider: { subscribed.value() }, mesoNotificationEnabledProvider: { false },
-                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .denied },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .denied }, accuracyAuthorizationProvider: { .fullAccuracy },
                 retryDelaysSeconds: [0], queueStore: store
             )
         }
@@ -1667,7 +1741,7 @@ struct LocationProviderTests {
             locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
             apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true }, locationUploadEnabledProvider: { sharing.value() },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0, 1], queueStore: store
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0, 1], queueStore: store
         )
         await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
         #expect(await uploader.attemptCount() == 1)
@@ -1685,7 +1759,7 @@ struct LocationProviderTests {
             locationUploader: locations, preferenceUploader: preferences,
             apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { sharing.value() },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store
         )
         let old = Task { await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved) }
         await locations.waitForFirstAttempt()
@@ -1710,7 +1784,7 @@ struct LocationProviderTests {
             locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
             apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
         )
         await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
                                            forceUpload: true, detail: "opt-out", isSubscribedOverride: false)
@@ -1740,7 +1814,7 @@ struct LocationProviderTests {
             locationUploader: MockSnapshotUploader(), preferenceUploader: preferences,
             apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: store
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store
         )
         let drain = Task {
             if bounded {
@@ -1774,7 +1848,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "token" }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() }, mesoNotificationEnabledProvider: { true },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, osVersionProvider: { "test-os" }, retryDelaysSeconds: [0], queueStore: store
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, osVersionProvider: { "test-os" }, retryDelaysSeconds: [0], queueStore: store
         )
         let drain = Task { await pusher.drainPendingUploads() }
         #expect(await preferences.waitForAttempt(1))
@@ -1805,7 +1879,7 @@ struct LocationProviderTests {
             locationUploader: locations, preferenceUploader: preferences,
             apnsTokenProvider: { token.value() }, installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
         )
         // The user enabled, then disabled. Deliver the newer disable callback first.
         await pusher.enqueuePreferenceSync(source: .settingsPreference, requestReason: .preferenceChanged,
@@ -1848,7 +1922,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -1875,7 +1949,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1905,7 +1979,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1927,7 +2001,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1950,7 +2024,7 @@ struct LocationProviderTests {
             preferenceUploader: AlwaysFailingPreferenceUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1978,7 +2052,7 @@ struct LocationProviderTests {
             preferenceUploader: CancellingPreferenceUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2007,7 +2081,7 @@ struct LocationProviderTests {
             preferenceUploader: AlwaysFailingPreferenceUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -2041,7 +2115,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -2065,7 +2139,7 @@ struct LocationProviderTests {
             preferenceUploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -2095,7 +2169,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -2130,7 +2204,7 @@ struct LocationProviderTests {
             preferenceUploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2149,7 +2223,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0, 1],
             queueStore: store
         )
@@ -2185,7 +2259,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2206,7 +2280,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2238,7 +2312,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2270,7 +2344,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2297,7 +2371,7 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { true },
             mesoNotificationEnabledProvider: { true },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             osVersionProvider: { "test-os" },
             retryDelaysSeconds: [0],
             queueStore: store
@@ -2326,7 +2400,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0, 0],
             queueStore: store
         )
@@ -2353,7 +2427,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0, 5],
             queueStore: store
         )
@@ -2380,7 +2454,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0, 5],
             queueStore: store
         )
@@ -2514,7 +2588,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             locationUploadEnabledProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -2540,7 +2614,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -2567,7 +2641,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -2593,7 +2667,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -2619,7 +2693,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
         let context = makeContext()
@@ -2648,7 +2722,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2684,7 +2758,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2716,7 +2790,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2751,7 +2825,7 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2772,7 +2846,7 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -2802,7 +2876,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15,
@@ -2843,7 +2917,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15
@@ -2877,7 +2951,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -2912,7 +2986,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
-            authorizationStatusProvider: { .authorizedAlways },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15
@@ -2936,7 +3010,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15
@@ -2968,7 +3042,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15
@@ -2992,7 +3066,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -3012,7 +3086,7 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0]
         )
 
@@ -3415,7 +3489,7 @@ extension LocationProviderTests {
             preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
             apnsTokenProvider: { "" }, installationIdProvider: { "f0465f55-f0a2-48a0-aac0-6a5c48a95891" },
             subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
-            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], dedupeWindowSeconds: 60, queueStore: pending
         )
         let context = makeContext()
@@ -3450,7 +3524,7 @@ extension LocationProviderTests {
                 http: http, enrollment: enrolledTestCoordinator(), consent: consent),
             apnsTokenProvider: { "" }, installationIdProvider: { id },
             subscriptionStatusProvider: { finalEnabled }, mesoNotificationEnabledProvider: { true },
-            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             retryDelaysSeconds: [0], queueStore: InMemoryUploadQueueStore()
         )
         let provider = LocationProvider(snapshotCache: NoOpLocationSnapshotCache())
@@ -3489,7 +3563,7 @@ extension LocationProviderTests {
                 preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http, enrollment: enrollment, consent: consent),
                 apnsTokenProvider: { "" }, installationIdProvider: { id },
                 subscriptionStatusProvider: { true }, mesoNotificationEnabledProvider: { true },
-                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
                 retryDelaysSeconds: [0, 0, 0], queueStore: queue
             )
         }

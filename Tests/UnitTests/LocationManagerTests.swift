@@ -100,6 +100,23 @@ struct LocationManagerTests {
         manager.stopAll()
     }
 
+    @Test(arguments: [false, true]) @MainActor
+    func reducedAccuracyRejectsQueuedCallbacks(background: Bool) async {
+        let core = StubAuthorizationManager(status: .authorizedAlways)
+        let delivered = DeliveryCounter()
+        let manager = LocationManager(manager: core, onUpdate: { _ in await delivered.accept() })
+        manager.updateMode(for: background ? .background : .active)
+        let caller = Task { await manager.refreshCurrentLocation() }
+        #expect(await waitUntil { core.requestLocationCount == 1 })
+        core.stubAccuracy = .reducedAccuracy
+        manager.locationManager(core, didUpdateLocations: [CLLocation(latitude: 39, longitude: -104)])
+        #expect(await result(of: caller, sut: manager, manager: core) == false)
+        #expect(await delivered.count == 0)
+        #expect(await manager.refreshCurrentLocation() == false)
+        #expect(core.requestLocationCount == 1)
+        manager.stopAll()
+    }
+
     private actor DeliveryCounter {
         var count = 0
         func accept() -> LocationAcceptance { count += 1; return .accepted }
@@ -422,6 +439,63 @@ struct LocationManagerTests {
 
 @Suite("LocationSession")
 struct LocationSessionTests {
+    @Test @MainActor
+    func accuracyRecoveryRejectsCachedEvidence() async throws {
+        let clock = PresenceClock()
+        let old = durableContext(timestamp: clock.now.addingTimeInterval(-1))
+        let core = LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways)
+        let manager = LocationManager(manager: core, onUpdate: { _ in .accepted })
+        let resolver = ControlledResolver()
+        let presence = RecordingPresence()
+        let client = LocationClient(snapshot: { old.snapshot }, updates: { AsyncStream { $0.finish() } })
+        let session = LocationSession(locationClient: client, locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            presenceEnqueuer: presence, presenceNow: { clock.now })
+        session.currentContext = old
+        session.startupState = .ready
+        session.handleScenePhaseChange(.active)
+        core.stubAccuracy = .reducedAccuracy
+        manager.locationManagerDidChangeAuthorization(core)
+        try #require(await waitUntilAsync { session.accuracyAuthorization == .reducedAccuracy && session.currentContext == nil })
+        #expect(session.reliabilityState.accuracy == .reduced)
+        let baseline = await presence.count()
+        core.stubAccuracy = .fullAccuracy
+        manager.locationManagerDidChangeAuthorization(core)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: id, with: .success(old))
+        try #require(await waitUntilAsync { session.startupState == .failed("location-evidence-required") })
+        #expect(session.currentContext == nil)
+        #expect(await presence.count() == baseline)
+        #expect(await resolver.lastPreparationRequiresFresh == true)
+        #expect(await resolver.lastPreparationMinimumTimestamp == clock.now)
+        let fresh = durableContext(timestamp: clock.now.addingTimeInterval(1))
+        let retry = Task { await session.prepareCurrentLocationContext(requiresFreshLocation: false, showsAuthorizationPrompt: false) }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let retryID = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: retryID, with: .success(fresh))
+        #expect(await retry.value == fresh)
+    }
+
+    @Test @MainActor
+    func permissionRecoveryDoesNotAcquireWithWhenInUseInBackground() async throws {
+        let core = LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways)
+        let manager = LocationManager(manager: core, onUpdate: { _ in .accepted })
+        let resolver = StubResolver(context: durableContext(timestamp: .now), error: nil)
+        let session = LocationSession(locationClient: makeLocationClient(provider: LocationProvider()),
+            locationManager: manager, locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator())
+        session.handleScenePhaseChange(.background)
+        core.stubStatus = .authorizedWhenInUse
+        manager.locationManagerDidChangeAuthorization(core)
+        try #require(await waitUntilAsync { session.authorizationStatus == .authorizedWhenInUse })
+        let context = await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil, uploadReason: nil, authorizationTimeout: 0.1,
+            locationTimeout: 0.1, maximumAcceptedLocationAge: 300, placemarkTimeout: 0.1)
+        #expect(context == nil)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+    }
+
     @MainActor private final class PresenceClock {
         var now = Date()
     }
@@ -573,7 +647,7 @@ struct LocationSessionTests {
             preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http,
                 enrollment: enrolledTestCoordinator(), consent: consent),
             installationIdProvider: { id }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse }, nowProvider: { now },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now },
             retryDelaysSeconds: [0], queueStore: queueStore)
         let updates = AsyncStream<LocationSnapshot>.makeStream()
         defer { updates.continuation.finish() }
@@ -698,7 +772,7 @@ struct LocationSessionTests {
             authorizationTimeout: Double,
             locationTimeout: Double,
             maximumAcceptedLocationAge: TimeInterval,
-            placemarkTimeout: Double
+            placemarkTimeout: Double, minimumObservationTimestamp: Date?
         ) async throws -> LocationContext {
             prepareCallCount += 1
             if let context {
@@ -735,6 +809,8 @@ struct LocationSessionTests {
             let continuation: CheckedContinuation<LocationContext, Error>
         }
 
+        private(set) var lastPreparationRequiresFresh = false
+        private(set) var lastPreparationMinimumTimestamp: Date?
         private var nextID = 0
         private var pendingRequests: [PendingRequest] = []
 
@@ -744,9 +820,11 @@ struct LocationSessionTests {
             authorizationTimeout: Double,
             locationTimeout: Double,
             maximumAcceptedLocationAge: TimeInterval,
-            placemarkTimeout: Double
+            placemarkTimeout: Double, minimumObservationTimestamp: Date?
         ) async throws -> LocationContext {
-            try await enqueue(.prepare)
+            lastPreparationRequiresFresh = requiresFreshLocation
+            lastPreparationMinimumTimestamp = minimumObservationTimestamp
+            return try await enqueue(.prepare)
         }
 
         func resolveContext(
@@ -1209,7 +1287,6 @@ struct LocationSessionTests {
     @MainActor
     @Test("restoring authorization starts acquisition", arguments: [false, true])
     func authorizationRecoveryStartsAcquisition(afterSettings: Bool) async throws {
-        let context = durableContext(timestamp: .now)
         let source = LocationManagerTests.StubAuthorizationManager(status: .denied)
         let manager = LocationManager(manager: source, onUpdate: { _ in .accepted })
         let resolver = ControlledResolver()
@@ -1225,6 +1302,7 @@ struct LocationSessionTests {
         if afterSettings { session.handleScenePhaseChange(.active) }
         try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
         let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        let context = durableContext(timestamp: .now)
         await resolver.complete(id: id, with: .success(context))
         #expect(await waitUntilAsync { session.currentContext == context && session.startupState == .ready })
     }
