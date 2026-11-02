@@ -838,7 +838,7 @@ struct LocationSessionTests {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let payloads = try requests.map { try decoder.decode(DeviceLocationSnapshotV3Payload.self, from: $0.body!) }
-        #expect(payloads.count == (staleResolution ? 3 : 2))
+        #expect(payloads.count == (staleResolution ? 3 : (beforePreparation ? 1 : 2)))
         #expect(payloads.dropLast().allSatisfy { $0.county == nil && $0.zone == nil && $0.fireZone == nil })
         let enriched = try #require(payloads.last)
         #expect(enriched.h3Cell == moved.h3Cell && enriched.capturedAt == moved.snapshot.timestamp)
