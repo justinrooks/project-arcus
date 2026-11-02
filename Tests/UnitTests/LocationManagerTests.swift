@@ -43,6 +43,89 @@ struct LocationManagerTests {
         }
     }
 
+    @MainActor
+    private final class ControlledStreams {
+        var receivers: [@MainActor @Sendable (CLLocation) async -> Void] = []
+        var completions: [CheckedContinuation<Void, any Error>?] = []
+        var returned: [Int] = []
+        var cancelled: [Int] = []
+
+        func run(_ receive: @escaping @MainActor @Sendable (CLLocation) async -> Void) async throws {
+            let index = receivers.count
+            receivers.append(receive)
+            defer {
+                returned.append(index)
+                if Task.isCancelled { cancelled.append(index) }
+            }
+            try await withCheckedThrowingContinuation { completions.append($0) }
+        }
+
+        func finish(_ index: Int, failing: Bool = false) {
+            let continuation = completions[index]
+            completions[index] = nil
+            if failing { continuation?.resume(throwing: CLError(.locationUnknown)) }
+            else { continuation?.resume() }
+        }
+    }
+
+    @Test @MainActor
+    func retiredStreamCannotClearReplacementOrDeliver() async throws {
+        let core = StubAuthorizationManager(status: .authorizedAlways)
+        let streams = ControlledStreams()
+        let (deliveries, record) = AsyncStream<Void>.makeStream()
+        let manager = LocationManager(
+            manager: core, onUpdate: { _ in record.yield(()); return .accepted },
+            foregroundUpdates: { try await streams.run($0) }
+        )
+        manager.updateMode(for: .active)
+        try #require(await waitUntil { streams.receivers.count == 1 })
+        manager.updateMode(for: .background)
+        manager.updateMode(for: .active)
+        try #require(await waitUntil { streams.receivers.count == 2 })
+        streams.finish(0)
+        try #require(await waitUntil { streams.returned.contains(0) })
+        manager.updateMode(for: .active)
+        #expect(streams.receivers.count == 2)
+        let location = CLLocation(latitude: 39, longitude: -104)
+        await streams.receivers[0](location)
+        await streams.receivers[1](location)
+        manager.updateMode(for: .inactive)
+        await streams.receivers[1](location)
+        record.finish()
+        var count = 0
+        for await _ in deliveries { count += 1 }
+        #expect(count == 1)
+        streams.finish(1)
+        try #require(await waitUntil { streams.returned.contains(1) })
+        #expect(streams.cancelled == [0, 1])
+        manager.stopAll()
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func unexpectedTerminationWaitsForEligibleModeUpdate(failing: Bool) async throws {
+        let core = StubAuthorizationManager(status: .authorizedWhenInUse)
+        let streams = ControlledStreams()
+        let manager = LocationManager(
+            manager: core, onUpdate: { _ in .accepted },
+            foregroundUpdates: { try await streams.run($0) }
+        )
+        manager.updateMode(for: .active)
+        try #require(await waitUntil { streams.receivers.count == 1 })
+        streams.finish(0, failing: failing)
+        try #require(await waitUntil { streams.returned.contains(0) })
+        #expect(streams.receivers.count == 1)
+        manager.updateMode(for: .active)
+        try #require(await waitUntil { streams.receivers.count == 2 })
+        manager.updateMode(for: .active)
+        #expect(streams.receivers.count == 2)
+        streams.finish(1, failing: failing)
+        try #require(await waitUntil { streams.returned.contains(1) })
+        core.stubStatus = .denied
+        manager.updateMode(for: .active)
+        #expect(streams.receivers.count == 2)
+        manager.stopAll()
+    }
+
     @Test(arguments: [CLAuthorizationStatus.denied, .authorizedWhenInUse]) @MainActor
     func backgroundMonitoringRestartsAfterStopAndRespectsRevocation(revoked: CLAuthorizationStatus) {
         let core = StubAuthorizationManager(status: .authorizedAlways)
