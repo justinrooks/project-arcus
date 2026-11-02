@@ -36,6 +36,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let drainBackgroundPresence: @Sendable () async -> Void
     private var onBackgroundLocationChange: (@Sendable () async -> Void)?
     private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus, CLAccuracyAuthorization?) -> Void)?
+    typealias ForegroundUpdates = @MainActor @Sendable (
+        @escaping @MainActor @Sendable (CLLocation) async -> Void
+    ) async throws -> Void
+    private let foregroundUpdates: ForegroundUpdates
+    private var streamID: UUID?
     private var streamTask: Task<Void, Never>?
     private struct RefreshLocationWaiter {
         let continuation: CheckedContinuation<Bool, Never>
@@ -53,10 +58,17 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         onUpdate: @escaping LocationSink,
         onBackgroundUpdate: LocationSink? = nil,
         drainBackgroundPresence: @escaping @Sendable () async -> Void = {},
+        foregroundUpdates: @escaping ForegroundUpdates = { receive in
+            for try await update in CLLocationUpdate.liveUpdates(.otherNavigation) {
+                try Task.checkCancellation()
+                if let location = update.location { await receive(location) }
+            }
+        },
         oneShotTimeoutSleep: @escaping @MainActor @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
         }
     ) {
+        self.foregroundUpdates = foregroundUpdates
         self.manager = manager
         self.authorizationOverride = Self.authorizationOverrideFromEnvironment()
         self.onUpdate = onUpdate
@@ -169,6 +181,10 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             return
         }
         if phase == .inactive {
+            if currentMode == .foreground {
+                stopForegroundStreaming()
+                currentMode = .stopped
+            }
             if currentMode == .background, status != .authorizedAlways { stopAll() }
             return
         }
@@ -181,7 +197,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             }
         }()
         
-        guard desired != currentMode else { return }
+        // A completed/failed stream can be retried by the next eligible mode update.
+        // Never restart from task completion itself: immediate failures must not spin.
+        guard desired != currentMode || (desired == .foreground && streamTask == nil) else { return }
         
         switch desired {
         case .foreground:
@@ -286,30 +304,36 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private func startForegroundStreaming() {
         guard streamTask == nil else { return }
         logger.debug("Starting CLLocation live update stream")
-        streamTask = Task { [weak self] in
-            do{
-                let updates = CLLocationUpdate.liveUpdates(.otherNavigation)
-                for try await update in updates {
-                    guard let loc = update.location else { continue }
-                    _ = await self?.onUpdate(.init(
+        let id = UUID()
+        streamID = id
+        streamTask = Task { [weak self, foregroundUpdates] in
+            do {
+                try await foregroundUpdates { [weak self] loc in
+                    guard !Task.isCancelled, let self,
+                          self.streamID == id, self.lastPhase == .active,
+                          self.currentMode == .foreground,
+                          self.currentAuthorizationStatus() == .authorizedAlways ||
+                            self.currentAuthorizationStatus() == .authorizedWhenInUse,
+                          self.currentAccuracyAuthorization() != .reducedAccuracy else { return }
+                    _ = await self.onUpdate(.init(
                         coordinates: loc.coordinate,
                         timestamp: loc.timestamp,
                         accuracy: loc.horizontalAccuracy
                     ))
                 }
             } catch {
-                await MainActor.run {
+                if !Task.isCancelled, self?.streamID == id {
                     self?.logger.error("Streaming ended with error: \(String(describing: error), privacy: .public)")
                 }
             }
-            
-            await MainActor.run {
-                self?.streamTask = nil
-            }
+            guard self?.streamID == id else { return }
+            self?.streamID = nil
+            self?.streamTask = nil
         }
     }
     
     private func stopForegroundStreaming() {
+        streamID = nil
         if let task = streamTask {
             logger.debug("Stopping CLLocation live update stream")
             task.cancel()
