@@ -4,6 +4,7 @@ import SwiftUI
 
 struct TodayTabView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(LocationSession.self) private var locationSession: LocationSession?
     @State private var visibleWeatherState = TodayVisibleWeatherState()
     @State private var selectedSummaryAlert: AlertDTO?
     @State private var selectedSummaryAlertDetent: PresentationDetent = .medium
@@ -36,6 +37,21 @@ struct TodayTabView: View {
     let onOpenOutlooks: () -> Void
     let refreshAction: () async -> Void
     let refreshStormSetupAction: () async -> Void
+
+    private var locationUnavailableState: SummaryLocationUnavailableState {
+        locationSession.map { SummaryLocationUnavailableState(reliability: $0.reliabilityState) } ?? .fixUnavailable
+    }
+
+    private func recoverLocation() async {
+        switch locationUnavailableState {
+        case .permissionNotRequested:
+            locationSession?.requestInteractiveAuthorization()
+        case .permissionDenied, .preciseLocationRequired:
+            locationSession?.openSettings()
+        case .fixUnavailable:
+            await refreshAction()
+        }
+    }
 
     private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
         SummaryWeatherLocationIdentity(snapshot: snap)
@@ -110,7 +126,9 @@ struct TodayTabView: View {
                             selectedSummaryAlertDetent = .medium
                             selectedSummaryAlert = alert
                         },
-                        onRefreshStormSetup: refreshStormSetupAction
+                        onRefreshStormSetup: refreshStormSetupAction,
+                        locationUnavailableState: locationUnavailableState,
+                        onRecoverLocation: recoverLocation
                     )
                         .toolbar(.hidden, for: .navigationBar)
                         .background(canvas)

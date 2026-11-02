@@ -29,6 +29,49 @@ struct SummaryWeatherLocationIdentity: Equatable, Sendable {
     }
 }
 
+enum SummaryLocationUnavailableState: Equatable {
+    case permissionNotRequested
+    case permissionDenied
+    case preciseLocationRequired
+    case fixUnavailable
+
+    init(reliability: LocationReliabilityState) {
+        switch reliability.authorization {
+        case .notDetermined: self = .permissionNotRequested
+        case .denied, .restricted: self = .permissionDenied
+        case .always, .whileUsing:
+            self = reliability.accuracy == .reduced ? .preciseLocationRequired : .fixUnavailable
+        }
+    }
+
+    var title: LocalizedStringResource {
+        switch self {
+        case .permissionNotRequested, .permissionDenied: "Location Required"
+        case .preciseLocationRequired: "Precise Location Required"
+        case .fixUnavailable: "Location Unavailable"
+        }
+    }
+
+    var message: LocalizedStringResource {
+        switch self {
+        case .permissionNotRequested, .permissionDenied:
+            "Enable location access to load local risk, alerts, and weather conditions."
+        case .preciseLocationRequired:
+            "Enable Precise Location in Settings to load conditions and alerts for your area."
+        case .fixUnavailable:
+            "SkyAware couldn’t get your location. Try again in a moment."
+        }
+    }
+
+    var actionTitle: LocalizedStringResource {
+        switch self {
+        case .permissionNotRequested: "Enable Location"
+        case .permissionDenied, .preciseLocationRequired: "Open Settings"
+        case .fixUnavailable: "Try Again"
+        }
+    }
+}
+
 struct SummaryStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -42,6 +85,7 @@ struct SummaryStatus: View {
     let todayContentState: TodayContentState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
+    var locationUnavailableState: SummaryLocationUnavailableState = .fixUnavailable
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -108,10 +152,10 @@ struct SummaryStatus: View {
 
     private var locationUnavailableMessage: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Location Required", systemImage: "location.slash")
+            Label { Text(locationUnavailableState.title) } icon: { Image(systemName: "location.slash") }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-            Text("Enable location access to load local risk, alerts, and weather conditions.")
+            Text(locationUnavailableState.message)
                 .font(.footnote)
                 .todaySupportingText()
                 .fixedSize(horizontal: false, vertical: true)

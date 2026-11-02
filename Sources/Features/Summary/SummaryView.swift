@@ -157,6 +157,8 @@ struct SummaryView: View {
     let onOpenOutlooks: () -> Void
     let onSelectAlert: ((AlertDTO) -> Void)?
     let onRefreshStormSetup: () async -> Void
+    let locationUnavailableState: SummaryLocationUnavailableState
+    let onRecoverLocation: () async -> Void
 
 #if DEBUG
     @AppStorage("stormSetupForceDisplay", store: UserDefaults.shared)
@@ -191,7 +193,9 @@ struct SummaryView: View {
         onOpenAlerts: @escaping () -> Void,
         onOpenOutlooks: @escaping () -> Void,
         onSelectAlert: ((AlertDTO) -> Void)? = nil,
-        onRefreshStormSetup: @escaping () async -> Void = {}
+        onRefreshStormSetup: @escaping () async -> Void = {},
+        locationUnavailableState: SummaryLocationUnavailableState = .fixUnavailable,
+        onRecoverLocation: @escaping () async -> Void = {}
     ) {
         self.snap = snap
         self.stormSetup = stormSetup
@@ -221,6 +225,8 @@ struct SummaryView: View {
         self.onOpenOutlooks = onOpenOutlooks
         self.onSelectAlert = onSelectAlert
         self.onRefreshStormSetup = onRefreshStormSetup
+        self.locationUnavailableState = locationUnavailableState
+        self.onRecoverLocation = onRecoverLocation
     }
 
     private var isWeatherLoading: Bool {
@@ -349,8 +355,27 @@ struct SummaryView: View {
         )
     }
 
-    private func unavailableCard(title: String, message: String, symbol: String) -> some View {
-        emptySectionCard(title: title, message: message, symbol: symbol)
+    private var locationUnavailableCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label { Text(locationUnavailableState.title) } icon: { Image(systemName: "location.slash") }
+                .todaySectionLabel()
+            Text(locationUnavailableState.message)
+                .font(.subheadline)
+                .todaySupportingText()
+            Button {
+                Task { await onRecoverLocation() }
+            } label: {
+                Text(locationUnavailableState.actionTitle)
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+            .disabled(isRefreshInFlight)
+            .accessibilityIdentifier("summary-location-recovery")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .todayCardBackground(cornerRadius: SkyAwareRadius.card, darkShadowOpacity: 0.06,
+                             darkShadowRadius: 6, darkShadowY: 2)
     }
 
     private func unavailableContentCard(message: String, symbol: String) -> some View {
@@ -381,15 +406,12 @@ struct SummaryView: View {
                 todayContentState: todayContentState,
                 showsOfflineToken: showsOfflineToken,
                 isLocationUnavailable: isLocationUnavailable,
+                locationUnavailableState: locationUnavailableState
             )
 
         case .primaryAwareness:
             if isLocationUnavailable {
-                unavailableCard(
-                    title: "Location Required",
-                    message: "Enable location access to load local risk, alerts, and weather conditions.",
-                    symbol: "location.slash"
-                )
+                locationUnavailableCard
             } else {
                 riskSnapshotContent
             }
