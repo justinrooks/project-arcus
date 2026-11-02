@@ -351,7 +351,8 @@ struct LocationProviderTests {
     private func persistedUploadRequest(
         requestedAt: Date,
         isSubscribed: Bool = true,
-        forceUpload: Bool = false
+        forceUpload: Bool = false,
+        preferenceOnly: Bool = false
     ) -> PersistedLocationUploadRequest {
         PersistedLocationUploadRequest(
             source: .manualRefresh,
@@ -362,7 +363,7 @@ struct LocationProviderTests {
             isSubscribed: isSubscribed,
             authorizationState: "always",
             apnsToken: "",
-            operation: .locationSnapshot(context: PersistedLocationContext(makeContext()))
+            operation: preferenceOnly ? .preferenceSync : .locationSnapshot(context: PersistedLocationContext(makeContext()))
         )
     }
     
@@ -520,6 +521,7 @@ struct LocationProviderTests {
 
     private func makeGridSnapshot(
         countyCode: String? = "OKC109",
+        forecastZone: String? = "OKZ025",
         fireZone: String? = "OKZ025",
         countyLabel: String? = "Oklahoma County",
         fireZoneLabel: String? = "Central Oklahoma"
@@ -539,7 +541,7 @@ struct LocationProviderTests {
             state: "OK",
             timeZoneId: "America/Chicago",
             radarStationId: "KTLX",
-            forecastZone: "OKZ025",
+            forecastZone: forecastZone,
             countyCode: countyCode,
             fireZone: fireZone,
             countyLabel: countyLabel,
@@ -566,6 +568,99 @@ struct LocationProviderTests {
             h3Cell: h3Cell,
             grid: grid ?? makeGridSnapshot()
         )
+    }
+
+    @Test("offline multi-cell presence transport after durable reopen")
+    func offlineMultiCellReplay() async throws {
+        let suite = "multi-cell-presence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let clock = ClockBox(Date(timeIntervalSince1970: 20_000))
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+        let offline = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
+            preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
+            installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { clock.now() },
+            retryDelaysSeconds: [0], queueStore: store)
+        let contexts = (1...100).map { index in
+            makeContext(timestamp: Date(timeIntervalSince1970: Double(index * 100)),
+                        h3Cell: sampleH3Cell + Int64(index))
+        }
+        for context in contexts {
+            clock.advance(by: 1)
+            await offline.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
+        }
+        let reopened = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+        #expect(await reopened.loadPendingRequests().count == 1)
+        let uploader = MockSnapshotUploader()
+        let restored = LocationSnapshotPusher(locationUploader: uploader,
+            preferenceUploader: MockPreferenceUploader(), apnsTokenProvider: { "token" },
+            installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: reopened)
+        await restored.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().map(\.h3Cell) == [contexts.last?.h3Cell])
+        #expect(await reopened.loadPendingRequests().isEmpty)
+    }
+
+    @Test("legacy multi-cell backlog compacts by capture time and preserves preference intents", arguments: [false, true])
+    func legacyMultiCellCompaction(bounded: Bool) async throws {
+        let suite = "legacy-presence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+        let contexts = [300.0, 100, 200].enumerated().map { index, time in
+            makeContext(timestamp: Date(timeIntervalSince1970: time), h3Cell: sampleH3Cell + Int64(index))
+        }
+        let locations = contexts.enumerated().map { index, context in
+            PersistedLocationUploadRequest(source: .manualRefresh, reason: .locationChanged,
+                forceUpload: false, installationId: "install", requestedAt: Date(timeIntervalSince1970: Double(index)),
+                isSubscribed: true, authorizationState: "always", apnsToken: "token",
+                operation: .locationSnapshot(context: PersistedLocationContext(context)))
+        }
+        let preference = PersistedLocationUploadRequest(source: .settingsPreference, reason: .preferenceChanged,
+            forceUpload: true, installationId: "install", requestedAt: .distantPast,
+            isSubscribed: false, authorizationState: "always", apnsToken: "token", operation: .preferenceSync)
+        try await store.savePendingRequests(locations + [preference])
+        let uploader = MockSnapshotUploader()
+        let preferences = MockPreferenceUploader()
+        let restored = LocationSnapshotPusher(locationUploader: uploader, preferenceUploader: preferences,
+            apnsTokenProvider: { "token" }, installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, osVersionProvider: { "test" }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue"))
+        if bounded {
+            #expect(await restored.drainPendingUploads(using: .init(uploadQuota: 1,
+                deadline: ContinuousClock().now.advanced(by: .seconds(5)))) == .remaining)
+            #expect(await store.loadPendingRequests().count == 1)
+        }
+        await restored.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().map(\.h3Cell) == [contexts[0].h3Cell])
+        #expect(await preferences.uploadedPayloads().count == 1)
+        #expect(await store.loadPendingRequests().isEmpty)
+    }
+
+    @Test("equal-capture current-cell enrichment survives minimal and obsolete replay")
+    func currentCellEnrichment() async throws {
+        let uploader = GateableSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(locationUploader: uploader, preferenceUploader: MockPreferenceUploader(),
+            installationIdProvider: { "install" }, subscriptionStatusProvider: { true }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+            retryDelaysSeconds: [0], queueStore: store)
+        let enriched = makeContext(timestamp: Date(timeIntervalSince1970: 300))
+        let minimal = LocationContext(snapshot: enriched.snapshot, h3Cell: enriched.h3Cell,
+                                      grid: makeGridSnapshot(countyCode: nil, forecastZone: nil, fireZone: nil))
+        let active = Task { await pusher.enqueue(minimal, source: .foregroundLocationChange, reason: .locationChanged) }
+        await uploader.waitForFirstAttempt()
+        await pusher.enqueue(enriched, source: .foregroundLocationChange, reason: .locationResolved)
+        await pusher.enqueue(minimal, source: .foregroundLocationChange, reason: .locationChanged)
+        await pusher.enqueue(makeContext(timestamp: Date(timeIntervalSince1970: 200), h3Cell: sampleH3Cell + 1),
+                             source: .foregroundLocationChange, reason: .locationChanged)
+        #expect(await store.current().map(\.operation) == [.locationSnapshot(context: PersistedLocationContext(enriched))])
+        await uploader.unblock()
+        await active.value
+        #expect(await uploader.attemptCount() == 2)
+        #expect(await store.current().isEmpty)
     }
 
     @Test("newer same-cell pending evidence survives store reopen and older arrivals")
@@ -597,8 +692,9 @@ struct LocationProviderTests {
         #expect(await reopened.loadPendingRequests().isEmpty)
     }
 
-    @Test("active old presence retains one newest durable follow-up", arguments: [false, true], [false, true])
-    func activePresenceFollowUp(failFirst: Bool, cancelOld: Bool) async {
+    @Test("active old presence retains one newest durable follow-up", arguments: [false, true], [(false, false), (false, true), (true, false), (true, true)])
+    func activePresenceFollowUp(crossCell: Bool, mode: (Bool, Bool)) async {
+        let (failFirst, cancelOld) = mode
         let uploader = GateableSnapshotUploader(failFirst: failFirst)
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(locationUploader: uploader,
@@ -606,10 +702,12 @@ struct LocationProviderTests {
             installationIdProvider: { "install" }, locationUploadEnabledProvider: { true },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: store)
         let old = makeContext(timestamp: Date(timeIntervalSince1970: 100))
-        let newest = makeContext(timestamp: Date(timeIntervalSince1970: 300))
+        let newest = makeContext(timestamp: Date(timeIntervalSince1970: 300),
+                                 h3Cell: crossCell ? sampleH3Cell + 2 : sampleH3Cell)
         let active = Task { await pusher.enqueue(old, source: .foregroundLocationChange, reason: .locationChanged) }
         await uploader.waitForFirstAttempt()
-        await pusher.enqueue(makeContext(timestamp: Date(timeIntervalSince1970: 200)),
+        await pusher.enqueue(makeContext(timestamp: Date(timeIntervalSince1970: 200),
+            h3Cell: crossCell ? sampleH3Cell + 1 : sampleH3Cell),
             source: .foregroundLocationChange, reason: .locationChanged)
         await pusher.enqueue(newest, source: .foregroundLocationChange, reason: .locationChanged)
         #expect(await store.current().first?.operation == .locationSnapshot(context: PersistedLocationContext(newest)))
@@ -664,11 +762,10 @@ struct LocationProviderTests {
     func suspendedSavePreservesNewest(failFirst: Bool) async throws {
         let store = SuspendedQueueStore(failFirst: failFirst)
         let admissions = Mutex(0)
-        let coordinates = CLLocationCoordinate2D(latitude: 39, longitude: -104)
-        let cell = try SwiftyH3Hasher().h3Cell(for: coordinates)
         func observation(_ time: TimeInterval) -> LocationSnapshot {
-            LocationSnapshot(coordinates: coordinates, timestamp: Date(timeIntervalSince1970: time),
-                accuracy: 25, placemarkSummary: nil, h3Cell: cell)
+            let coordinates = CLLocationCoordinate2D(latitude: 39 + time / 1000, longitude: -104)
+            return LocationSnapshot(coordinates: coordinates, timestamp: Date(timeIntervalSince1970: time),
+                accuracy: 25, placemarkSummary: nil, h3Cell: try? SwiftyH3Hasher().h3Cell(for: coordinates))
         }
         let pusher = LocationSnapshotPusher(locationUploader: OfflineSnapshotUploader(),
             preferenceUploader: MockPreferenceUploader(), installationIdProvider: { "install" },
@@ -1663,7 +1760,7 @@ struct LocationProviderTests {
         await second.drainPendingUploads()
         #expect(await reopened.loadPendingRequests().isEmpty)
         let payloads = await snapshots.uploadedPayloads()
-        #expect(payloads.count == 2)
+        #expect(payloads.count == 1)
         #expect(payloads.allSatisfy { $0.mesoNotificationsEnabled == false })
     }
 
@@ -1754,7 +1851,8 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         let context = makeContext()
@@ -2150,7 +2248,8 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         await pusher.enqueuePreferenceSync(
@@ -2523,20 +2622,20 @@ struct LocationProviderTests {
 
     @Test("bounded drain preserves and later drains quota remainder")
     func snapshotPusher_boundedDrainPreservesQuotaRemainder() async {
-        let uploader = MockSnapshotUploader()
-        let first = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let uploader = MockPreferenceUploader()
+        let first = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000), preferenceOnly: true)
         let second = persistedUploadRequest(
             requestedAt: Date(timeIntervalSince1970: 10_001),
-            isSubscribed: false
+            isSubscribed: false, preferenceOnly: true
         )
         let third = persistedUploadRequest(
             requestedAt: Date(timeIntervalSince1970: 10_002),
-            forceUpload: true
+            forceUpload: true, preferenceOnly: true
         )
         let store = InMemoryUploadQueueStore(seed: [first, second, third])
         let pusher = LocationSnapshotPusher(
-            locationUploader: uploader,
-            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
@@ -2816,7 +2915,8 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             locationUploadEnabledProvider: { false },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         let context = makeContext(
@@ -2842,7 +2942,8 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         let context = makeContext(
@@ -2869,7 +2970,8 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { false },
             locationUploadEnabledProvider: { false },
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         await pusher.enqueuePreferenceSync(
@@ -2921,7 +3023,8 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { true },
             locationUploadEnabledProvider: { true },
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
         let context = makeContext()
 
@@ -2953,7 +3056,8 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0],
             queueStore: store
         )
-        let secondContext = makeContext(h3Cell: sampleH3Cell + 1)
+        let secondContext = makeContext(timestamp: Date(timeIntervalSince1970: 1_234_568),
+                                        h3Cell: sampleH3Cell + 1)
         let drainTask = Task {
             await pusher.drainPendingUploads(
                 using: PendingLocationUploadDrainBudget(
@@ -3064,8 +3168,8 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
-    @Test("pending queue preserves distinct semantic keys")
-    func snapshotPusher_pendingQueuePreservesDistinctKeys() async throws {
+    @Test("pending location queue supersedes obsolete geographic keys")
+    func snapshotPusher_pendingQueueSupersedesGeography() async throws {
         let uploader = OfflineSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
@@ -3082,6 +3186,7 @@ struct LocationProviderTests {
             grid: makeGridSnapshot(countyCode: "OKC109", fireZone: "OKZ025")
         )
         let second = makeContext(
+            timestamp: Date(timeIntervalSince1970: 1_234_568),
             h3Cell: sampleH3Cell + 1,
             grid: makeGridSnapshot(countyCode: "OKC017", fireZone: "OKZ030")
         )
@@ -3089,7 +3194,7 @@ struct LocationProviderTests {
         await pusher.enqueue(first, source: .manualRefresh, reason: .locationResolved)
         await pusher.enqueue(second, source: .manualRefresh, reason: .locationResolved)
 
-        #expect(await store.current().count == 2)
+        #expect(await store.current().count == 1)
     }
 
     @Test("snapshot pusher does not dedupe when location scope changes")
@@ -3118,6 +3223,7 @@ struct LocationProviderTests {
             )
         )
         let second = makeContext(
+            timestamp: Date(timeIntervalSince1970: 1_234_568),
             h3Cell: sampleH3Cell + 1,
             grid: makeGridSnapshot(
                 countyCode: "OKC017",
@@ -3147,7 +3253,8 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
-            dedupeWindowSeconds: 15
+            dedupeWindowSeconds: 15,
+            queueStore: InMemoryUploadQueueStore()
         )
 
         await pusher.enqueuePreferenceSync(
@@ -3179,7 +3286,8 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         let firstTask = Task {
@@ -3216,7 +3324,8 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
-            dedupeWindowSeconds: 15
+            dedupeWindowSeconds: 15,
+            queueStore: InMemoryUploadQueueStore()
         )
         let context = makeContext()
 
@@ -3240,7 +3349,8 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
-            dedupeWindowSeconds: 15
+            dedupeWindowSeconds: 15,
+            queueStore: InMemoryUploadQueueStore()
         )
 
         await pusher.enqueuePreferenceSync(
@@ -3272,7 +3382,8 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
-            dedupeWindowSeconds: 15
+            dedupeWindowSeconds: 15,
+            queueStore: InMemoryUploadQueueStore()
         )
         let context = makeContext()
 
@@ -3294,7 +3405,8 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         await pusher.enqueue(makeContext(), source: .foregroundPrime, reason: .locationResolved)
@@ -3314,7 +3426,8 @@ struct LocationProviderTests {
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: InMemoryUploadQueueStore()
         )
 
         await pusher.enqueue(makeContext(), source: .foregroundPrime, reason: .locationResolved)

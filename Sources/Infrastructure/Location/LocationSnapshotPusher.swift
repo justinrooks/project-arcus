@@ -136,7 +136,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private var activeRequests: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var preparedKeys: [PendingCoalescingKey: DeduplicationKey] = [:]
     private var hasLoadedPersistedPending = false
-    private var newestCaptureByCoalescingKey: [PendingCoalescingKey: Date] = [:]
+    private var newestContextByCoalescingKey: [PendingCoalescingKey: PersistedLocationContext] = [:]
     private var pendingLoad: Task<[PersistedLocationUploadRequest], Never>?
     private var committedPending: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var pendingSaveCount = 0
@@ -298,11 +298,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         }
         await waitForPendingSave()
         let coalescingKey = coalescingKey(for: persisted)
-        if let newest = newestCaptureByCoalescingKey[coalescingKey], newest > context.capturedAt {
+        if let newest = newestContextByCoalescingKey[coalescingKey], !canReplace(newest, with: context) {
             return await persistPendingState()
         }
-        newestCaptureByCoalescingKey[coalescingKey] = context.capturedAt
-        if let existing = pendingByCoalescingKey[coalescingKey], capturedAt(of: existing) == context.capturedAt {
+        newestContextByCoalescingKey[coalescingKey] = context
+        if let existing = pendingByCoalescingKey[coalescingKey], existing.operation == persisted.operation {
             persisted = existing
         }
         guard await upsertPending(persisted) else { return false }
@@ -685,7 +685,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             // A replay may have prepared different consent from its historical key.
             // Keep one durable follow-up when current intent differs from the active transfer.
             if let active = activeRequests[workItem.coalescingKey],
-               let old = capturedAt(of: active), let new = capturedAt(of: workItem.request), new > old {
+               let old = capturedAt(of: active), let new = capturedAt(of: workItem.request),
+               new >= old, active != workItem.request {
                 queue.append(workItem)
                 return true
             }
@@ -1004,10 +1005,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         guard !hasLoadedPersistedPending else { return }
         for request in loaded.sorted(by: { $0.requestedAt < $1.requestedAt }) {
             let key = coalescingKey(for: request)
-            if let existing = pendingByCoalescingKey[key],
-               let old = capturedAt(of: existing), let new = capturedAt(of: request), old >= new { continue }
+            if case .locationSnapshot(let context) = request.operation {
+                if let newest = newestContextByCoalescingKey[key], !canReplace(newest, with: context) { continue }
+                newestContextByCoalescingKey[key] = context
+            }
             pendingByCoalescingKey[key] = request
-            newestCaptureByCoalescingKey[key] = capturedAt(of: request)
         }
         committedPending = pendingByCoalescingKey
         hasLoadedPersistedPending = true
@@ -1045,7 +1047,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                 if pendingByCoalescingKey == snapshot {
                     pendingByCoalescingKey = committedPending
                     for (key, request) in snapshot where capturedAt(of: request) != nil {
-                        newestCaptureByCoalescingKey[key] = committedPending[key].flatMap { capturedAt(of: $0) }
+                        if case .locationSnapshot(let context) = committedPending[key]?.operation {
+                            newestContextByCoalescingKey[key] = context
+                        } else {
+                            newestContextByCoalescingKey.removeValue(forKey: key)
+                        }
                     }
                 }
                 return false
@@ -1057,15 +1063,31 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         return saved
     }
 
+    // Equal-capture enrichment may add metadata to the current cell, but must not
+    // replace its geography or erase already resolved targeting fields.
+    private func canReplace(_ old: PersistedLocationContext, with new: PersistedLocationContext) -> Bool {
+        if new.capturedAt != old.capturedAt { return new.capturedAt > old.capturedAt }
+        return new.h3Cell == old.h3Cell &&
+            (old.county == nil || new.county == old.county) &&
+            (old.fireZone == nil || new.fireZone == old.fireZone) &&
+            (old.forecastZone == nil || new.forecastZone == old.forecastZone)
+    }
+
     private func coalescingKey(for request: PersistedLocationUploadRequest) -> PendingCoalescingKey {
-        PendingCoalescingKey(
-            installationId: request.installationId,
-            operation: request.operation.deduplicationOperation,
-            isSubscribed: request.isSubscribed,
-            mesoNotificationsEnabled: request.mesoNotificationsEnabled ?? true,
-            authorizationState: request.authorizationState,
-            forceUpload: request.forceUpload
-        )
+        switch request.operation {
+        case .locationSnapshot:
+            // Presence is current state, independent of travel history or historical consent.
+            // Transfer preparation still revalidates current consent and evidence fences.
+            return .location(installationId: request.installationId)
+        case .preferenceSync:
+            return .preference(
+                installationId: request.installationId,
+                isSubscribed: request.isSubscribed,
+                mesoNotificationsEnabled: request.mesoNotificationsEnabled ?? true,
+                authorizationState: request.authorizationState,
+                forceUpload: request.forceUpload
+            )
+        }
     }
 
     nonisolated private static func readApnsTokenFromDefaults() -> String {
@@ -1099,13 +1121,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         let forceUpload: Bool
     }
 
-    private struct PendingCoalescingKey: Hashable, Codable {
-        let installationId: String
-        let operation: PendingDeduplicationOperation
-        let isSubscribed: Bool
-        let mesoNotificationsEnabled: Bool?
-        let authorizationState: String
-        let forceUpload: Bool
+    private enum PendingCoalescingKey: Hashable {
+        case location(installationId: String)
+        case preference(installationId: String, isSubscribed: Bool, mesoNotificationsEnabled: Bool,
+                        authorizationState: String, forceUpload: Bool)
     }
 
     private struct QueuedUpload {
