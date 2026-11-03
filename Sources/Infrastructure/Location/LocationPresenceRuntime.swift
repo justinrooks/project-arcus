@@ -23,12 +23,17 @@ final class LocationPresenceRuntime {
         )
         self.provider = provider
         self.pusher = pusher
+        let admission = LocationPresenceAdmission(provider: provider, foreground: ForegroundPresenceEnqueuer(pusher: pusher),
+            background: BackgroundPresenceEnqueuer(pusher: pusher),
+            evidenceCutoff: { pusher.minimumLocationObservationTimestamp })
         manager = LocationManager(
-            onUpdate: { await provider.send(update: $0) },
+            onUpdate: { await admission.accept($0, source: .foregroundLocationChange).acceptance },
+            onForegroundActivation: { isEligible in
+                await admission.retryForegroundAdmission(isEligible: isEligible)
+                if isEligible() { await pusher.drainPendingUploads() }
+            },
             onBackgroundUpdate: { update in
-                await Self.acceptBackgroundUpdate(
-                    update, provider: provider, enqueuer: BackgroundPresenceEnqueuer(pusher: pusher)
-                )
+                await admission.accept(update, source: .backgroundLocationChange).acceptance
             },
             drainBackgroundPresence: { await pusher.drainPendingUploads() }
         )
@@ -45,17 +50,106 @@ final class LocationPresenceRuntime {
         enqueuer: any LocationPresenceEnqueuing,
         now: Date = .now
     ) async -> LocationAcceptance {
-        let age = now.timeIntervalSince(update.timestamp)
-        guard age >= 0, age <= 5 * 60 else { return .rejected }
-        let acceptance = await provider.send(update: update)
-        guard acceptance == .accepted else { return acceptance }
-        // A newer accepted delivery supersedes this one if acceptance interleaved.
-        guard let snapshot = await provider.snapshot(), snapshot.timestamp == update.timestamp else {
-            return .redundant
+        await LocationPresenceAdmission(provider: provider, foreground: enqueuer, background: enqueuer,
+            now: { now }).accept(update, source: .backgroundLocationChange).acceptance
+    }
+}
+
+/// One process-owned cadence authority. The pusher remains the durable consent authority.
+@MainActor
+final class LocationPresenceAdmission {
+    enum Retention: Equatable { case notAttempted, retained, failed }
+    struct Result {
+        let acceptance: LocationAcceptance
+        let retention: Retention
+    }
+    private let provider: LocationProvider
+    private let foreground: any LocationPresenceEnqueuing
+    private let background: any LocationPresenceEnqueuing
+    private let now: @MainActor @Sendable () -> Date
+    private var attempt: (snapshot: LocationSnapshot, at: Date, failed: Bool)?
+    private var inFlight: Set<Date> = []
+    private let evidenceCutoff: @MainActor @Sendable () -> Date?
+    private var previousCutoff: Date?
+
+    init(provider: LocationProvider, foreground: any LocationPresenceEnqueuing,
+         background: any LocationPresenceEnqueuing,
+         now: @escaping @MainActor @Sendable () -> Date = { .now },
+         evidenceCutoff: @escaping @MainActor @Sendable () -> Date? = { nil }) {
+        self.provider = provider
+        self.foreground = foreground
+        self.background = background
+        self.now = now
+        self.evidenceCutoff = evidenceCutoff
+    }
+
+    func accept(_ update: LocationUpdate, source: LocationUploadSource) async -> Result {
+        if source == .backgroundLocationChange {
+            let age = now().timeIntervalSince(update.timestamp)
+            guard age >= 0, age <= 300 else { return .init(acceptance: .rejected, retention: .notAttempted) }
         }
-        _ = await enqueuer.enqueuePresence(snapshot, source: .backgroundLocationChange, reason: .locationChanged)
-        // Location sharing consent/storage availability must not disable local watch/risk ownership.
-        return .accepted
+        let acceptance = await provider.send(update: update)
+        guard acceptance == .accepted || (acceptance == .redundant && attempt?.failed == true),
+              let snapshot = await provider.snapshot(),
+              snapshot.timestamp == update.timestamp || (acceptance == .redundant && attempt?.failed == true) else {
+            return .init(acceptance: acceptance, retention: .notAttempted)
+        }
+        return .init(acceptance: acceptance, retention: await admit(snapshot, source: source))
+    }
+
+    func retryForegroundAdmission(
+        isEligible: @escaping @MainActor @Sendable () -> Bool = { true }
+    ) async {
+        guard isEligible(), let snapshot = await provider.snapshot(), isEligible() else { return }
+        _ = await admit(snapshot, source: .foregroundLocationChange, isEligible: isEligible)
+    }
+
+    func admit(_ snapshot: LocationSnapshot, source: LocationUploadSource,
+               isEligible: (@MainActor @Sendable () -> Bool)? = nil) async -> Retention {
+        guard isEligible?() ?? true else { return .notAttempted }
+        let time = now()
+        let cutoff = evidenceCutoff()
+        if cutoff != previousCutoff { attempt = nil; previousCutoff = cutoff }
+        guard cutoff.map({ snapshot.timestamp >= $0 }) ?? true else { return .notAttempted }
+        guard snapshot.h3Cell != nil, !inFlight.contains(snapshot.timestamp) else { return .notAttempted }
+        if let previous = attempt {
+            guard snapshot.timestamp >= previous.snapshot.timestamp else { return .notAttempted }
+            if snapshot.h3Cell == previous.snapshot.h3Cell {
+                let elapsed = time.timeIntervalSince(previous.at)
+                guard previous.failed ? elapsed >= 30 :
+                    (snapshot.timestamp > previous.snapshot.timestamp && elapsed >= 300) else { return .notAttempted }
+            }
+        }
+        attempt = (snapshot, time, false)
+        inFlight.insert(snapshot.timestamp)
+        defer { inFlight.remove(snapshot.timestamp) }
+        let enqueuer = source == .backgroundLocationChange ? background : foreground
+        let retained: Bool
+        if source == .foregroundLocationChange, let isEligible {
+            retained = await enqueuer.enqueueForegroundPresence(snapshot, isEligible: isEligible)
+        } else {
+            retained = await enqueuer.enqueuePresence(snapshot, source: source, reason: .locationChanged)
+        }
+        if attempt?.snapshot.hasSameObservation(as: snapshot) == true, attempt?.at == time {
+            attempt?.failed = !retained
+        }
+        return retained ? .retained : .failed
+    }
+}
+
+struct ForegroundPresenceEnqueuer: LocationPresenceEnqueuing {
+    let pusher: LocationSnapshotPusher
+    func enqueuePresence(_ observation: LocationSnapshot, source: LocationUploadSource,
+                         reason: LocationUploadReason) async -> Bool {
+        let retained = await pusher.retainPresence(observation, source: source)
+        if retained { Task { await pusher.drainPendingUploads() } }
+        return retained
+    }
+    /// Activation owns its drain task so phase retirement cancels preparation and transport.
+    func enqueueForegroundPresence(_ observation: LocationSnapshot,
+        isEligible: @escaping @MainActor @Sendable () -> Bool) async -> Bool {
+        guard await isEligible() else { return false }
+        return await pusher.retainPresence(observation, source: .foregroundLocationChange)
     }
 }
 

@@ -178,6 +178,10 @@ struct SkyAwareApp: App {
                 }
             )
         }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            guard isUITestStaticHome == false else { return }
+            LocationPresenceRuntime.shared.manager.updateMode(for: phase)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             guard isUITestStaticHome == false else { return }
             logger.debug("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")

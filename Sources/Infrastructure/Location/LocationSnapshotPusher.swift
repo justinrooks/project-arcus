@@ -49,6 +49,17 @@ protocol LocationPresenceEnqueuing: Sendable {
         source: LocationUploadSource,
         reason: LocationUploadReason
     ) async -> Bool
+    func enqueueForegroundPresence(_ observation: LocationSnapshot,
+        isEligible: @escaping @MainActor @Sendable () -> Bool) async -> Bool
+
+}
+
+extension LocationPresenceEnqueuing {
+    func enqueueForegroundPresence(_ observation: LocationSnapshot,
+        isEligible: @escaping @MainActor @Sendable () -> Bool) async -> Bool {
+        guard await isEligible() else { return false }
+        return await enqueuePresence(observation, source: .foregroundLocationChange, reason: .locationChanged)
+    }
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
@@ -219,9 +230,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
 
     /// Retains background evidence without spending the delivery grant on transport first.
     func retainBackgroundPresence(_ observation: LocationSnapshot) async -> Bool {
+        await retainPresence(observation, source: .backgroundLocationChange)
+    }
+
+    /// Admission completes at the durable boundary; callers choose their transport grant.
+    func retainPresence(_ observation: LocationSnapshot, source: LocationUploadSource) async -> Bool {
         guard let context = PersistedLocationContext(observation: observation, now: nowProvider()) else { return false }
         return await enqueueLocation(
-            context, source: .backgroundLocationChange, reason: .locationChanged,
+            context, source: source, reason: .locationChanged,
             forceUpload: false, processImmediately: false
         )
     }

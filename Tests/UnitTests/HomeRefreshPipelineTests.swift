@@ -55,8 +55,11 @@ struct HomeRefreshPipelineTests {
             locationManager: LocationManager(manager: PresenceAuthorization(), onUpdate: { _ in .accepted }),
             locationContextResolver: PresenceContextResolver(context: context),
             locationUploadCoordinator: NoOpLocationUploadCoordinator(),
-            presenceEnqueuer: presence, presenceNow: { scenario.now }
+            presenceNow: { scenario.now }
         )
+        let admission = LocationPresenceAdmission(provider: LocationProvider(), foreground: presence,
+            background: presence, now: { scenario.now })
+        _ = await admission.admit(context.snapshot, source: .foregroundLocationChange)
         session.currentContext = context
         session.startupState = .ready
         session.handleScenePhaseChange(.active)
@@ -80,7 +83,7 @@ struct HomeRefreshPipelineTests {
         scenario.now.addTimeInterval(30)
         await presence.succeed()
         try #require(await waitUntil {
-            session.handleScenePhaseChange(.active)
+            _ = await admission.admit(context.snapshot, source: .foregroundLocationChange)
             return await presence.recordedCount() == 2
         })
         scenario.now.addTimeInterval(300)
@@ -88,6 +91,7 @@ struct HomeRefreshPipelineTests {
         refreshed = LocationSnapshot(coordinates: refreshed.coordinates, timestamp: scenario.now,
                                      accuracy: refreshed.accuracy, placemarkSummary: refreshed.placemarkSummary,
                                      h3Cell: refreshed.h3Cell)
+        _ = await admission.admit(refreshed, source: .foregroundLocationChange)
         updates.continuation.yield(refreshed)
         try #require(await waitUntil { await presence.recordedCount() == 3 })
         // Drive the same observer boundary HomeView uses, using the session's actual context.

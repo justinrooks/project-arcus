@@ -31,6 +31,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let manager: CLLocationManager
     private let authorizationOverride: CLAuthorizationStatus?
     private let logger = Logger.locationManager
+    private var activationTask: Task<Void, Never>?
+    private var activationID: UUID?
+    private let onForegroundActivation: @MainActor @Sendable (
+        @escaping @MainActor @Sendable () -> Bool
+    ) async -> Void
     private let onUpdate: LocationSink
     private let onBackgroundUpdate: LocationSink
     private let drainBackgroundPresence: @Sendable () async -> Void
@@ -56,6 +61,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     init(
         manager: CLLocationManager = CLLocationManager(),
         onUpdate: @escaping LocationSink,
+        onForegroundActivation: @escaping @MainActor @Sendable (
+            @escaping @MainActor @Sendable () -> Bool
+        ) async -> Void = { _ in },
         onBackgroundUpdate: LocationSink? = nil,
         drainBackgroundPresence: @escaping @Sendable () async -> Void = {},
         foregroundUpdates: @escaping ForegroundUpdates = { receive in
@@ -71,6 +79,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         self.foregroundUpdates = foregroundUpdates
         self.manager = manager
         self.authorizationOverride = Self.authorizationOverrideFromEnvironment()
+        self.onForegroundActivation = onForegroundActivation
         self.onUpdate = onUpdate
         self.onBackgroundUpdate = onBackgroundUpdate ?? onUpdate
         self.drainBackgroundPresence = drainBackgroundPresence
@@ -173,12 +182,31 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     
     // MARK: - Mode management
     func updateMode(for phase: ScenePhase) {
+        if phase != .active {
+            activationID = nil
+            activationTask?.cancel()
+        }
         lastPhase = phase
         let status = currentAuthorizationStatus()
         
         guard status == .authorizedAlways || status == .authorizedWhenInUse else {
             stopAll()
             return
+        }
+        if phase == .active, activationTask == nil || activationID == nil {
+            let id = UUID()
+            activationID = id
+            let previous = activationTask
+            activationTask = Task { [weak self] in
+                await previous?.value
+                guard let self, self.activationID == id, self.lastPhase == .active else { return }
+                await self.onForegroundActivation { [weak self] in
+                    guard let self else { return false }
+                    return self.activationID == id && self.lastPhase == .active &&
+                        self.currentAuthorizationStatus().isLocationAuthorized
+                }
+                if self.activationID == id { self.activationTask = nil }
+            }
         }
         if phase == .inactive {
             if currentMode == .foreground {
