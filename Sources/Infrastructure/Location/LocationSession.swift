@@ -267,12 +267,25 @@ final class LocationSession: Sendable {
             guard isCurrentLocationResolution(generation) else { return nil }
             guard await reconcileResolvedContext(context, generation: generation) else { return nil }
             if let uploadSource {
-                await locationUploadCoordinator.enqueue(
-                    context,
-                    source: uploadSource,
-                    reason: uploadReason ?? .locationResolved,
-                    forceUpload: false
-                )
+                // The durable cache and transport encode capture time at whole-second precision.
+                // Reusing that evidence is not a new presence intent; retry the outbox instead.
+                let cached = cachedContext?.snapshot
+                let isCachedObservation = cached.map {
+                    floor(context.snapshot.timestamp.timeIntervalSince1970) == floor($0.timestamp.timeIntervalSince1970) &&
+                    context.snapshot.coordinates.latitude == $0.coordinates.latitude &&
+                    context.snapshot.coordinates.longitude == $0.coordinates.longitude &&
+                    context.snapshot.accuracy == $0.accuracy && context.snapshot.h3Cell == $0.h3Cell
+                } ?? false
+                if isCachedObservation {
+                    await locationUploadCoordinator.drainPendingUploads()
+                } else {
+                    await locationUploadCoordinator.enqueue(
+                        context,
+                        source: uploadSource,
+                        reason: uploadReason ?? .locationResolved,
+                        forceUpload: false
+                    )
+                }
                 guard isCurrentLocationResolution(generation) else { return nil }
             }
             startupState = .ready

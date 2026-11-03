@@ -792,6 +792,98 @@ struct LocationProviderTests {
         #expect(await store.loadPendingRequests().isEmpty)
     }
 
+    private actor RecoverableAdmissionBoundary: LocationUploadQueueStoring, DevicePreferenceSyncUploading {
+        private var requests: [PersistedLocationUploadRequest] = []
+        private var failure: String?
+        private var pauseNext = false
+        private var blocked: CheckedContinuation<Void, Never>?
+        func pauseNextConsent() { pauseNext = true }
+        func isBlocked() -> Bool { blocked != nil }
+        func releaseFailure() { blocked?.resume(); blocked = nil }
+        func setFailure(_ failure: String?) { self.failure = failure }
+        func loadPendingRequests() async -> [PersistedLocationUploadRequest] { requests }
+        func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async throws {
+            if failure == "store" { throw URLError(.cannotWriteToFile) }
+            self.requests = requests
+        }
+        func reconcileConsent(installationId: String) async throws {
+            if pauseNext {
+                pauseNext = false
+                await withCheckedContinuation { blocked = $0 }
+                throw CocoaError(.fileReadNoPermission)
+            }
+            if failure == "consent" { throw CocoaError(.fileReadNoPermission) }
+        }
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
+    }
+
+    @Test("late admission failure cannot recreate concurrently acknowledged enrichment", arguments: [false, true])
+    func lateEnrichmentFailureDoesNotReplay(preacknowledged: Bool) async throws {
+        let boundary = RecoverableAdmissionBoundary()
+        let uploader = MockSnapshotUploader()
+        let clock = Mutex(Date(timeIntervalSince1970: 300))
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader, preferenceUploader: boundary,
+            installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { clock.withLock { $0 } },
+            retryDelaysSeconds: [0], queueStore: boundary
+        )
+        let context = makeContext(timestamp: Date(timeIntervalSince1970: 300))
+        if preacknowledged {
+            await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationResolved)
+        }
+        await boundary.pauseNextConsent()
+        let failing = Task { await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationResolved) }
+        while await !boundary.isBlocked() { await Task.yield() }
+        await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationResolved)
+        await boundary.releaseFailure()
+        await failing.value
+        clock.withLock { $0 = Date(timeIntervalSince1970: 4500) }
+        await pusher.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().count == 1)
+    }
+
+    @Test("failed enrichment admission recovers once through bounded drain without replaying old geography",
+          arguments: ["consent", "store"], [false, true])
+    func enrichmentAdmissionRecovery(failure: String, superseded: Bool) async throws {
+        let boundary = RecoverableAdmissionBoundary()
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader, preferenceUploader: boundary,
+            installationIdProvider: { "install" }, subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: boundary
+        )
+        let enriched = makeContext(timestamp: Date(timeIntervalSince1970: 300))
+        let minimal = LocationContext(snapshot: enriched.snapshot, h3Cell: enriched.h3Cell,
+                                     grid: makeGridSnapshot(countyCode: nil, forecastZone: nil, fireZone: nil))
+        await pusher.enqueue(minimal, source: .foregroundLocationChange, reason: .locationChanged)
+        #expect(await uploader.uploadedPayloads().count == 1)
+        await boundary.setFailure(failure)
+        await pusher.enqueue(enriched, source: .foregroundLocationChange, reason: .locationResolved)
+        #expect(await uploader.uploadedPayloads().count == 1)
+        let unavailable = await pusher.drainPendingUploads(using: .init(uploadQuota: 1, deadline: .now + .seconds(5)))
+        #expect(unavailable == .remaining)
+        #expect(await uploader.uploadedPayloads().count == 1)
+        await boundary.setFailure(nil)
+        if superseded {
+            await pusher.enqueue(makeContext(timestamp: Date(timeIntervalSince1970: 400), h3Cell: sampleH3Cell + 1),
+                                 source: .foregroundLocationChange, reason: .locationChanged)
+        }
+        let exhausted = await pusher.drainPendingUploads(using: .init(uploadQuota: 0, deadline: .now + .seconds(5)))
+        #expect(exhausted == .remaining)
+        #expect(await uploader.uploadedPayloads().count == (superseded ? 2 : 1))
+        let result = await pusher.drainPendingUploads(using: .init(uploadQuota: 1, deadline: .now + .seconds(5)))
+        #expect(result == .drained)
+        await pusher.drainPendingUploads()
+        let payloads = await uploader.uploadedPayloads()
+        #expect(payloads.count == 2)
+        #expect(payloads.last?.capturedAt == Date(timeIntervalSince1970: superseded ? 400 : 300))
+        #expect(payloads.last?.county == enriched.grid.countyCode)
+        #expect(await boundary.loadPendingRequests().isEmpty)
+    }
+
     @Test("equal-capture current-cell enrichment survives minimal and obsolete replay")
     func currentCellEnrichment() async throws {
         let uploader = GateableSnapshotUploader()
