@@ -190,6 +190,7 @@ struct LocationProviderTests {
         private var isBlocked = true
         private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
         private var unblockContinuation: CheckedContinuation<Void, Never>?
+        private var firstAttemptWaitFinished = false
 
         func upload(_ payload: LocationSnapshotPushPayload) async throws {
             payloads.append(payload)
@@ -206,10 +207,16 @@ struct LocationProviderTests {
         }
 
         func waitForFirstAttempt() async {
-            if payloads.isEmpty == false { return }
+            if payloads.isEmpty == false || firstAttemptWaitFinished { return }
             await withCheckedContinuation { continuation in
                 firstAttemptContinuation = continuation
             }
+        }
+
+        func finishFirstAttemptWait() {
+            firstAttemptWaitFinished = true
+            firstAttemptContinuation?.resume()
+            firstAttemptContinuation = nil
         }
 
         func unblock() {
@@ -3053,21 +3060,25 @@ struct LocationProviderTests {
             subscriptionStatusProvider: { true },
             locationUploadEnabledProvider: { true },
             authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
+            osVersionProvider: { "test-os" },
             retryDelaysSeconds: [0],
             queueStore: store
         )
         let secondContext = makeContext(timestamp: Date(timeIntervalSince1970: 1_234_568),
                                         h3Cell: sampleH3Cell + 1)
         let drainTask = Task {
-            await pusher.drainPendingUploads(
+            let outcome = await pusher.drainPendingUploads(
                 using: PendingLocationUploadDrainBudget(
                     uploadQuota: 1,
                     deadline: ContinuousClock().now.advanced(by: .seconds(5))
                 )
             )
+            await uploader.finishFirstAttemptWait()
+            return outcome
         }
 
         await uploader.waitForFirstAttempt()
+        try #require(await uploader.attemptCount() == 1)
         await pusher.enqueue(secondContext, source: .foregroundLocationChange, reason: .locationChanged)
         await uploader.unblock()
 

@@ -55,19 +55,27 @@ struct LocationContextResolverTests {
 
     private actor MovementGeocoder: LocationGeocoding {
         private var continuation: CheckedContinuation<String, any Error>?
-        private var started = false
+        private let start = AsyncStream<Void>.makeStream()
+        private var completion: Result<String, TestError>?
 
         func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
             if coord.latitude != 35.2226 { return "New City" }
+            if let completion { return try completion.get() }
             return try await withCheckedThrowingContinuation {
                 continuation = $0
-                started = true
+                start.continuation.yield(())
             }
         }
 
-        func hasStarted() -> Bool { started }
+        func waitForStart() async -> Bool {
+            for await _ in start.stream { return true }
+            return false
+        }
+
+        func finishStartWait() { start.continuation.finish() }
 
         func finish(fails: Bool) {
+            completion = fails ? .failure(.geocodeFailed) : .success("Norman, OK")
             if fails { continuation?.resume(throwing: TestError.geocodeFailed) }
             else { continuation?.resume(returning: "Norman, OK") }
             continuation = nil
@@ -254,18 +262,33 @@ struct LocationContextResolverTests {
             locationProvider: provider, gridPointProvider: gridProvider,
             authorizationStatusProvider: { .authorizedWhenInUse }, authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in false })
-        let resolution = Task { try await resolver.resolveContext(from: original) }
-        #expect(await waitUntil { await geocoder.hasStarted() })
-        await provider.send(update: .init(coordinates: .init(latitude: 40, longitude: -105),
-                                         timestamp: Date(), accuracy: 25, forceAcceptance: true))
-        #expect(await waitUntil { await provider.snapshot()?.placemarkSummary == "New City" })
-        let newer = try #require(await provider.snapshot())
-        await geocoder.finish(fails: fails)
-        let context = try await resolution.value
-        #expect(context.snapshot == original)
-        #expect(context.grid.latitude == original.coordinates.latitude)
-        #expect(context.grid.longitude == original.coordinates.longitude)
-        #expect(await provider.snapshot() == newer)
+        let resolution = Task {
+            let result: Result<LocationContext, any Error>
+            do { result = .success(try await resolver.resolveContext(from: original)) }
+            catch { result = .failure(error) }
+            await geocoder.finishStartWait()
+            return result
+        }
+        do {
+            try #require(try await withTimeout(timeout: 10) { await geocoder.waitForStart() })
+            let updates = await provider.updates()
+            await provider.send(update: .init(coordinates: .init(latitude: 40, longitude: -105),
+                                             timestamp: Date(), accuracy: 25, forceAcceptance: true))
+            let newer = try await withTimeout(timeout: 10) {
+                for await snapshot in updates where snapshot.placemarkSummary == "New City" { return snapshot }
+                throw CancellationError()
+            }
+            await geocoder.finish(fails: fails)
+            let context = try await resolution.value.get()
+            #expect(context.snapshot == original)
+            #expect(context.grid.latitude == original.coordinates.latitude)
+            #expect(context.grid.longitude == original.coordinates.longitude)
+            #expect(await provider.snapshot() == newer)
+        } catch {
+            await geocoder.finish(fails: true)
+            _ = await resolution.value
+            throw error
+        }
     }
 
     @Test("cached placemark identity cannot replace a supplied observation's provenance")
