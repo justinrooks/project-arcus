@@ -148,6 +148,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private var preparedKeys: [PendingCoalescingKey: DeduplicationKey] = [:]
     private var hasLoadedPersistedPending = false
     private var newestContextByCoalescingKey: [PendingCoalescingKey: PersistedLocationContext] = [:]
+    private struct DeferredEnrichment {
+        let context: PersistedLocationContext
+        let source: LocationUploadSource
+        let reason: LocationUploadReason
+        let forceUpload: Bool
+    }
+    // Only explicit enrichment that could not enter the durable outbox is retried here.
+    private var deferredEnrichment: [String: DeferredEnrichment] = [:]
+    private var admissionRevision: UInt64 = 0
+    private var successfulAdmissions: [String: (revision: UInt64, context: PersistedLocationContext)] = [:]
     private var pendingLoad: Task<[PersistedLocationUploadRequest], Never>?
     private var committedPending: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var pendingSaveCount = 0
@@ -215,7 +225,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         reason: LocationUploadReason,
         forceUpload: Bool = false
     ) async {
-        _ = await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason, forceUpload: forceUpload)
+        _ = await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason, forceUpload: forceUpload, retainEnrichmentOnFailure: true)
     }
 
     @discardableResult
@@ -247,7 +257,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         source: LocationUploadSource,
         reason: LocationUploadReason,
         forceUpload: Bool,
-        processImmediately: Bool = true
+        processImmediately: Bool = true,
+        retainEnrichmentOnFailure: Bool = false,
+        admissionOnly: Bool = false
     ) async -> Bool {
         guard accuracyAuthorizationProvider() == .fullAccuracy,
               context.horizontalAccuracyMeters.isFinite, context.horizontalAccuracyMeters > 0,
@@ -265,12 +277,27 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
 
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
+        admissionRevision &+= 1
+        let revision = admissionRevision
+        if let deferred = deferredEnrichment[installationId], canReplace(deferred.context, with: context) {
+            deferredEnrichment.removeValue(forKey: installationId)
+        }
+        var admissionFailed = false
+        defer {
+            if retainEnrichmentOnFailure, admissionFailed,
+               successfulAdmissions[installationId].map({ $0.revision < revision || !canReplace(context, with: $0.context) }) ?? true,
+               newestContextByCoalescingKey[.location(installationId: installationId)].map({ canReplace($0, with: context) }) ?? true,
+               deferredEnrichment[installationId].map({ canReplace($0.context, with: context) }) ?? true {
+                deferredEnrichment[installationId] = .init(context: context, source: source, reason: reason, forceUpload: forceUpload)
+            }
+        }
         do {
             try await preferenceUploader.reconcileConsent(installationId: installationId)
             if let cutoff = try await preferenceUploader.locationEvidenceCutoff(installationId: installationId),
                context.capturedAt < cutoff { return false }
         } catch {
             logger.error("Consent persistence unavailable; device sync deferred")
+            admissionFailed = true
             return false
         }
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -307,6 +334,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             forceUpload: forceUpload
         )
         if shouldDedupeRequest(for: dedupeKey, now: now, capturedAt: context.capturedAt) {
+            if successfulAdmissions[installationId].map({ $0.revision < revision }) ?? true {
+                successfulAdmissions[installationId] = (revision, context)
+            }
             logger.notice(
                 "Location upload request deduped source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
@@ -321,9 +351,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         if let existing = pendingByCoalescingKey[coalescingKey], existing.operation == persisted.operation {
             persisted = existing
         }
-        guard await upsertPending(persisted) else { return false }
+        guard await upsertPending(persisted) else {
+            admissionFailed = true
+            return false
+        }
+        if successfulAdmissions[installationId].map({ $0.revision < revision }) ?? true {
+            successfulAdmissions[installationId] = (revision, context)
+        }
         // Persistence suspends: a newer observation may already own this key.
         guard pendingByCoalescingKey[coalescingKey] == persisted else { return true }
+        guard !admissionOnly else { return true }
         guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
                 request: persisted,
@@ -475,7 +512,23 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             detail: "durable-consent-recovery", isSubscribedOverride: nil, processImmediately: false)
     }
 
+    private func recoverDeferredEnrichment() async {
+        guard !deferredEnrichment.isEmpty else { return }
+        let deferred = deferredEnrichment
+        let currentInstallationId = await installationIdProvider()
+        for (installationId, intent) in deferred {
+            guard installationId == currentInstallationId, locationUploadEnabledProvider(), accuracyAuthorizationProvider() == .fullAccuracy else {
+                deferredEnrichment.removeValue(forKey: installationId)
+                continue
+            }
+            _ = await enqueueLocation(intent.context, source: intent.source, reason: intent.reason,
+                                      forceUpload: intent.forceUpload, processImmediately: false,
+                                      retainEnrichmentOnFailure: true, admissionOnly: true)
+        }
+    }
+
     func drainPendingUploads() async {
+        await recoverDeferredEnrichment()
         await recoverPendingPreferenceIntent()
         await ensurePersistedPendingLoaded()
 
@@ -531,12 +584,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     func drainPendingUploads(
         using budget: PendingLocationUploadDrainBudget
     ) async -> PendingLocationUploadDrainOutcome {
+        guard budget.uploadQuota > 0, shouldContinueDraining(before: budget.deadline) else { return .remaining }
+        await recoverDeferredEnrichment()
         await recoverPendingPreferenceIntent()
         await ensurePersistedPendingLoaded()
 
         guard pendingSaveCount == 0 else { return .remaining }
         guard !pendingByCoalescingKey.isEmpty else {
-            return preferenceUploader.hasPendingPreferenceIntent ? .remaining : .drained
+            return preferenceUploader.hasPendingPreferenceIntent || !deferredEnrichment.isEmpty ? .remaining : .drained
         }
         guard !isProcessing else { return .remaining }
         guard budget.uploadQuota > 0, shouldContinueDraining(before: budget.deadline) else {
@@ -610,7 +665,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             guard shouldContinueDraining(before: budget.deadline) else { break }
         }
 
-        return pendingByCoalescingKey.isEmpty && !preferenceUploader.hasPendingPreferenceIntent ? .drained : .remaining
+        return pendingByCoalescingKey.isEmpty && deferredEnrichment.isEmpty && !preferenceUploader.hasPendingPreferenceIntent ? .drained : .remaining
     }
 
     private func shouldContinueDraining(before deadline: ContinuousClock.Instant) -> Bool {

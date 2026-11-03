@@ -2394,6 +2394,72 @@ struct LocationSessionTests {
         #expect(await resolver.recordedPrepareCallCount() == 0)
     }
 
+    private actor ScheduledReuseTransport: LocationSnapshotUploading, DevicePreferenceSyncUploading {
+        private var captures: [Date] = []
+        private var losesAcknowledgment: Bool
+
+        init(losesAcknowledgment: Bool) { self.losesAcknowledgment = losesAcknowledgment }
+
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            captures.append(payload.capturedAt)
+            if losesAcknowledgment { throw URLError(.networkConnectionLost) }
+        }
+
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
+        func restoreConnectivity() { losesAcknowledgment = false }
+        func recordedCaptures() -> [Date] { captures }
+    }
+
+    @MainActor
+    @Test("70-minute cached reuse suppresses acknowledged transport and retries reopened lost ACK",
+          arguments: [false, true])
+    func scheduledReuse_transport(lostAcknowledgment: Bool) async throws {
+        let now = Date.now
+        let capturedAt = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970) - 70 * 60 + 0.375)
+        let context = durableContext(timestamp: capturedAt)
+        let suite = "scheduled-reuse-transport-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let clock = Mutex(capturedAt)
+        let transport = ScheduledReuseTransport(losesAcknowledgment: lostAcknowledgment)
+        func makePusher() -> LocationSnapshotPusher {
+            LocationSnapshotPusher(
+                locationUploader: transport, preferenceUploader: transport,
+                installationIdProvider: { "scheduled-test" }, subscriptionStatusProvider: { true },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+                accuracyAuthorizationProvider: { .fullAccuracy }, osVersionProvider: { "test" },
+                nowProvider: { clock.withLock { $0 } }, retryDelaysSeconds: [0],
+                queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+            )
+        }
+        let original = makePusher()
+        await original.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged, forceUpload: false)
+        #expect(await transport.recordedCaptures() == [capturedAt])
+        clock.withLock { $0 = now }
+        await transport.restoreConnectivity()
+        let cache = DurableLocationContextCache(suiteName: suite)
+        cache.save(context)
+        let session = LocationSession(
+            locationClient: .init(snapshot: { context.snapshot }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(
+                manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                onUpdate: { _ in .accepted }
+            ),
+            locationContextResolver: StubResolver(context: nil, error: .locationTimeout),
+            locationUploadCoordinator: makePusher(), durableContextCache: cache
+        )
+        for _ in 0..<2 {
+            let result = await session.prepareScheduledBackgroundLocationContext(
+                uploadSource: .backgroundRefresh, uploadReason: .locationResolved,
+                authorizationTimeout: 1, locationTimeout: 1, maximumAcceptedLocationAge: 60, placemarkTimeout: 1
+            )
+            #expect(result != nil)
+        }
+        let captures = await transport.recordedCaptures()
+        #expect(captures.count == (lostAcknowledgment ? 2 : 1))
+        #expect(captures.allSatisfy { floor($0.timeIntervalSince1970) == floor(capturedAt.timeIntervalSince1970) })
+        #expect(await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests().isEmpty)
+    }
+
     @MainActor
     @Test("scheduled reuse evaluates a fresh same-cell composite instead of a stale durable snapshot")
     func scheduledReuse_evaluatesFreshSameCellComposite() async throws {
@@ -2419,17 +2485,18 @@ struct LocationSessionTests {
             onUpdate: { _ in .accepted }
         )
         let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: providerClient,
             locationManager: manager,
             locationContextResolver: resolver,
-            locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            locationUploadCoordinator: uploader,
             durableContextCache: durableCache
         )
 
         let result = await session.prepareScheduledBackgroundLocationContext(
-            uploadSource: nil,
-            uploadReason: nil,
+            uploadSource: .backgroundRefresh,
+            uploadReason: .locationResolved,
             authorizationTimeout: 1,
             locationTimeout: 1,
             maximumAcceptedLocationAge: 60,
@@ -2438,6 +2505,8 @@ struct LocationSessionTests {
 
         #expect(result?.snapshot == freshSnapshot)
         #expect(result?.grid == cachedContext.grid)
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedDrainCount() == 0)
         #expect(await resolver.recordedPrepareCallCount() == 0)
         let persistedSnapshot = durableCache.load()?.snapshot
         #expect(persistedSnapshot?.coordinates.latitude == freshSnapshot.coordinates.latitude)
