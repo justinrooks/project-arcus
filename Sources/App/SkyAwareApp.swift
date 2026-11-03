@@ -143,7 +143,9 @@ struct SkyAwareApp: App {
             logger.notice("Background refresh invoked attempt=\(attemptID, privacy: .public)")
             guard let deps = await startup.retry() else {
                 let reason = await startup.failureDiagnostic ?? "startup-not-ready"
-                await BackgroundRefreshExecution.reject(attemptID: attemptID, reason: reason) {
+                await BackgroundRefreshExecution.reject(attemptID: attemptID, reason: reason, recoverPresence: {
+                    await LocationPresenceRuntime.drainScheduledPresence(using: LocationPresenceRuntime.shared.pusher)
+                }) {
                     await BackgroundScheduler(refreshId: Dependencies.liveAppRefreshID)
                         .ensureScheduled(using: RefreshPolicy())
                 }
@@ -152,6 +154,9 @@ struct SkyAwareApp: App {
             await BackgroundRefreshExecution.run(
                 attemptID: attemptID,
                 allowsBackgroundPersistence: deps.allowsBackgroundPersistence,
+                recoverPresence: {
+                    await LocationPresenceRuntime.drainScheduledPresence(using: LocationPresenceRuntime.shared.pusher)
+                },
                 scheduleFallback: {
                     await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
                 },
@@ -256,11 +261,13 @@ enum BackgroundRefreshExecution {
     static func run(
         attemptID: String = UUID().uuidString,
         allowsBackgroundPersistence: @Sendable () async -> Bool,
+        recoverPresence: @Sendable () async -> PendingLocationUploadDrainOutcome = { .remaining },
         scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome,
         runPersistentLifecycle: @Sendable () async -> Void
     ) async -> AdmissionOutcome {
         guard await allowsBackgroundPersistence() else {
-            return await reject(attemptID: attemptID, reason: "nonpersistent-storage", scheduleFallback: scheduleFallback)
+            return await reject(attemptID: attemptID, reason: "nonpersistent-storage",
+                                recoverPresence: recoverPresence, scheduleFallback: scheduleFallback)
         }
         await runPersistentLifecycle()
         return .lifecycleExecuted
@@ -270,6 +277,7 @@ enum BackgroundRefreshExecution {
     static func reject(
         attemptID: String,
         reason: String,
+        recoverPresence: @Sendable () async -> PendingLocationUploadDrainOutcome = { .remaining },
         scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome
     ) async -> AdmissionOutcome {
         // Emit rejection before awaiting the scheduler so an interrupted attempt remains visible.
@@ -279,6 +287,12 @@ enum BackgroundRefreshExecution {
             Logger.appMain.notice("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
         } else {
             Logger.appMain.error("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        }
+        // Protect the successor before spending the grant on presence. This structured
+        // attempt inherits SwiftUI's expiration cancellation and never starts Home work.
+        if !Task.isCancelled {
+            let drain = await recoverPresence()
+            Logger.appMain.notice("Blocked refresh presence attempt=\(attemptID, privacy: .public) outcome=\(String(describing: drain), privacy: .public)")
         }
         return .blocked(reason: reason, scheduling: outcome)
     }

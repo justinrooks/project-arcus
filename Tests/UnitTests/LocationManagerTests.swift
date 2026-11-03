@@ -557,6 +557,8 @@ struct LocationManagerTests {
 struct LocationSessionTests {
     @Test @MainActor
     func accuracyRecoveryRejectsCachedEvidence() async throws {
+        let (publications, published) = AsyncStream<Void>.makeStream()
+        defer { published.finish() }
         let clock = PresenceClock()
         let old = durableContext(timestamp: clock.now.addingTimeInterval(-1))
         let core = LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways)
@@ -565,13 +567,17 @@ struct LocationSessionTests {
         let client = LocationClient(snapshot: { old.snapshot }, updates: { AsyncStream { $0.finish() } })
         let session = LocationSession(locationClient: client, locationManager: manager,
             locationContextResolver: resolver, locationUploadCoordinator: NoOpLocationUploadCoordinator(),
-            presenceNow: { clock.now })
+            presenceNow: { clock.now }, onContextPublished: { published.yield(()) })
         session.currentContext = old
         session.startupState = .ready
         session.handleScenePhaseChange(.active)
         core.stubAccuracy = .reducedAccuracy
         manager.locationManagerDidChangeAuthorization(core)
-        try #require(await waitUntilAsync { session.accuracyAuthorization == .reducedAccuracy && session.currentContext == nil })
+        try #require(try await withTimeout(timeout: 10) {
+            var publication = publications.makeAsyncIterator()
+            return await publication.next() != nil
+        })
+        try #require(session.accuracyAuthorization == .reducedAccuracy && session.currentContext == nil)
         #expect(session.reliabilityState.accuracy == .reduced)
         core.stubAccuracy = .fullAccuracy
         manager.locationManagerDidChangeAuthorization(core)
@@ -919,12 +925,21 @@ struct LocationSessionTests {
             preferenceUploader: HTTPDevicePreferenceSyncUploader(baseURL: base, http: http,
                 enrollment: enrolledTestCoordinator(), consent: consent),
             installationIdProvider: { id }, locationUploadEnabledProvider: { true },
-            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now },
+            authorizationStatusProvider: { .authorizedWhenInUse }, accuracyAuthorizationProvider: { .fullAccuracy },
+            osVersionProvider: { "test-os" }, nowProvider: { now },
             retryDelaysSeconds: [0], queueStore: recoveringStore)
         let provider = LocationProvider(geocoder: UnavailablePresenceGeocoder(), nowProvider: { now })
         let admission = LocationPresenceAdmission(provider: provider, foreground: ForegroundPresenceEnqueuer(pusher: pusher),
             background: BackgroundPresenceEnqueuer(pusher: pusher), now: { clock.now })
         let subscribed = AsyncStream<Void>.makeStream()
+        let activations = AsyncStream<Void>.makeStream()
+        defer { activations.continuation.finish() }
+        func nextActivation() async throws {
+            try #require(try await withTimeout(timeout: 10) {
+                var iterator = activations.stream.makeAsyncIterator()
+                return await iterator.next() != nil
+            })
+        }
         let resolver = ControlledResolver()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -932,7 +947,8 @@ struct LocationSessionTests {
             onForegroundActivation: { eligible in
                 await admission.retryForegroundAdmission(isEligible: eligible)
                 if eligible() { await pusher.drainPendingUploads() }
-            })
+                activations.continuation.yield(())
+            }, foregroundUpdates: { _ in })
         let session = LocationSession(locationClient: LocationClient(snapshot: { await provider.snapshot() }, updates: {
             subscribed.continuation.yield(())
             return await provider.updates()
@@ -943,6 +959,8 @@ struct LocationSessionTests {
         var subscription = subscribed.stream.makeAsyncIterator()
         _ = await subscription.next()
         subscribed.continuation.finish()
+        try await nextActivation()
+        let initialHTTPCount = await http.recorded().count
         if staleResolution {
             _ = await admission.accept(.init(coordinates: first.snapshot.coordinates,
                 timestamp: first.snapshot.timestamp, accuracy: first.snapshot.accuracy), source: .foregroundLocationChange)
@@ -951,7 +969,7 @@ struct LocationSessionTests {
             // Ensure the first transport completed before pausing the movement's minimal transfer.
             try #require(await waitUntilAsync { await queueStore.loadPendingRequests().isEmpty })
         }
-        if beforePreparation { await http.pauseFirst() } else { await http.pausePresence() }
+        if beforePreparation { await http.pause() } else { await http.pausePresence() }
         let movement = Task { await admission.accept(.init(coordinates: moved.snapshot.coordinates,
             timestamp: moved.snapshot.timestamp, accuracy: moved.snapshot.accuracy), source: .foregroundLocationChange) }
         defer { movement.cancel() }
@@ -960,14 +978,19 @@ struct LocationSessionTests {
             #expect(await queueStore.loadPendingRequests().isEmpty)
             #expect(await http.recorded().isEmpty)
             await recoveringStore.recover()
+            manager.updateMode(for: .inactive)
             manager.updateMode(for: .active)
+            try await nextActivation()
             #expect(await queueStore.loadPendingRequests().isEmpty)
             clock.now.addTimeInterval(30)
+            manager.updateMode(for: .inactive)
             manager.updateMode(for: .active) // No new Core Location fix and Home remains blocked.
         }
         try #require(await waitUntilAsync {
             let requests = await http.recorded()
-            if beforePreparation { return requests.count == 1 && requests.first?.path == "/v3/devices/preferences" }
+            if beforePreparation {
+                return requests.count == initialHTTPCount + 1 && requests.last?.path == "/v3/devices/preferences"
+            }
             return requests.filter { $0.path.contains("location-snapshots") }.count == (staleResolution ? 2 : 1)
         })
         #expect(await movement.value.retention == (storageFails ? .failed : .retained)) // Admission returns while HTTP and Home are blocked.
