@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 import SwiftData
@@ -2374,36 +2375,30 @@ struct BgHealthStoreTests {
         let endedAt = Date(timeIntervalSince1970: 1_010)
         let nextScheduledAt = Date(timeIntervalSince1970: 2_200)
 
-        do {
-            let legacySchema = Schema(versionedSchema: BgRunSnapshotSchemaV1.self)
-            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
-            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
-            let legacyContext = ModelContext(legacyContainer)
-            legacyContext.insert(
-                BgRunSnapshotSchemaV1.BgRunSnapshot(
-                    runId: "legacy-run",
-                    startedAt: startedAt,
-                    endedAt: endedAt,
-                    outcomeCode: 0,
-                    didNotify: true,
-                    reasonNoNotify: nil,
-                    budgetSecUsed: 10,
-                    nextScheduledAt: nextScheduledAt,
-                    cadence: 20,
-                    cadenceReason: "legacy",
-                    activeSeconds: 8
-                )
-            )
-            try legacyContext.save()
-        }
+        let compressed = try #require(Data(base64Encoded: legacyBgHealthStoreBase64, options: .ignoreUnknownCharacters))
+        let data = try (compressed as NSData).decompressed(using: .zlib) as Data
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        try #require(digest == "467a944db3c867c81f18bc726f694f81acd365a11dd9c81cc3eec9a9b32b7967")
+        try data.write(to: storeURL, options: .atomic)
 
-        let migrated = try makeDiskContainer(url: storeURL)
-        let run = try #require(await healthRun(id: "legacy-run", in: migrated))
-        #expect(run.startedAt == startedAt)
-        #expect(run.endedAt == endedAt)
-        #expect(run.outcome == .success)
-        #expect(run.nextScheduledAt == nextScheduledAt)
-        #expect(run.cadence == 20)
+        // Each iteration releases its container/context before reopening the migrated disk store.
+        for _ in 0..<2 {
+            let run = try await MainActor.run {
+                try autoreleasepool {
+                    let migrated = try makeDiskContainer(url: storeURL)
+                    return try #require(try healthRun(id: "legacy-run", in: migrated))
+                }
+            }
+            #expect(run.startedAt == startedAt)
+            #expect(run.endedAt == endedAt)
+            #expect(run.outcome == .success && run.outcomeRaw == nil)
+            #expect(run.didNotify && run.reasonNoNotify == nil && run.budgetSecUsed == 10)
+            #expect(run.nextScheduledAt == nextScheduledAt)
+            #expect(run.cadence == 20 && run.cadenceReason == "legacy" && run.activeSeconds == 8)
+            #expect(run.uploadDrainDurationSeconds == nil && run.uploadDrainOutcome == nil)
+            #expect(run.ingestionDurationSeconds == nil && run.ingestionOutcome == nil)
+            #expect(run.fallbackSchedulingOutcome == nil && run.authoritativeSchedulingOutcome == nil)
+        }
     }
 
     @Test("Finalization updates the started diagnostic record without inserting another")
@@ -2510,6 +2505,12 @@ private struct BgRunState: Sendable {
     let endedAt: Date?
     let isComplete: Bool
     let outcome: BgRunOutcome?
+    let outcomeRaw: String?
+    let didNotify: Bool
+    let reasonNoNotify: String?
+    let budgetSecUsed: Int
+    let cadenceReason: String?
+    let activeSeconds: Int64
     let uploadDrainDurationSeconds: Int64?
     let uploadDrainOutcome: BgPhaseOutcome?
     let ingestionDurationSeconds: Int64?
@@ -2524,6 +2525,12 @@ private struct BgRunState: Sendable {
         endedAt = snapshot.endedAt
         isComplete = snapshot.isComplete
         outcome = snapshot.outcome
+        outcomeRaw = snapshot.outcomeRaw
+        didNotify = snapshot.didNotify
+        reasonNoNotify = snapshot.reasonNoNotify
+        budgetSecUsed = snapshot.budgetSecUsed
+        cadenceReason = snapshot.cadenceReason
+        activeSeconds = snapshot.activeSeconds
         uploadDrainDurationSeconds = snapshot.uploadDrainDurationSeconds
         uploadDrainOutcome = snapshot.uploadDrainOutcome
         ingestionDurationSeconds = snapshot.ingestionDurationSeconds
@@ -2535,52 +2542,84 @@ private struct BgRunState: Sendable {
     }
 }
 
-enum BgRunSnapshotSchemaV1: VersionedSchema {
-    static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
-
-    static var models: [any PersistentModel.Type] { [BgRunSnapshot.self] }
-
-    @Model
-    final class BgRunSnapshot {
-        @Attribute(.unique) var runId: String
-        var startedAt: Date
-        var endedAt: Date
-        var outcomeCode: Int
-        var didNotify: Bool
-        var reasonNoNotify: String?
-        var budgetSecUsed: Int
-        var nextScheduledAt: Date
-        var cadence: Int
-        var cadenceReason: String?
-        var activeSeconds: Int64
-
-        init(
-            runId: String,
-            startedAt: Date,
-            endedAt: Date,
-            outcomeCode: Int,
-            didNotify: Bool,
-            reasonNoNotify: String?,
-            budgetSecUsed: Int,
-            nextScheduledAt: Date,
-            cadence: Int,
-            cadenceReason: String?,
-            activeSeconds: Int64
-        ) {
-            self.runId = runId
-            self.startedAt = startedAt
-            self.endedAt = endedAt
-            self.outcomeCode = outcomeCode
-            self.didNotify = didNotify
-            self.reasonNoNotify = reasonNoNotify
-            self.budgetSecUsed = budgetSecUsed
-            self.nextScheduledAt = nextScheduledAt
-            self.cadence = cadence
-            self.cadenceReason = cadenceReason
-            self.activeSeconds = activeSeconds
-        }
-    }
-}
+// Authentic V1 SQLite generated in a legacy-only process with Xcode 27.2 / Swift 6.4.2 on macOS 27.2.
+// Regenerate with tools/fixtures/generate_bg_health_v1.swift; keep the digest and payload together.
+// Embedded data avoids dependence on source paths or test-bundle resource membership in Xcode Cloud.
+private let legacyBgHealthStoreBase64 = """
+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
+/B8AAAAAAAAAABietHBm5CiZXJYkVcj+CQ==
+"""
 
 private func waitUntil(
     timeout: Duration = .seconds(1),
