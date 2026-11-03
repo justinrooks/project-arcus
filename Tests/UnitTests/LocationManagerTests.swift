@@ -706,6 +706,97 @@ struct LocationSessionTests {
         #expect(await presence.count() == 2)
     }
 
+    @Test(arguments: [false, true]) @MainActor
+    func restoredObservationAdmitsOnFirstActivationUnlessBeforeCutoff(beforeCutoff: Bool) async throws {
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+        let suite = "activation-cache-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let cell = try SwiftyH3Hasher().h3Cell(for: .init(latitude: 39.7392, longitude: -104.9903))
+        let snapshot = durableContext(timestamp: now.addingTimeInterval(-120), h3Cell: cell).snapshot
+        let cache = LocationSnapshotCache(suiteName: suite)
+        cache.save(snapshot)
+        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+        let presence = RecordingPresence()
+        let admission = LocationPresenceAdmission(provider: provider, foreground: presence,
+            background: presence, now: { now }, evidenceCutoff: { beforeCutoff ? now : nil })
+        await admission.retryForegroundAdmission()
+        await admission.retryForegroundAdmission()
+        let observations = await presence.recorded()
+        #expect(observations.count == (beforeCutoff ? 0 : 1))
+        if !beforeCutoff { #expect(observations.first?.0.timestamp == snapshot.timestamp) }
+    }
+
+    private actor ActivationPreparationGate {
+        var holds: Bool
+        var entered = false
+        var continuation: CheckedContinuation<Void, Never>?
+        init(holds: Bool) { self.holds = holds }
+        func read() async -> String {
+            entered = true
+            if holds { await withCheckedContinuation { continuation = $0 } }
+            return "test"
+        }
+        func release() { holds = false; continuation?.resume(); continuation = nil }
+    }
+
+    @Test(arguments: [false, true], [false, true]) @MainActor
+    func activationHeldAcrossBackgroundRetainsWithoutForegroundDrain(
+        holdPreparation: Bool, reactivateBeforeRelease: Bool
+    ) async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let suite = "activation-phase-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
+        let held = RecoveringQueueStore(backing: store, fails: false)
+        if !holdPreparation { await held.holdSave() }
+        let preparation = ActivationPreparationGate(holds: holdPreparation)
+        let uploader = CancellablePresenceUploader()
+        await uploader.unblock()
+        let pusher = LocationSnapshotPusher(locationUploader: uploader,
+            preferenceUploader: PresencePreferenceUploader(), installationIdProvider: { "installation" },
+            locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, osVersionProvider: { await preparation.read() },
+            nowProvider: { now }, retryDelaysSeconds: [0], queueStore: held)
+        let cell = try SwiftyH3Hasher().h3Cell(for: .init(latitude: 39.7392, longitude: -104.9903))
+        let snapshot = durableContext(timestamp: now.addingTimeInterval(-120), h3Cell: cell).snapshot
+        let cache = LocationSnapshotCache(suiteName: suite)
+        cache.save(snapshot)
+        let admission = LocationPresenceAdmission(
+            provider: LocationProvider(snapshotCache: cache, nowProvider: { now }),
+            foreground: ForegroundPresenceEnqueuer(pusher: pusher),
+            background: BackgroundPresenceEnqueuer(pusher: pusher), now: { now })
+        let finished = AsyncStream<Void>.makeStream()
+        defer { finished.continuation.finish() }
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+            onUpdate: { _ in .rejected },
+            onForegroundActivation: { eligible in
+                await admission.retryForegroundAdmission(isEligible: eligible)
+                if eligible() { await pusher.drainPendingUploads() }
+                finished.continuation.yield(())
+            }, foregroundUpdates: { _ in })
+        manager.updateMode(for: .active)
+        try #require(await waitUntilAsync {
+            if holdPreparation { return await preparation.entered }
+            return await held.suspended
+        })
+        manager.updateMode(for: .background)
+        if reactivateBeforeRelease { manager.updateMode(for: .active) }
+        await held.releaseSave()
+        await preparation.release()
+        var iterator = finished.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        if !reactivateBeforeRelease {
+            #expect(await uploader.started == false)
+            #expect(await store.loadPendingRequests().count == 1)
+            manager.updateMode(for: .active)
+        }
+        _ = await iterator.next()
+        #expect(await uploader.delivered.map(\.capturedAt) == [snapshot.timestamp])
+        #expect(await store.loadPendingRequests().isEmpty)
+        manager.updateMode(for: .background)
+    }
+
     private struct UnavailablePresenceGeocoder: LocationGeocoding {
         func reverseGeocode(_ coordinate: CLLocationCoordinate2D) async throws -> String {
             throw URLError(.notConnectedToInternet)
@@ -715,11 +806,20 @@ struct LocationSessionTests {
     private actor RecoveringQueueStore: LocationUploadQueueStoring {
         let backing: any LocationUploadQueueStoring
         var fails: Bool
+        var hold = false
+        var suspended = false
+        var gate: CheckedContinuation<Void, Never>?
+        func holdSave() { hold = true }
+        func releaseSave() { hold = false; gate?.resume(); gate = nil }
         init(backing: any LocationUploadQueueStoring, fails: Bool) { self.backing = backing; self.fails = fails }
         func recover() { fails = false }
         func loadPendingRequests() async -> [PersistedLocationUploadRequest] { await backing.loadPendingRequests() }
         func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async throws {
             if fails { throw URLError(.cannotWriteToFile) }
+            if hold {
+                suspended = true
+                await withCheckedContinuation { gate = $0 }
+            }
             try await backing.savePendingRequests(requests)
         }
     }
@@ -829,7 +929,10 @@ struct LocationSessionTests {
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
             onUpdate: { await admission.accept($0, source: .foregroundLocationChange).acceptance },
-            onForegroundActivation: { await admission.retryForegroundAdmission() })
+            onForegroundActivation: { eligible in
+                await admission.retryForegroundAdmission(isEligible: eligible)
+                if eligible() { await pusher.drainPendingUploads() }
+            })
         let session = LocationSession(locationClient: LocationClient(snapshot: { await provider.snapshot() }, updates: {
             subscribed.continuation.yield(())
             return await provider.updates()

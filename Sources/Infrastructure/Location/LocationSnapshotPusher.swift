@@ -49,6 +49,17 @@ protocol LocationPresenceEnqueuing: Sendable {
         source: LocationUploadSource,
         reason: LocationUploadReason
     ) async -> Bool
+    func enqueueForegroundPresence(_ observation: LocationSnapshot,
+        isEligible: @escaping @MainActor @Sendable () -> Bool) async -> Bool
+
+}
+
+extension LocationPresenceEnqueuing {
+    func enqueueForegroundPresence(_ observation: LocationSnapshot,
+        isEligible: @escaping @MainActor @Sendable () -> Bool) async -> Bool {
+        guard await isEligible() else { return false }
+        return await enqueuePresence(observation, source: .foregroundLocationChange, reason: .locationChanged)
+    }
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {

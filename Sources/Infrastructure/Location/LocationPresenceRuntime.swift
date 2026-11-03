@@ -28,7 +28,10 @@ final class LocationPresenceRuntime {
             evidenceCutoff: { pusher.minimumLocationObservationTimestamp })
         manager = LocationManager(
             onUpdate: { await admission.accept($0, source: .foregroundLocationChange).acceptance },
-            onForegroundActivation: { await admission.retryForegroundAdmission() },
+            onForegroundActivation: { isEligible in
+                await admission.retryForegroundAdmission(isEligible: isEligible)
+                if isEligible() { await pusher.drainPendingUploads() }
+            },
             onBackgroundUpdate: { update in
                 await admission.accept(update, source: .backgroundLocationChange).acceptance
             },
@@ -94,12 +97,16 @@ final class LocationPresenceAdmission {
         return .init(acceptance: acceptance, retention: await admit(snapshot, source: source))
     }
 
-    func retryForegroundAdmission() async {
-        guard attempt?.failed == true, let snapshot = await provider.snapshot() else { return }
-        _ = await admit(snapshot, source: .foregroundLocationChange)
+    func retryForegroundAdmission(
+        isEligible: @escaping @MainActor @Sendable () -> Bool = { true }
+    ) async {
+        guard isEligible(), let snapshot = await provider.snapshot(), isEligible() else { return }
+        _ = await admit(snapshot, source: .foregroundLocationChange, isEligible: isEligible)
     }
 
-    func admit(_ snapshot: LocationSnapshot, source: LocationUploadSource) async -> Retention {
+    func admit(_ snapshot: LocationSnapshot, source: LocationUploadSource,
+               isEligible: (@MainActor @Sendable () -> Bool)? = nil) async -> Retention {
+        guard isEligible?() ?? true else { return .notAttempted }
         let time = now()
         let cutoff = evidenceCutoff()
         if cutoff != previousCutoff { attempt = nil; previousCutoff = cutoff }
@@ -117,7 +124,12 @@ final class LocationPresenceAdmission {
         inFlight.insert(snapshot.timestamp)
         defer { inFlight.remove(snapshot.timestamp) }
         let enqueuer = source == .backgroundLocationChange ? background : foreground
-        let retained = await enqueuer.enqueuePresence(snapshot, source: source, reason: .locationChanged)
+        let retained: Bool
+        if source == .foregroundLocationChange, let isEligible {
+            retained = await enqueuer.enqueueForegroundPresence(snapshot, isEligible: isEligible)
+        } else {
+            retained = await enqueuer.enqueuePresence(snapshot, source: source, reason: .locationChanged)
+        }
         if attempt?.snapshot.hasSameObservation(as: snapshot) == true, attempt?.at == time {
             attempt?.failed = !retained
         }
@@ -132,6 +144,12 @@ struct ForegroundPresenceEnqueuer: LocationPresenceEnqueuing {
         let retained = await pusher.retainPresence(observation, source: source)
         if retained { Task { await pusher.drainPendingUploads() } }
         return retained
+    }
+    /// Activation owns its drain task so phase retirement cancels preparation and transport.
+    func enqueueForegroundPresence(_ observation: LocationSnapshot,
+        isEligible: @escaping @MainActor @Sendable () -> Bool) async -> Bool {
+        guard await isEligible() else { return false }
+        return await pusher.retainPresence(observation, source: .foregroundLocationChange)
     }
 }
 
