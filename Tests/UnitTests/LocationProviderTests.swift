@@ -577,6 +577,152 @@ struct LocationProviderTests {
         )
     }
 
+    @Test("Startup rejection retries durable presence independently", arguments: ["ready", "locked", "expired", "identity", "consent", "revoked"])
+    func scheduledPresenceAfterStartupFailure(mode: String) async throws {
+        struct EnrollmentUploader: LocationSnapshotUploading {
+            let unavailable: Bool
+            let recorder: MockSnapshotUploader
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                if unavailable { throw CocoaError(.fileReadNoPermission) }
+                try await recorder.upload(payload)
+            }
+        }
+        struct ConsentReader: DevicePreferenceSyncUploading {
+            let unavailable: Bool
+            func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
+            func locationEvidenceCutoff(installationId: String) async throws -> Date? {
+                if unavailable { throw CocoaError(.fileReadNoPermission) }
+                return nil
+            }
+        }
+        let suite = "scheduled-presence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+        try await store.savePendingRequests([persistedUploadRequest(requestedAt: .now)])
+        let reopened = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(locationUploader: EnrollmentUploader(unavailable: mode == "identity", recorder: uploader),
+            preferenceUploader: ConsentReader(unavailable: mode == "consent"), apnsTokenProvider: { "token" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true }, locationUploadEnabledProvider: { mode != "revoked" },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+            retryDelaysSeconds: [0], queueStore: reopened)
+        let startup = await AppStartup(makeDependencies: { throw CocoaError(.fileReadNoPermission) })
+        #expect(await startup.retry() == nil)
+        let outcome = await BackgroundRefreshExecution.reject(attemptID: "startup-failure", reason: "weather-store",
+            recoverPresence: {
+                let drain = await LocationPresenceRuntime.drainScheduledPresence(using: pusher,
+                    protectedDataAvailable: { mode != "locked" },
+                    budget: .init(uploadQuota: 1, deadline: .now + (mode == "expired" ? .zero : .seconds(5))))
+                if ["locked", "expired", "identity", "consent"].contains(mode) { #expect(drain == .remaining) }
+                return drain
+            }, scheduleFallback: { .submitted })
+        #expect(outcome == .blocked(reason: "weather-store", scheduling: .submitted))
+        #expect(await uploader.uploadedPayloads().count == (mode == "ready" ? 1 : 0))
+        let retained = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests()
+        #expect(retained.isEmpty == (mode == "ready" || mode == "revoked"))
+    }
+
+    @Test("Scheduled presence bounds active transfer and retains durable intent", arguments: [false, true])
+    func scheduledPresenceStopsActiveTransfer(cancel: Bool) async throws {
+        actor SuspendedUploader: LocationSnapshotUploading {
+            let started: AsyncStream<Void>.Continuation
+            private(set) var stopped = false
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                started.yield(())
+                do { try await Task.sleep(for: .seconds(60)) }
+                catch { stopped = true; throw error }
+            }
+            init(started: AsyncStream<Void>.Continuation) { self.started = started }
+        }
+        let (started, signal) = AsyncStream<Void>.makeStream()
+        let (expired, expire) = AsyncStream<Void>.makeStream()
+        let uploader = SuspendedUploader(started: signal)
+        let suite = "scheduled-expiration-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        try await store.savePendingRequests([pending])
+        let pusher = LocationSnapshotPusher(locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(), installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+            retryDelaysSeconds: [0], queueStore: store)
+        let task = Task {
+            let outcome = await LocationPresenceRuntime.drainScheduledPresence(using: pusher, protectedDataAvailable: { true },
+                budget: .init(uploadQuota: 1, deadline: .now + .seconds(30)),
+                waitForDeadline: { _ in for await _ in expired { break } })
+            signal.finish()
+            return outcome
+        }
+        for await _ in started { break }
+        if cancel { task.cancel() } else { expire.yield(()) }
+        #expect(await task.value == .remaining)
+        #expect(await uploader.stopped)
+        #expect(await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests() == [pending])
+    }
+
+    @Test("Scheduled retry requires acknowledged enrollment without joining shared claims",
+          arguments: ["ready", "missing", "pending", "in-flight", "credential", "origin", "identity", "locked"])
+    func scheduledPresenceEnrollmentPrerequisite(mode: String) async throws {
+        struct ClaimHTTP: HTTPClient {
+            let allowed: Bool
+            let started: AsyncStream<Void>.Continuation
+            let release: AsyncStream<Void>
+            func get(_ url: URL, headers: [String: String], fallbackPolicy: HTTPFallbackPolicy) async throws -> HTTPResponse {
+                throw URLError(.unsupportedURL)
+            }
+            func post(_ url: URL, headers: [String: String], body: Data?) async throws -> HTTPResponse {
+                #expect(allowed, "Scheduled retry must never start enrollment HTTP")
+                guard allowed else { throw URLError(.unsupportedURL) }
+                started.yield(())
+                for await _ in release { break }
+                return HTTPResponse(status: 200, headers: [:], data: Data("{\"status\":\"accepted\"}".utf8))
+            }
+            func clearCache() {}
+        }
+        struct CredentialDrainer: PendingLocationUploadDraining {
+            let coordinator: InstallationEnrollmentCoordinator
+            let id: String
+            let http: ClaimHTTP
+            func drainPendingUploads() async {}
+            func drainPendingUploads(using budget: PendingLocationUploadDrainBudget) async -> PendingLocationUploadDrainOutcome {
+                do {
+                    _ = try await coordinator.credential(for: id, baseURL: URL(string: "https://arcus.example.com")!, http: http)
+                    return .drained
+                } catch { return .remaining }
+            }
+        }
+        let id = UUID().uuidString
+        let record = Mutex<InstallationEnrollmentCoordinator.Record?>(mode == "missing" ? nil : .init(
+            installationId: mode == "identity" ? UUID().uuidString : id,
+            credential: mode == "credential" ? "invalid" : String(repeating: "A", count: 43),
+            enrolledOrigin: ["pending", "in-flight"].contains(mode) ? nil
+                : mode == "origin" ? "https://other.example.com:443" : "https://arcus.example.com:443"))
+        let (started, signal) = AsyncStream<Void>.makeStream()
+        let (released, release) = AsyncStream<Void>.makeStream()
+        let coordinator = InstallationEnrollmentCoordinator(installationId: { id }, read: {
+            if mode == "locked" { throw CocoaError(.fileReadNoPermission) }
+            return record.withLock { $0 }
+        }, write: { value in record.withLock { $0 = value } }, enrollmentWaiterDidJoin: {
+            Issue.record("Scheduled retry must not join another owner's enrollment")
+            release.yield(())
+        })
+        let http = ClaimHTTP(allowed: mode == "in-flight", started: signal, release: released)
+        let independentClaim: Task<String, Error>? = mode == "in-flight" ? Task {
+            try await coordinator.credential(for: id, baseURL: URL(string: "https://arcus.example.com")!, http: http)
+        } : nil
+        if independentClaim != nil { for await _ in started { break } }
+        let result = await LocationPresenceRuntime.drainScheduledPresence(
+            using: CredentialDrainer(coordinator: coordinator, id: id, http: http), protectedDataAvailable: { true })
+        #expect(result == (mode == "ready" ? .drained : .remaining))
+        if let independentClaim {
+            release.yield(())
+            #expect(try await independentClaim.value == String(repeating: "A", count: 43))
+        }
+        release.finish()
+        signal.finish()
+    }
+
     @Test("offline multi-cell presence transport after durable reopen")
     func offlineMultiCellReplay() async throws {
         let suite = "multi-cell-presence-\(UUID())"

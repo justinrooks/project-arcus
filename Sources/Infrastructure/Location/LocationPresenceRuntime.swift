@@ -43,6 +43,34 @@ final class LocationPresenceRuntime {
         manager.updateMode(for: .background)
     }
 
+    /// Uses only persisted intent; an OS execution opportunity is not a new observation.
+    static func drainScheduledPresence(
+        using drainer: any PendingLocationUploadDraining,
+        protectedDataAvailable: @MainActor @Sendable () -> Bool = { UIApplication.shared.isProtectedDataAvailable },
+        budget: PendingLocationUploadDrainBudget = .init(uploadQuota: 1, deadline: .now + .seconds(5)),
+        waitForDeadline: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        }
+    ) async -> PendingLocationUploadDrainOutcome {
+        guard !Task.isCancelled, protectedDataAvailable(), ContinuousClock().now < budget.deadline else {
+            return .remaining
+        }
+        return await withTaskGroup(of: PendingLocationUploadDrainOutcome.self) { group in
+            group.addTask {
+                await InstallationEnrollmentCoordinator.$requiresExistingEnrollment.withValue(true) {
+                    await drainer.drainPendingUploads(using: budget)
+                }
+            }
+            group.addTask {
+                try? await waitForDeadline(budget.deadline)
+                return .remaining
+            }
+            let outcome = await group.next() ?? .remaining
+            group.cancelAll()
+            return outcome
+        }
+    }
+
     /// No weather context or Home ingestion is needed for admission.
     static func acceptBackgroundUpdate(
         _ update: LocationUpdate,

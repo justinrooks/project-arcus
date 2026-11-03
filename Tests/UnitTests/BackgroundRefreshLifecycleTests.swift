@@ -11,16 +11,21 @@ struct BackgroundRefreshLifecycleTests {
 
         let outcome = await BackgroundRefreshExecution.run(
             allowsBackgroundPersistence: { false },
+            recoverPresence: {
+                #expect(await recorder.events() == ["fallback-complete"])
+                await recorder.recordPresenceRecovery()
+                return .remaining
+            },
             scheduleFallback: {
                 await recorder.recordAcceptedFallback()
                 return .submitted
             },
             runPersistentLifecycle: {
-                await recorder.recordOrchestrationStart()
+                Issue.record("Unavailable weather storage must not start its lifecycle")
             }
         )
 
-        #expect(await recorder.events() == ["fallback-complete"])
+        #expect(await recorder.events() == ["fallback-complete", "presence-recovery"])
         #expect(outcome == .blocked(reason: "nonpersistent-storage", scheduling: .submitted))
     }
 
@@ -30,6 +35,10 @@ struct BackgroundRefreshLifecycleTests {
 
         let outcome = await BackgroundRefreshExecution.run(
             allowsBackgroundPersistence: { true },
+            recoverPresence: {
+                Issue.record("Initialized lifecycle must retain exclusive drain ownership")
+                return .remaining
+            },
             scheduleFallback: {
                 await recorder.recordAcceptedFallback()
                 return .submitted
@@ -41,6 +50,24 @@ struct BackgroundRefreshLifecycleTests {
 
         #expect(await recorder.events() == ["orchestration-start"])
         #expect(outcome == .lifecycleExecuted)
+    }
+
+    @Test("An already cancelled grant still schedules its successor without recovery")
+    func cancelledGrantSchedulesWithoutRecovery() async {
+        let recorder = LifecycleRecorder()
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await BackgroundRefreshExecution.reject(attemptID: "cancelled", reason: "startup-failed",
+                recoverPresence: {
+                    Issue.record("Cancelled grants must not start presence recovery")
+                    return .drained
+                }, scheduleFallback: {
+                    await recorder.recordAcceptedFallback()
+                    return .submitted
+                })
+        }
+        #expect(await task.value == .blocked(reason: "startup-failed", scheduling: .submitted))
+        #expect(await recorder.events() == ["fallback-complete"])
     }
 
     @Test("Blocked startup retains its reason and the actual successor outcome", arguments: [
@@ -348,6 +375,7 @@ private struct LifecycleRunState: Sendable {
 }
 
 private actor LifecycleRecorder {
+    func recordPresenceRecovery() { recordedEvents.append("presence-recovery") }
     private var recordedEvents: [String] = []
     private var recordedAuthoritativeRuns: [Date] = []
     private var acceptedFallbackCount = 0

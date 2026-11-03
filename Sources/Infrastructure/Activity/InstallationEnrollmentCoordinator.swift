@@ -16,6 +16,8 @@ enum InstallationEnrollmentError: Error, Equatable {
 /// The Keychain record is written before enrollment and retains the same secret on retry.
 actor InstallationEnrollmentCoordinator {
     static let shared = InstallationEnrollmentCoordinator()
+    /// A bounded persisted-intent retry cannot own or wait on a shared enrollment claim.
+    @TaskLocal static var requiresExistingEnrollment = false
 
     struct Record: Codable, Sendable {
         let installationId: String
@@ -62,6 +64,15 @@ actor InstallationEnrollmentCoordinator {
             throw InstallationEnrollmentError.invalidIdentity
         }
         let origin = "https://\(host.lowercased()):\(baseURL.port ?? 443)"
+        if Self.requiresExistingEnrollment {
+            guard let record = try read(), record.installationId == requestedId,
+                  UUID(uuidString: record.installationId) != nil, record.enrolledOrigin == origin else {
+                throw InstallationEnrollmentError.invalidIdentity
+            }
+            try validateCredential(record.credential)
+            try Task.checkCancellation()
+            return record.credential
+        }
         let record: Record
         if let inFlight {
             enrollmentWaiterDidJoin()
@@ -93,10 +104,7 @@ actor InstallationEnrollmentCoordinator {
             try write(record)
         }
         // Validate persisted material before using it as a header, including after restart.
-        guard record.credential.count == 43,
-              record.credential.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
-            throw InstallationEnrollmentError.invalidCredential
-        }
+        try validateCredential(record.credential)
         if let enrolledOrigin = record.enrolledOrigin {
             guard enrolledOrigin == origin else { throw InstallationEnrollmentError.invalidIdentity }
             return record
@@ -118,6 +126,13 @@ actor InstallationEnrollmentCoordinator {
         record.enrolledOrigin = origin
         try write(record)
         return record
+    }
+
+    private func validateCredential(_ credential: String) throws {
+        guard credential.count == 43,
+              credential.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
+            throw InstallationEnrollmentError.invalidCredential
+        }
     }
 }
 
