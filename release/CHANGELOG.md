@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.5.0(290)
+
+### UI / UX
+- Today now offers “Try Again” when location access is granted but a fix is unavailable, with separate recovery guidance for permission and precision failures.
+<!-- evidence: 6b12d27 -->
+- Local Alerts returns to its stable height when an interrupted transition is cancelled and the view reappears.
+<!-- evidence: 036b28b -->
+- Map accessibility summaries now include applicable local risk categories, hazard probabilities, and supported conditional intensity.
+<!-- evidence: 3f52775 -->
+- Delayed initial Map centering now respects Reduce Motion.
+<!-- evidence: ac714a6 -->
+
+### Background & Notifications
+- Eligible foreground and background location observations can reach the durable upload queue independently of Home, geocoding, NWS, and weather-store startup; Always-authorized significant-change monitoring is restored on scene-based launches.
+<!-- evidence: f621a52, 376d13e, 864d40f, aa9150b -->
+- Pending location uploads retain the newest observation across same-cell updates, offline movement, and restart, while older acknowledgments cannot erase newer pending evidence.
+<!-- evidence: 6eae70d, ad12b9a -->
+- Scheduled refreshes can retry persisted location uploads when weather startup fails, and reuse of unchanged cached weather context no longer creates redundant location requests; transient enrichment admission failures remain retryable while the process stays alive.
+<!-- evidence: a812985, 003f1c1 -->
+- Device synchronization uses authenticated installation credentials and durable consent revisions, rechecks current consent before replay, and keeps preference changes separate from location evidence, including opt-out without an APNs token.
+<!-- evidence: 95cf973, bd1b965, 9f8b2a6 -->
+- Location sharing now requires current precision and consent, rejects evidence captured before a permission or sharing transition, and retains preference-sync intent independently of the location queue.
+<!-- evidence: 1390dcb -->
+- Combined widgets now receive future timeline entries for known alert expirations, updating alert selection, counts, freshness, and relevance from the accepted snapshot.
+<!-- evidence: d2bb0bd -->
+- Background remote-notification receipt completes within its own deadline without cancelling useful ingestion shared with other owners or allowing late receipt-only publications.
+<!-- evidence: 69bc416 -->
+
+### Reliability
+- Home automatically resumes updates after location recovery, preserves cached content while resolving a fix, and refreshes when recovery returns to the previously accepted location.
+<!-- evidence: 6907863 -->
+- One-shot location requests finish on timeout or cancellation without waiting for another callback, and foreground streaming recovers correctly across interrupted or overlapping lifecycle transitions.
+<!-- evidence: 1c63e51, addce8c -->
+- Location acceptance validates coordinates, accuracy, timestamp ordering, and geographic identity; delayed placemark and region enrichment preserve the original observation and cannot replace newer geography.
+<!-- evidence: b30695b, b5a42cc -->
+- Lock Screen risk widgets distinguish missing data from accepted quiet conditions for each risk domain.
+<!-- evidence: 55d0e2c -->
+- Home avoids repeated projection conversion and unnecessary observation of transient values that do not affect accepted presentation.
+<!-- evidence: 1050ec5, 4757a3d -->
+- Foreground refresh timers stop with their owners, and hosted data-query observers retire before their temporary stores are released.
+<!-- evidence: 1995c2e -->
+
+### Tests / QA
+- Expanded deterministic coverage for location acceptance, consent and upload recovery, offline replay, concurrent admissions, notification deadlines, widget risk availability and expirations, Home recovery, and alert-detail reconciliation.
+<!-- evidence: b30695b, b5a42cc, 1390dcb, 6eae70d, ad12b9a, aa9150b, a812985, 003f1c1, 69bc416, 55d0e2c, d2bb0bd, 6907863, 4ef7ab4 -->
+
+### Maintenance / Cleanup
+- Bundled required-reason API declarations in the app privacy manifest and revised the repository privacy-policy review draft to reflect verified data handling.
+<!-- evidence: 1995c2e, 9758fe6 -->
+
 ## v1.5.0(263)
 
 ### UI / UX

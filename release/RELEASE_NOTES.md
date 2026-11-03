@@ -1,5 +1,19 @@
 # Release Notes
 
+## v1.5.0(290)
+
+## Overview
+This build improves location recovery, consent-aware synchronization, and queued upload reliability. It also updates widget alert-expiration handling, Map accessibility, Reduce Motion behavior, and Home refresh lifetimes.
+
+## Highlights
+- Today offers “Try Again” when location access is granted but a fix is unavailable, with separate guidance for permission and precision failures. Home resumes automatic updates after location recovery while retaining cached content.
+- Foreground and background location observations reach the upload queue independently of weather startup. Pending uploads keep the newest location through offline movement and restart, while scheduled cached-context reuse avoids redundant location requests.
+- Authenticated device synchronization preserves current consent through durable revisions. Permission, precision, and sharing transitions prevent reuse of earlier location evidence, and preference changes remain independently queued.
+- Combined widgets receive timeline entries for known alert expirations, and Lock Screen risk widgets distinguish unavailable data from accepted quiet conditions.
+- Map accessibility summaries include local risk categories, hazard probabilities, and supported conditional intensity. Delayed initial centering respects Reduce Motion, and Local Alerts settles its height after interrupted transitions.
+- One-shot location requests finish on timeout or cancellation, foreground streaming recovers across lifecycle transitions, and delayed geographic enrichment cannot replace newer location evidence.
+- Background notification receipt keeps its own completion deadline while useful shared ingestion continues. Home reduces repeated projection work, and refresh timers and data-query observers stop with their owners.
+
 ## v1.5.0(263)
 
 ## Overview
