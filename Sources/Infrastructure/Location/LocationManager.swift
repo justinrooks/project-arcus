@@ -31,6 +31,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let manager: CLLocationManager
     private let authorizationOverride: CLAuthorizationStatus?
     private let logger = Logger.locationManager
+    private let onForegroundActivation: @Sendable () async -> Void
     private let onUpdate: LocationSink
     private let onBackgroundUpdate: LocationSink
     private let drainBackgroundPresence: @Sendable () async -> Void
@@ -56,6 +57,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     init(
         manager: CLLocationManager = CLLocationManager(),
         onUpdate: @escaping LocationSink,
+        onForegroundActivation: @escaping @Sendable () async -> Void = {},
         onBackgroundUpdate: LocationSink? = nil,
         drainBackgroundPresence: @escaping @Sendable () async -> Void = {},
         foregroundUpdates: @escaping ForegroundUpdates = { receive in
@@ -71,6 +73,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         self.foregroundUpdates = foregroundUpdates
         self.manager = manager
         self.authorizationOverride = Self.authorizationOverrideFromEnvironment()
+        self.onForegroundActivation = onForegroundActivation
         self.onUpdate = onUpdate
         self.onBackgroundUpdate = onBackgroundUpdate ?? onUpdate
         self.drainBackgroundPresence = drainBackgroundPresence
@@ -180,6 +183,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             stopAll()
             return
         }
+        if phase == .active { Task { await onForegroundActivation() } }
         if phase == .inactive {
             if currentMode == .foreground {
                 stopForegroundStreaming()
