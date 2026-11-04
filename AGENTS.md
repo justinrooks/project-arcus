@@ -1,11 +1,13 @@
 # AGENTS.md — SkyAware Repository Guidance
 
 ## Purpose
+
 - This file defines durable repository guidance for Codex and other agents working in this repo.
 - Keep changes aligned with the existing architecture, coding patterns, and product goals.
 - Prefer concrete repo-specific guidance over generic advice.
 
 ## Project Structure
+
 - Root Xcode project lives at `SkyAware.xcodeproj`.
 - App source lives in `Sources`.
 - Shared assets and previews live in `Resources`.
@@ -22,6 +24,7 @@
   - Treat them as reference material, not as a source of exact truth unless the task explicitly says to match them.
 
 ## Build, Test, and Development Commands
+
 - Build (Debug):
   `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
 - Test-lane policy (Debug, simulator):
@@ -50,6 +53,7 @@
 - Always check if docker is running before attempting to install dependencies like postgres or redis. If docker is not running, start it and use the postgres and redis instance there.
 
 ## Platform and Architecture Constraints
+
 - Swift 6+, iOS 18+ only.
 - SwiftUI-first.
 - Keep changes aligned with the existing app, server, and shared architecture boundaries in this repository.
@@ -57,6 +61,7 @@
 - Do not introduce cross-actor `ModelContext` misuse.
 
 ## Coding Conventions
+
 - Indent with 4 spaces.
 - Wrap lines around 120 columns when practical.
 - Keep imports ordered and tidy.
@@ -64,7 +69,6 @@
   - Types use PascalCase.
   - Functions and properties use lowerCamelCase.
   - Test types end with `Tests` or `UITests`.
-
 
 ### SwiftUI Specialist
 
@@ -79,6 +83,7 @@ Prefer evidence-backed corrections over stylistic refactoring. Do not invoke the
 If the skill is unavailable in the execution environment, proceed with standard project guidance and note its absence.
 
 ## Testing Expectations
+
 - Use Swift Testing (`import Testing`).
 - When hand-editing `project.pbxproj` test membership exception lists, preserve Xcode's filename ordering (for example, `ArcusMesoClientTests.swift` follows the `Alert*` entries). Commit verified ordering-only normalization rather than repeatedly reverting it and leaving the committed project out of order.
 - Do not hit live WeatherKit, NWS, or SPC feeds in tests.
@@ -90,6 +95,7 @@ If the skill is unavailable in the execution environment, proceed with standard 
 - Mirror production namespaces when adding tests.
 
 ## Definition of Done
+
 - The change should compile unless the task explicitly requests draft-only output.
 - Validate the smallest relevant scope before finishing.
 - Prefer minimal diffs that solve the problem cleanly.
@@ -97,6 +103,7 @@ If the skill is unavailable in the execution environment, proceed with standard 
 - Do not claim coverage changed unless you measured it.
 
 ## Commit and PR Guidance
+
 - Commits should target a single-line imperative summary .
   - Example: `Fix bug preventing watches from loading`
 - PRs should summarize intent, list user-visible changes, and note validation performed.
@@ -104,6 +111,7 @@ If the skill is unavailable in the execution environment, proceed with standard 
 - Call out risk areas and rollback considerations when they matter.
 
 ## Security and Configuration
+
 - Keep private keys, WeatherKit credentials, and secrets out of the repo.
 - Use local developer provisioning and per-user secure storage.
 - Verify `Info.plist` changes and secrets templates before sharing builds.
@@ -111,6 +119,7 @@ If the skill is unavailable in the execution environment, proceed with standard 
 - Preserve the privacy-first handling of location, alert, and weather data across all repository changes.
 
 ## Related Guidance
+
 - For code review tasks, follow `docs/code_review.md`.
 - For product behavior and meteorological meaning, follow `docs/product/north-star.md`.
 - For brand identity, terminology, and communication, follow `docs/brand/brand-and-voice.md`.

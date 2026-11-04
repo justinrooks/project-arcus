@@ -1,18 +1,23 @@
 # Current App Store Listing
 
 ## Version
-1.3.0
+
+1.4.0
 
 ## App Name
+
 SkyAware
 
 ## Subtitle
+
 Know your severe weather risk
 
 ## Promotional Text
+
 Severe weather without the noise. See your local storm risk, threats, alerts, and evolving conditions in one calm, focused view.
 
 ## Description
+
 How weather-aware do you need to be today?
 
 SkyAware gives you a focused, fast view of severe weather near you, helping you understand when the weather deserves your attention and when it doesn’t.
@@ -43,27 +48,28 @@ Important
 
 SkyAware is an informational severe-weather awareness app. It does not issue official warnings, and notifications may not always be immediate. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities for emergency information.
 
-
 ## What's New in This Version
-SkyAware 1.3 keeps local severe-weather awareness steadier while conditions update.
 
-• Today keeps the last reliable weather and risk information visible while updates finish or fail, then changes only when replacement information is ready.
-• Alerts, Outlook, and Storm Setup now show clearer loading, unavailable, failed, and genuinely quiet states.
-• Maps preserve the selected layer and camera while replacement data loads.
-• Risk-change notifications and active alert handling have been refined so local changes are compared from the right context, and active alerts are not removed by incomplete source updates.
-• Reduce Motion now turns off presentation animations across key surfaces.
-• Open alert details update when a newer accepted alert arrives, and Outlook/risk content stays available when part of a data source fails.
+SkyAware 1.4 brings a clearer, more readable experience across Today, Map, and widgets.
+
+• Check air quality, visibility, pressure, humidity, and wind together in Today, with dew point alongside Storm Setup details.
+• See local severe-weather awareness more clearly on Map, with compact controls and legends.
+• Updated light and dark appearances and layouts for larger text sizes make key information easier to scan.
 
 ## Keywords
+
 storm,tornado,warning,alert,watch,mesoscale,spc,nws,outlook,thunderstorm,hail,wind,fire,forecast
 
 ## Category
+
 Weather
 
 ## Age Rating
+
 4+
 
 ## Accessibility
+
 - Larger Text
 - Dark Interface
 - Differentiate Without Color Alone

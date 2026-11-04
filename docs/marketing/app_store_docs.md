@@ -3,9 +3,11 @@
 ## AppStore
 
 ### Promotional Text
+
 How weather-aware do you need to be today? SkyAware gives you a clear, fast summary of local risk, Watches, and Mesoscale Discussions to help you stay aware of developing severe weather.  
 
 ### Description
+
 How weather-aware do you need to be today?
 
 SkyAware gives you a focused, fast summary of local severe-weather risk so you know when the weather deserves your attention, and when it doesn’t.
@@ -62,14 +64,17 @@ It helps you stay aware—clearly, calmly, and when it matters.
 SkyAware is an informational severe-weather awareness app. It does not issue official warnings, and notifications—whether delivered via background updates or server-assisted delivery—may not always be immediate. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities for emergency information.
 
 ### Keywords
+
 severe weather,storm risk,alerts,storm watch,tornado watch,mesoscale,spc,nws,convective outlook
 
 ## Github
 
 ### Readme
+
 SkyAware is a SwiftUI-first iOS app focused on hyper-local severe weather awareness. It combines NWS and SPC data sources to visualize current risks and deliver weather notifications designed to help users stay informed. The repository is public, but this README is written primarily for internal development use.
 
 #### Key Features
+
 - Visualize current severe weather risks for your location
 - Receive notifications about mesoscale discussions, watches, and warnings relevant to your location
 - Morning severe weather risk summary
@@ -79,19 +84,22 @@ SkyAware is a SwiftUI-first iOS app focused on hyper-local severe weather awaren
 - In-app diagnostics, including a log viewer and background run health screen
 
 #### Security & Privacy
+
 - Keep private keys and WeatherKit credentials out of the repo.
 - Do not log sensitive location or alert data in production code.
 
 #### Weather Awareness Disclaimer
+
 SkyAware provides informational severe-weather awareness only and does not issue official warnings. Risk summaries, badges, and notifications are provided on a best-effort basis and should not be relied upon as a sole source of emergency information. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities. See `../legal/EULA.md` for full terms.
 
 #### License
-Use of SkyAware is governed by the End-User License Agreement in `../legal/EULA.md`.
 
+Use of SkyAware is governed by the End-User License Agreement in `../legal/EULA.md`.
 
 ## In-App
 
 ### Disclaimer
+
 SkyAware provides severe-weather awareness using public data from the Storm Prediction Center and National Weather Service.
 
 Risk levels, badges, summaries, and notifications shown in the app are computed estimates based on that data.
