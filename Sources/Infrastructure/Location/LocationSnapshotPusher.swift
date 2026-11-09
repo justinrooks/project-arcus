@@ -72,6 +72,9 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
         reason: LocationUploadReason,
         forceUpload: Bool
     ) async
+    func enqueueEnrichment(
+        _ context: LocationContext, source: LocationUploadSource, reason: LocationUploadReason
+    ) async -> Bool
     func enqueuePreferenceSync(
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
@@ -82,6 +85,13 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 }
 
 extension LocationUploadCoordinating {
+    func enqueueEnrichment(
+        _ context: LocationContext, source: LocationUploadSource, reason: LocationUploadReason
+    ) async -> Bool {
+        await enqueue(context, source: source, reason: reason, forceUpload: false)
+        return true
+    }
+
     var minimumLocationObservationTimestamp: Date? { nil }
     func invalidateLocationEvidence(at date: Date) {}
     func acceptSubscriptionIntent(enabled: Bool) async {}
@@ -226,6 +236,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         forceUpload: Bool = false
     ) async {
         _ = await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason, forceUpload: forceUpload, retainEnrichmentOnFailure: true)
+    }
+
+    /// True only after durable admission (or an already acknowledged equivalent).
+    func enqueueEnrichment(
+        _ context: LocationContext, source: LocationUploadSource, reason: LocationUploadReason
+    ) async -> Bool {
+        await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason,
+                              forceUpload: false, retainEnrichmentOnFailure: true)
     }
 
     @discardableResult

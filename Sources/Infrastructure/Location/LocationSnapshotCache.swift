@@ -97,6 +97,15 @@ protocol DurableLocationContextCaching: Sendable {
     func load() -> LocationContext?
     func save(_ context: LocationContext)
     func invalidate()
+    var requiresPresenceEnrichment: Bool { get }
+    func saveForPresenceEnrichment(_ context: LocationContext)
+    func completePresenceEnrichment()
+}
+
+extension DurableLocationContextCaching {
+    var requiresPresenceEnrichment: Bool { false }
+    func saveForPresenceEnrichment(_ context: LocationContext) { save(context) }
+    func completePresenceEnrichment() {}
 }
 
 private struct PersistedDurableLocationContext: Codable, Sendable {
@@ -247,8 +256,24 @@ struct DurableLocationContextCache: DurableLocationContextCaching {
         UserDefaults(suiteName: suiteName)?.set(data, forKey: key)
     }
 
+    // One bounded obligation, independent of local weather-context usability.
+    var requiresPresenceEnrichment: Bool {
+        UserDefaults(suiteName: suiteName)?.bool(forKey: key + ".presenceEnrichmentPending") ?? false
+    }
+
+    func saveForPresenceEnrichment(_ context: LocationContext) {
+        // Mark first: interruption during cache save may cause a redundant lookup, never lost work.
+        UserDefaults(suiteName: suiteName)?.set(true, forKey: key + ".presenceEnrichmentPending")
+        save(context)
+    }
+
+    func completePresenceEnrichment() {
+        UserDefaults(suiteName: suiteName)?.removeObject(forKey: key + ".presenceEnrichmentPending")
+    }
+
     func invalidate() {
         UserDefaults(suiteName: suiteName)?.removeObject(forKey: key)
+        completePresenceEnrichment()
     }
 }
 
