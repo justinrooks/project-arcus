@@ -48,6 +48,8 @@ final class LocationSession: Sendable {
     @ObservationIgnored
     private var observationNotBefore: Date?
     @ObservationIgnored
+    private var isPresenceEnrichmentSuppressed = false
+    @ObservationIgnored
     private var resolvingSnapshot: LocationSnapshot?
     @ObservationIgnored
     private var pendingResolutionSnapshot: LocationSnapshot?
@@ -115,7 +117,20 @@ final class LocationSession: Sendable {
         currentScenePhase = phase
         syncAuthorizationStatus()
         locationManager.updateMode(for: phase)
-        if phase == .active, pendingResolutionSnapshot == nil { scheduleAuthorizationRecoveryIfNeeded() }
+        if phase == .active, pendingResolutionSnapshot == nil {
+            scheduleAuthorizationRecoveryIfNeeded()
+            if startupState == .ready, durableContextCache.requiresPresenceEnrichment {
+                Task { @MainActor [weak self] in
+                    await self?.enqueueCurrentLocationUpload(source: .foregroundLocationChange, reason: .locationResolved)
+                }
+            } else if startupState == .ready || startupState == .idle,
+                      let snapshot = currentSnapshot, shouldRefreshContext(for: snapshot) {
+                Task { @MainActor [weak self] in
+                    guard let self, let latest = self.currentSnapshot else { return }
+                    await self.handleSnapshotUpdate(latest)
+                }
+            }
+        }
         if phase == .active, let pending = pendingResolutionSnapshot {
             pendingResolutionSnapshot = nil
             Task { @MainActor [weak self] in await self?.handleSnapshotUpdate(pending) }
@@ -184,12 +199,8 @@ final class LocationSession: Sendable {
             if await processPendingSnapshot(generation: generation), startupState != .ready { return nil }
             guard await reconcileResolvedContext(context, generation: generation) else { return nil }
             if let uploadSource {
-                await locationUploadCoordinator.enqueue(
-                    context,
-                    source: uploadSource,
-                    reason: uploadReason ?? .locationResolved,
-                    forceUpload: false
-                )
+                _ = await retainResolvedEnrichment(context, generation: generation,
+                    source: uploadSource, reason: uploadReason ?? .locationResolved)
                 guard isCurrentLocationResolution(generation) else { return nil }
             }
             startupState = .ready
@@ -229,6 +240,19 @@ final class LocationSession: Sendable {
         let latestSnapshot = reconcileCurrentSnapshot(with: providerSnapshot)
 
         let cachedContext = durableContextCache.load()
+        // A newer observation needs its own region lookup even inside the same H3 cell.
+        // The two existing durable caches preserve this mismatch across process restart.
+        if let latestSnapshot, acceptsPrecisionEvidence(latestSnapshot),
+           cachedContext.map({ latestSnapshot.h3Cell == $0.h3Cell &&
+               latestSnapshot.timestamp >= $0.snapshot.timestamp &&
+               !Self.matchesPersistedObservation(latestSnapshot, $0.snapshot) }) ?? true {
+            return await prepareCurrentLocationContext(
+                requiresFreshLocation: false, showsAuthorizationPrompt: false,
+                uploadSource: uploadSource, uploadReason: uploadReason,
+                authorizationTimeout: authorizationTimeout, locationTimeout: locationTimeout,
+                maximumAcceptedLocationAge: maximumAcceptedLocationAge, placemarkTimeout: placemarkTimeout
+            )
+        }
         let movementEvidence = movementEvidence(for: cachedContext, currentSnapshot: latestSnapshot)
         if movementEvidence != .none {
             durableContextCache.invalidate()
@@ -263,20 +287,23 @@ final class LocationSession: Sendable {
         }
 
         if let context = reusableContext {
-            guard await applyResolvedContext(context, generation: generation) else { return nil }
+            guard await applyResolvedContext(context, generation: generation, needsPresenceEnrichment: false) else { return nil }
             guard isCurrentLocationResolution(generation) else { return nil }
             guard await reconcileResolvedContext(context, generation: generation) else { return nil }
             if let uploadSource {
-                // The durable cache and transport encode capture time at whole-second precision.
-                // Reusing that evidence is not a new presence intent; retry the outbox instead.
+                // Reusing the same persisted observation is not a new presence intent.
+                // Retry its outbox rather than creating an upload.
                 let cached = cachedContext?.snapshot
                 let isCachedObservation = cached.map {
-                    floor(context.snapshot.timestamp.timeIntervalSince1970) == floor($0.timestamp.timeIntervalSince1970) &&
+                    context.snapshot.timestamp == $0.timestamp &&
                     context.snapshot.coordinates.latitude == $0.coordinates.latitude &&
                     context.snapshot.coordinates.longitude == $0.coordinates.longitude &&
                     context.snapshot.accuracy == $0.accuracy && context.snapshot.h3Cell == $0.h3Cell
                 } ?? false
-                if isCachedObservation {
+                if durableContextCache.requiresPresenceEnrichment {
+                    _ = await retainResolvedEnrichment(context, generation: generation,
+                        source: uploadSource, reason: uploadReason ?? .locationResolved)
+                } else if isCachedObservation {
                     await locationUploadCoordinator.drainPendingUploads()
                 } else {
                     await locationUploadCoordinator.enqueue(
@@ -345,6 +372,8 @@ final class LocationSession: Sendable {
     func captureLocationSharingPreferenceChange(enabled: Bool) {
         let cutoff = presenceNow()
         locationUploadCoordinator.invalidateLocationEvidence(at: cutoff)
+        durableContextCache.completePresenceEnrichment()
+        isPresenceEnrichmentSuppressed = !enabled
         if enabled {
             observationNotBefore = cutoff
             _ = beginLocationResolutionAttempt()
@@ -367,12 +396,7 @@ final class LocationSession: Sendable {
     func enqueueCurrentLocationUpload(source: LocationUploadSource, reason: LocationUploadReason) async {
         guard let context = await resolveCurrentContextIfNeeded(),
               await reconcileResolvedContext(context, generation: locationResolutionGeneration) else { return }
-        await locationUploadCoordinator.enqueue(
-            context,
-            source: source,
-            reason: reason,
-            forceUpload: false
-        )
+        _ = await retainResolvedEnrichment(context, generation: locationResolutionGeneration, source: source, reason: reason)
     }
 
     func drainPendingLocationUploads() async {
@@ -485,7 +509,9 @@ final class LocationSession: Sendable {
                   case .failed = self.startupState else { return }
             _ = await self.prepareCurrentLocationContext(
                 requiresFreshLocation: true,
-                showsAuthorizationPrompt: false
+                showsAuthorizationPrompt: false,
+                uploadSource: .foregroundLocationChange,
+                uploadReason: .locationResolved
             )
         }
     }
@@ -498,7 +524,7 @@ final class LocationSession: Sendable {
         guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
               acceptsPrecisionEvidence(snapshot) else { return }
         switch startupState {
-        case .ready, .failed:
+        case .idle, .ready, .failed:
             break
         case .resolvingContext:
             if snapshot != resolvingSnapshot {
@@ -535,12 +561,8 @@ final class LocationSession: Sendable {
                 guard await self.reconcileResolvedContext(context, generation: generation) else { return }
                 self.startupState = .ready
                 // Independent presence must still be followed by current geographic enrichment.
-                await self.locationUploadCoordinator.enqueue(
-                    context,
-                    source: .foregroundLocationChange,
-                    reason: .locationChanged,
-                    forceUpload: false
-                )
+                _ = await self.retainResolvedEnrichment(context, generation: generation,
+                    source: .foregroundLocationChange, reason: .locationChanged)
             } catch is CancellationError {
                 return
             } catch {
@@ -581,7 +603,20 @@ final class LocationSession: Sendable {
         locationResolutionGeneration == generation
     }
 
-    private func applyResolvedContext(_ context: LocationContext, generation: UInt64) async -> Bool {
+    private func retainResolvedEnrichment(
+        _ context: LocationContext, generation: UInt64, source: LocationUploadSource, reason: LocationUploadReason
+    ) async -> Bool {
+        guard !isPresenceEnrichmentSuppressed, locationUploadCoordinator.isLocationSharingEnabled else { return false }
+        let retained = await locationUploadCoordinator.enqueueEnrichment(context, source: source, reason: reason)
+        guard isCurrentLocationResolution(generation), matchesLatestGeography(context) else { return false }
+        guard retained else { return false }
+        durableContextCache.completePresenceEnrichment()
+        return true
+    }
+
+    private func applyResolvedContext(
+        _ context: LocationContext, generation: UInt64, needsPresenceEnrichment: Bool = true
+    ) async -> Bool {
         guard await reconcileResolvedContext(context, generation: generation) else { return false }
         guard await publishCurrentContext(context, when: {
             self.isCurrentLocationResolution(generation) && self.matchesLatestGeography(context)
@@ -597,7 +632,12 @@ final class LocationSession: Sendable {
             currentSnapshot = context.snapshot
         }
         observationNotBefore = nil
-        durableContextCache.save(context)
+        if needsPresenceEnrichment, !isPresenceEnrichmentSuppressed,
+           locationUploadCoordinator.isLocationSharingEnabled {
+            durableContextCache.saveForPresenceEnrichment(context)
+        } else {
+            durableContextCache.save(context)
+        }
         return true
     }
 
@@ -609,8 +649,9 @@ final class LocationSession: Sendable {
     }
 
     private func matchesLatestGeography(_ context: LocationContext) -> Bool {
-        guard let currentSnapshot, currentSnapshot.timestamp > context.snapshot.timestamp else { return true }
-        return currentSnapshot.h3Cell == context.h3Cell
+        guard let currentSnapshot, acceptsPrecisionEvidence(currentSnapshot),
+              currentSnapshot.timestamp > context.snapshot.timestamp else { return true }
+        return currentSnapshot.hasSameObservation(as: context.snapshot)
     }
 
     private func reconcileResolvedContext(_ context: LocationContext, generation: UInt64) async -> Bool {
@@ -725,7 +766,12 @@ final class LocationSession: Sendable {
     private func shouldRefreshContext(for snapshot: LocationSnapshot) -> Bool {
         guard observationNotBefore == nil, let currentContext else { return true }
         guard let snapshotH3Cell = snapshot.h3Cell else { return false }
-        return currentContext.h3Cell != snapshotH3Cell
+        return currentContext.h3Cell != snapshotH3Cell ||
+            !currentContext.snapshot.hasSameObservation(as: snapshot)
+    }
+
+    private static func matchesPersistedObservation(_ lhs: LocationSnapshot, _ rhs: LocationSnapshot) -> Bool {
+        lhs.hasSameObservation(as: rhs)
     }
 
     private static func failureCode(for error: Error) -> String {

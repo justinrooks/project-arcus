@@ -1045,7 +1045,8 @@ struct LocationSessionTests {
     private func durableContext(
         timestamp: Date,
         accuracy: Double = 20,
-        h3Cell: Int64 = 1
+        h3Cell: Int64 = 1,
+        county: String = "COC031", forecastZone: String? = nil, fireZone: String = "COZ246"
     ) -> LocationContext {
         LocationContext(
             snapshot: .init(
@@ -1071,9 +1072,9 @@ struct LocationSessionTests {
                 state: nil,
                 timeZoneId: nil,
                 radarStationId: nil,
-                forecastZone: nil,
-                countyCode: "COC031",
-                fireZone: "COZ246",
+                forecastZone: forecastZone,
+                countyCode: county,
+                fireZone: fireZone,
                 countyLabel: nil,
                 fireZoneLabel: nil
             )
@@ -1673,7 +1674,7 @@ struct LocationSessionTests {
     }
 
     @MainActor
-    @Test("failed acquisition is not hidden by a pending same-cell fix")
+    @Test("failed acquisition retries a newer same-cell fix without hiding a second failure")
     func failedAcquisitionWithSameCellPendingFixRemainsUnavailable() async throws {
         let existing = durableContext(timestamp: .now.addingTimeInterval(-60), h3Cell: 1)
         let later = durableContext(timestamp: .now, h3Cell: 1)
@@ -1706,13 +1707,15 @@ struct LocationSessionTests {
         try #require(await waitUntilAsync { session.currentSnapshot == later.snapshot })
         await resolver.complete(id: id, with: .failure(.locationTimeout))
         #expect(await preparation.value == nil)
-        #expect(session.startupState == .failed("location-timeout"))
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let recoveryID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: recoveryID, with: .failure(.missingRegionContext))
+        #expect(await waitUntilAsync { session.startupState == .failed("location-missing-region-context") })
         #expect(session.currentContext == nil)
-        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
     }
 
     @MainActor
-    @Test("same-cell fix during publication preserves successful preparation and upload")
+    @Test("same-cell fix during publication supersedes older preparation before upload")
     func sameCellFixDuringPublicationPreservesSuccess() async throws {
         let first = durableContext(timestamp: .now.addingTimeInterval(-1), h3Cell: 1)
         let later = durableContext(timestamp: .now, h3Cell: 1)
@@ -1752,9 +1755,11 @@ struct LocationSessionTests {
         updates.continuation.yield(later.snapshot)
         try #require(await waitUntilAsync { session.currentSnapshot == later.snapshot })
         release.continuation.finish()
-        #expect(await preparation.value == first)
-        #expect(session.startupState == .ready)
-        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+        #expect(await preparation.value == nil)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let recoveryID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: recoveryID, with: .success(later))
+        try #require(await waitUntilAsync { session.startupState == .ready })
         #expect(await uploader.recordedEnqueueCount() == 1)
         await session.publishCurrentContext(nil)
         #expect(session.contextInterruptionRevision == 1)
@@ -1800,6 +1805,9 @@ struct LocationSessionTests {
         updates.continuation.yield(later.snapshot)
         try #require(await waitUntilAsync { session.currentSnapshot == later.snapshot })
         release.continuation.finish()
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let recoveryID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        await resolver.complete(id: recoveryID, with: .success(later))
         #expect(await waitUntilAsync {
             let count = await uploader.recordedEnqueueCount()
             return session.startupState == .ready && count == 1
@@ -2351,10 +2359,16 @@ struct LocationSessionTests {
             locationManager: manager, locationContextResolver: resolver,
             locationUploadCoordinator: NoOpLocationUploadCoordinator(), durableContextCache: cache
         )
-        let result = try #require(await session.prepareScheduledBackgroundLocationContext(
+        let prepared = await session.prepareScheduledBackgroundLocationContext(
             uploadSource: nil, uploadReason: nil, authorizationTimeout: 1, locationTimeout: 1,
             maximumAcceptedLocationAge: 60, placemarkTimeout: 1
-        ))
+        )
+        if ["coordinates", "namedCoordinates"].contains(variant) {
+            #expect(prepared == nil)
+            #expect(await resolver.recordedPrepareCallCount() == 1)
+            return
+        }
+        let result = try #require(prepared)
         let expected: String? = variant == "matching" ? "Bennett, CO" : (variant.hasPrefix("named") ? "Accepted name" : nil)
         #expect(result.snapshot.placemarkSummary == expected)
         #expect(result.snapshot.timestamp == timestamp)
@@ -2406,18 +2420,301 @@ struct LocationSessionTests {
 
     private actor ScheduledReuseTransport: LocationSnapshotUploading, DevicePreferenceSyncUploading {
         private var captures: [Date] = []
+        private var payloads: [LocationSnapshotPushPayload] = []
         private var losesAcknowledgment: Bool
 
         init(losesAcknowledgment: Bool) { self.losesAcknowledgment = losesAcknowledgment }
 
         func upload(_ payload: LocationSnapshotPushPayload) async throws {
             captures.append(payload.capturedAt)
+            payloads.append(payload)
             if losesAcknowledgment { throw URLError(.networkConnectionLost) }
         }
 
         func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
         func restoreConnectivity() { losesAcknowledgment = false }
         func recordedCaptures() -> [Date] { captures }
+        func recordedPayloads() -> [LocationSnapshotPushPayload] { payloads }
+    }
+
+    @MainActor
+    @Test("same-cell enrichment recovers on activation without movement", arguments: [false, true])
+    func sameCellEnrichmentRetriesOnActivation(fails: Bool) async throws {
+        let old = durableContext(timestamp: .now.addingTimeInterval(-60))
+        let current = durableContext(timestamp: .now, county: "COC005", forecastZone: "COZ039")
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        defer { updates.continuation.finish() }
+        let subscribed = AsyncStream<Void>.makeStream()
+        let resolver = ControlledResolver()
+        let uploads = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: .init(snapshot: { old.snapshot }, updates: {
+                subscribed.continuation.yield(())
+                return updates.stream
+            }),
+            locationManager: LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                onUpdate: { _ in .accepted }), locationContextResolver: resolver, locationUploadCoordinator: uploads)
+        var iterator = subscribed.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        subscribed.continuation.finish()
+        session.currentContext = old
+        session.startupState = .ready
+        session.currentSnapshot = fails ? old.snapshot : current.snapshot
+        session.handleScenePhaseChange(.active)
+        if fails { updates.continuation.yield(current.snapshot) }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let failedID = try #require(await resolver.pendingIDs(for: .resolve).first)
+        if !fails {
+            await resolver.complete(id: failedID, with: .success(current))
+            #expect(await waitUntilAsync { await uploads.recordedEnqueueCount() == 1 })
+            #expect(session.currentContext == current)
+            return
+        }
+        await resolver.complete(id: failedID, with: .failure(.missingRegionContext))
+        try #require(await waitUntilAsync { session.startupState == .failed("location-missing-region-context") })
+        session.handleScenePhaseChange(.background)
+        session.handleScenePhaseChange(.active)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let retryID = try #require(await resolver.pendingIDs(for: .prepare).first)
+        await resolver.complete(id: retryID, with: .success(current))
+        #expect(await waitUntilAsync { await uploads.recordedEnqueueCount() == 1 })
+        #expect(session.currentContext == current)
+    }
+
+    @Test("all location stores reopen precise observations and remain readable from legacy ISO dates",
+          arguments: [false, true])
+    func locationDatePersistence(legacy: Bool) async throws {
+        let suite = "location-dates-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let captured = Date(timeIntervalSince1970: 1_790_000_000.1234567)
+        let context = durableContext(timestamp: captured)
+        LocationSnapshotCache(suiteName: suite).save(context.snapshot)
+        DurableLocationContextCache(suiteName: suite).save(context)
+        let request = PersistedLocationUploadRequest(source: .foregroundLocationChange, reason: .locationChanged,
+            forceUpload: false, installationId: "dates", requestedAt: captured.addingTimeInterval(0.5),
+            isSubscribed: true, authorizationState: "always", apnsToken: "",
+            operation: .locationSnapshot(context: PersistedLocationContext(context)))
+        try await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").savePendingRequests([request])
+        if legacy {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            defaults.set(try encoder.encode([request]), forKey: "queue")
+            for key in ["location.lastSnapshot.v1", "location.durableContext.v1"] {
+                let data = try #require(defaults.data(forKey: key))
+                var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                object["timestamp"] = captured.formatted(.iso8601)
+                defaults.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
+            }
+        }
+        let expected = legacy ? Date(timeIntervalSince1970: floor(captured.timeIntervalSince1970)) : captured
+        #expect(LocationSnapshotCache(suiteName: suite).load()?.timestamp == expected)
+        #expect(DurableLocationContextCache(suiteName: suite).load()?.snapshot.timestamp == expected)
+        let restored = try #require(await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+            .loadPendingRequests().first)
+        guard case .locationSnapshot(let storedContext) = restored.operation else { Issue.record("Missing location"); return }
+        #expect(storedContext.capturedAt == expected)
+        if !legacy { #expect(restored.requestedAt == request.requestedAt) }
+    }
+
+    @Test("enrichment rejects retention of a conflicting older or equal-time intent", arguments: [false, true])
+    func conflictingEnrichmentAdmission(equalTime: Bool) async throws {
+        let suite = "conflicting-enrichment-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let newest = durableContext(timestamp: Date(timeIntervalSince1970: 1_790_000_000.9))
+        let conflict = durableContext(timestamp: newest.snapshot.timestamp.addingTimeInterval(equalTime ? 0 : -0.8),
+            county: "COC005", forecastZone: "COZ039")
+        let transport = ScheduledReuseTransport(losesAcknowledgment: true)
+        func makePusher() -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+                installationIdProvider: { "conflict" }, locationUploadEnabledProvider: { true },
+                authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+                retryDelaysSeconds: [0], queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue"))
+        }
+        await makePusher().enqueue(newest, source: .foregroundLocationChange, reason: .locationChanged)
+        #expect(await makePusher().enqueueEnrichment(conflict, source: .foregroundLocationChange, reason: .locationResolved) == false)
+        let pending = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests()
+        #expect(pending.map(\.operation) == [.locationSnapshot(context: PersistedLocationContext(newest))])
+    }
+
+    @MainActor
+    @Test("opt-out during lookup or publication preserves local context without recreating pending work",
+          arguments: ["lookup", "publication"])
+    func pendingEnrichmentOptOutDuringResolution(phase: String) async throws {
+        let suite = "ugc-opt-out-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let context = durableContext(timestamp: .now.addingTimeInterval(-1))
+        let resolver = ControlledResolver()
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer { entered.continuation.finish(); release.continuation.finish() }
+        let session = LocationSession(
+            locationClient: .init(snapshot: { context.snapshot }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                onUpdate: { _ in .accepted }), locationContextResolver: resolver,
+            locationUploadCoordinator: StubUploadCoordinator(), durableContextCache: DurableLocationContextCache(suiteName: suite),
+            onContextPublished: {
+                if phase == "publication" {
+                    entered.continuation.yield(())
+                    var iterator = release.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                }
+            })
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: false, showsAuthorizationPrompt: false)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        if phase == "lookup" { session.captureLocationSharingPreferenceChange(enabled: false) }
+        await resolver.complete(id: id, with: .success(context))
+        if phase == "publication" {
+            var iterator = entered.stream.makeAsyncIterator()
+            _ = await iterator.next()
+            session.captureLocationSharingPreferenceChange(enabled: false)
+            release.continuation.finish()
+        }
+        #expect(await preparation.value == context)
+        #expect(session.startupState == .ready && session.currentContext == context)
+        let reopened = DurableLocationContextCache(suiteName: suite)
+        #expect(reopened.load() != nil)
+        #expect(!reopened.requiresPresenceEnrichment)
+    }
+
+    @MainActor
+    @Test("pending enrichment clears on privacy invalidation and remains suppressed after reopen")
+    func pendingEnrichmentPrivacy() async throws {
+        let suite = "ugc-privacy-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let cache = DurableLocationContextCache(suiteName: suite)
+        let context = durableContext(timestamp: .now.addingTimeInterval(-1))
+        cache.saveForPresenceEnrichment(context)
+        #expect(DurableLocationContextCache(suiteName: suite).requiresPresenceEnrichment)
+        let transport = ScheduledReuseTransport(losesAcknowledgment: false)
+        let pusher = LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+            installationIdProvider: { "privacy" }, locationUploadEnabledProvider: { false },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy })
+        let session = LocationSession(
+            locationClient: .init(snapshot: { context.snapshot }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                onUpdate: { _ in .accepted }), locationContextResolver: StubResolver(context: context, error: nil),
+            locationUploadCoordinator: pusher, durableContextCache: cache)
+        session.currentContext = context
+        session.startupState = .ready
+        session.captureLocationSharingPreferenceChange(enabled: false)
+        #expect(!DurableLocationContextCache(suiteName: suite).requiresPresenceEnrichment)
+        await session.enqueueCurrentLocationUpload(source: .foregroundLocationChange, reason: .locationResolved)
+        #expect(await transport.recordedPayloads().isEmpty)
+        cache.saveForPresenceEnrichment(context)
+        cache.invalidate()
+        let reopened = DurableLocationContextCache(suiteName: suite)
+        #expect(!reopened.requiresPresenceEnrichment && reopened.load() == nil)
+    }
+
+    private actor RejectingEnrichmentStore: LocationUploadQueueStoring {
+        let base: UserDefaultsLocationUploadQueueStore
+        init(suite: String) { base = .init(suiteName: suite, key: "queue") }
+        func loadPendingRequests() async -> [PersistedLocationUploadRequest] { await base.loadPendingRequests() }
+        func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async throws {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
+    @MainActor
+    @Test("offline enriched A then same-cell minimal B recovers current UGC after reopen",
+          arguments: ["normal", "admissionFailure", "timestampTie", "beforeAdmission", "nilSource", "foregroundPending", "disabled"])
+    func sameCellEnrichmentReopens(scenario: String) async throws {
+        let now = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) - 2)
+        let cell = try SwiftyH3Hasher().h3Cell(for: .init(latitude: 39.7392, longitude: -104.9903))
+        let old = durableContext(timestamp: now.addingTimeInterval(["timestampTie", "beforeAdmission"].contains(scenario) ? 0.1 : -60), h3Cell: cell)
+        let snapshot = LocationSnapshot(coordinates: .init(latitude: 39.7400, longitude: -104.9903),
+            timestamp: now.addingTimeInterval(["timestampTie", "beforeAdmission"].contains(scenario) ? 0.9 : 0), accuracy: 20, h3Cell: old.h3Cell)
+        let grid = durableContext(timestamp: now, county: "COC005", forecastZone: "COZ039", fireZone: "COZ247").grid
+        let current = LocationContext(snapshot: snapshot, h3Cell: old.h3Cell, grid: grid)
+        let suite = "ugc-recovery-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let transport = ScheduledReuseTransport(losesAcknowledgment: true)
+        func makePusher(sharing: Bool = true) -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+                installationIdProvider: { "ugc-test" }, subscriptionStatusProvider: { true },
+                locationUploadEnabledProvider: { sharing }, authorizationStatusProvider: { .authorizedAlways },
+                accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { now.addingTimeInterval(1) }, retryDelaysSeconds: [0],
+                queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue"))
+        }
+        let original = makePusher()
+        await original.enqueue(old, source: .foregroundLocationChange, reason: .locationChanged)
+        if scenario != "beforeAdmission" {
+            #expect(await original.retainPresence(snapshot, source: .foregroundLocationChange))
+        }
+        let pending = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests()
+        #expect(pending.count == 1)
+        DurableLocationContextCache(suiteName: suite).save(old)
+        LocationSnapshotCache(suiteName: suite).save(snapshot)
+        await transport.restoreConnectivity()
+        let reopened = makePusher()
+        if scenario != "beforeAdmission" {
+            await reopened.drainPendingUploads()
+            let minimal = try #require(await transport.recordedPayloads().last)
+            #expect(floor(minimal.capturedAt.timeIntervalSince1970) == now.timeIntervalSince1970 && minimal.county == nil)
+        }
+        let countBeforeOld = await transport.recordedPayloads().count
+        // An older completion cannot restore A's UGC onto B.
+        if !["timestampTie", "beforeAdmission"].contains(scenario) {
+            await reopened.enqueue(old, source: .foregroundLocationChange, reason: .locationResolved)
+            #expect(await transport.recordedPayloads().count == countBeforeOld)
+        }
+        let restored = try #require(LocationSnapshotCache(suiteName: suite).load())
+        #expect(restored.timestamp == snapshot.timestamp)
+        #expect(DurableLocationContextCache(suiteName: suite).load()?.snapshot.timestamp == old.snapshot.timestamp)
+        let recovered = LocationContext(snapshot: restored, h3Cell: current.h3Cell, grid: current.grid)
+        let resolver = StubResolver(context: recovered, error: nil)
+        if ["admissionFailure", "nilSource", "foregroundPending"].contains(scenario) {
+            let failing = LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+                installationIdProvider: { "ugc-test" }, subscriptionStatusProvider: { true },
+                locationUploadEnabledProvider: { true }, authorizationStatusProvider: { .authorizedAlways },
+                accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0],
+                queueStore: RejectingEnrichmentStore(suite: suite))
+            let interrupted = LocationSession(
+                locationClient: .init(snapshot: { restored }, updates: { AsyncStream { $0.finish() } }),
+                locationManager: LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                    onUpdate: { _ in .accepted }), locationContextResolver: resolver,
+                locationUploadCoordinator: failing, durableContextCache: DurableLocationContextCache(suiteName: suite))
+            #expect(await interrupted.prepareScheduledBackgroundLocationContext(
+                uploadSource: scenario == "admissionFailure" ? .backgroundRefresh : nil, uploadReason: .locationResolved,
+                authorizationTimeout: 1, locationTimeout: 1, maximumAcceptedLocationAge: 300, placemarkTimeout: 1) == recovered)
+            #expect(interrupted.startupState == .ready)
+            let interruptedCache = DurableLocationContextCache(suiteName: suite)
+            #expect(interruptedCache.load()?.snapshot == restored)
+            #expect(interruptedCache.requiresPresenceEnrichment)
+        }
+        let session = LocationSession(
+            locationClient: .init(snapshot: { restored }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                onUpdate: { _ in .accepted }), locationContextResolver: resolver,
+            locationUploadCoordinator: scenario == "disabled" ? makePusher(sharing: false) : reopened, durableContextCache: DurableLocationContextCache(suiteName: suite))
+        if scenario == "foregroundPending" {
+            session.currentContext = recovered
+            session.currentSnapshot = restored
+            session.startupState = .ready
+            session.handleScenePhaseChange(.active)
+            try #require(await waitUntilAsync { !DurableLocationContextCache(suiteName: suite).requiresPresenceEnrichment })
+        }
+        let result = await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: .backgroundRefresh, uploadReason: .locationResolved,
+            authorizationTimeout: 1, locationTimeout: 1, maximumAcceptedLocationAge: 300, placemarkTimeout: 1)
+        #expect(result?.snapshot == recovered.snapshot)
+        #expect(result?.grid.countyCode == recovered.grid.countyCode)
+        #expect(result?.grid.forecastZone == recovered.grid.forecastZone)
+        #expect(result?.grid.fireZone == recovered.grid.fireZone)
+        #expect(session.startupState == .ready)
+        if scenario == "disabled" {
+            #expect(await transport.recordedPayloads().count == countBeforeOld)
+            return
+        }
+        #expect(!DurableLocationContextCache(suiteName: suite).requiresPresenceEnrichment)
+        let enriched = try #require(await transport.recordedPayloads().last)
+        #expect(enriched.capturedAt == restored.timestamp)
+        #expect(enriched.county == "COC005" && enriched.zone == "COZ039" && enriched.fireZone == "COZ247")
+        #expect(await resolver.recordedPrepareCallCount() == 1)
     }
 
     @MainActor
@@ -2494,7 +2791,8 @@ struct LocationSessionTests {
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
             onUpdate: { _ in .accepted }
         )
-        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let resolved = LocationContext(snapshot: freshSnapshot, h3Cell: cachedContext.h3Cell, grid: cachedContext.grid)
+        let resolver = StubResolver(context: resolved, error: nil)
         let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: providerClient,
@@ -2517,7 +2815,7 @@ struct LocationSessionTests {
         #expect(result?.grid == cachedContext.grid)
         #expect(await uploader.recordedEnqueueCount() == 1)
         #expect(await uploader.recordedDrainCount() == 0)
-        #expect(await resolver.recordedPrepareCallCount() == 0)
+        #expect(await resolver.recordedPrepareCallCount() == 1)
         let persistedSnapshot = durableCache.load()?.snapshot
         #expect(persistedSnapshot?.coordinates.latitude == freshSnapshot.coordinates.latitude)
         #expect(persistedSnapshot?.coordinates.longitude == freshSnapshot.coordinates.longitude)

@@ -61,8 +61,7 @@ struct LocationSnapshotCache: LocationSnapshotCaching {
             return nil
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = LocationPersistenceCoding.makeDecoder()
 
         guard let persisted = try? decoder.decode(PersistedLocationSnapshot.self, from: data) else {
             return nil
@@ -81,7 +80,6 @@ struct LocationSnapshotCache: LocationSnapshotCaching {
 
         let persisted = PersistedLocationSnapshot(snapshot: snapshot)
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
 
         guard let data = try? encoder.encode(persisted) else { return }
         UserDefaults(suiteName: suiteName)?.set(data, forKey: key)
@@ -97,6 +95,15 @@ protocol DurableLocationContextCaching: Sendable {
     func load() -> LocationContext?
     func save(_ context: LocationContext)
     func invalidate()
+    var requiresPresenceEnrichment: Bool { get }
+    func saveForPresenceEnrichment(_ context: LocationContext)
+    func completePresenceEnrichment()
+}
+
+extension DurableLocationContextCaching {
+    var requiresPresenceEnrichment: Bool { false }
+    func saveForPresenceEnrichment(_ context: LocationContext) { save(context) }
+    func completePresenceEnrichment() {}
 }
 
 private struct PersistedDurableLocationContext: Codable, Sendable {
@@ -213,8 +220,7 @@ struct DurableLocationContextCache: DurableLocationContextCaching {
             return nil
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = LocationPersistenceCoding.makeDecoder()
         guard let persisted = try? decoder.decode(PersistedDurableLocationContext.self, from: data),
               let context = persisted.context,
               context.snapshot.timestamp <= nowProvider() else {
@@ -242,13 +248,28 @@ struct DurableLocationContextCache: DurableLocationContextCaching {
     func save(_ context: LocationContext) {
         guard let persisted = PersistedDurableLocationContext(context: context).context else { return }
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(PersistedDurableLocationContext(context: persisted)) else { return }
         UserDefaults(suiteName: suiteName)?.set(data, forKey: key)
     }
 
+    // One bounded obligation, independent of local weather-context usability.
+    var requiresPresenceEnrichment: Bool {
+        UserDefaults(suiteName: suiteName)?.bool(forKey: key + ".presenceEnrichmentPending") ?? false
+    }
+
+    func saveForPresenceEnrichment(_ context: LocationContext) {
+        // Mark first: interruption during cache save may cause a redundant lookup, never lost work.
+        UserDefaults(suiteName: suiteName)?.set(true, forKey: key + ".presenceEnrichmentPending")
+        save(context)
+    }
+
+    func completePresenceEnrichment() {
+        UserDefaults(suiteName: suiteName)?.removeObject(forKey: key + ".presenceEnrichmentPending")
+    }
+
     func invalidate() {
         UserDefaults(suiteName: suiteName)?.removeObject(forKey: key)
+        completePresenceEnrichment()
     }
 }
 
