@@ -2086,7 +2086,7 @@ struct LocationProviderTests {
         #expect(await uploader.uploadedPayloads().map(\.mesoNotificationsEnabled) == [true, false, true])
     }
 
-    @Test("location context pusher payload includes timestamp and apns token")
+    @Test("location context pusher carries targeting codes without optional labels")
     func locationContextPusher_includesTimestampAndApnsToken() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
@@ -2100,7 +2100,9 @@ struct LocationProviderTests {
             queueStore: InMemoryUploadQueueStore()
         )
 
-        let context = makeContext()
+        let original = makeContext()
+        let context = LocationContext(snapshot: original.snapshot, h3Cell: original.h3Cell,
+            grid: makeGridSnapshot(countyLabel: nil, fireZoneLabel: nil))
         await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
         
         let payloads = await uploader.uploadedPayloads()
@@ -2111,6 +2113,7 @@ struct LocationProviderTests {
         #expect(payload.county == "OKC109")
         #expect(payload.zone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
+        #expect(payload.countyLabel == nil && payload.fireZoneLabel == nil)
         #expect(payload.h3Cell == sampleH3Cell)
         #expect(payload.isSubscribed == false)
         #expect(payload.source == LocationUploadSource.manualRefresh.rawValue)

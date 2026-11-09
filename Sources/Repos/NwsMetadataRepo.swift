@@ -34,9 +34,10 @@ actor NwsMetadataRepo {
     
     func getLocationLabels(using client: any NwsClient, for countyCode: String?, and fireZone: String?) async throws -> (String?, String?) {
         logger.debug("Resolving NWS location labels")
-        async let countyMetadata = zoneMetadata(using: client, type: .county, identifier: countyCode)
-        async let fireZoneMetadata = zoneMetadata(using: client, type: .fire, identifier: fireZone)
-        let (resolvedCountyMetadata, resolvedFireZoneMetadata) = try await (countyMetadata, fireZoneMetadata)
+        async let countyMetadata = optionalZoneMetadata(using: client, type: .county, identifier: countyCode)
+        async let fireZoneMetadata = optionalZoneMetadata(using: client, type: .fire, identifier: fireZone)
+        let (resolvedCountyMetadata, resolvedFireZoneMetadata) = await (countyMetadata, fireZoneMetadata)
+        try Task.checkCancellation()
 
         let countyLabel = resolvedCountyMetadata.map { "\($0.name) \($0.type)".capitalized }
         let fireZoneLabel = resolvedFireZoneMetadata?.name
@@ -78,5 +79,20 @@ actor NwsMetadataRepo {
 
         let data = try await client.fetchZoneMetadata(for: type, and: identifier)
         return try JSONDecoder().decode(NWSZoneDTO.self, from: data)
+    }
+
+    private func optionalZoneMetadata(
+        using client: any NwsClient,
+        type: NwsZoneType,
+        identifier: String?
+    ) async -> NWSZoneDTO? {
+        do {
+            return try await withTimeout(timeout: 5) {
+                try await self.zoneMetadata(using: client, type: type, identifier: identifier)
+            }
+        } catch {
+            logger.debug("Optional NWS zone label unavailable")
+            return nil
+        }
     }
 }
