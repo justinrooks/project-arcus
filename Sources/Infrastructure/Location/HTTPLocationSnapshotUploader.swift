@@ -82,7 +82,17 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
         self.enrollment = enrollment
         self.baseURL = baseURL
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            // Keep Date's subsecond observation identity; Foundation's ISO-8601
+            // encoder drops fractions, and its fractional formatter keeps only milliseconds.
+            let instant = date.timeIntervalSinceReferenceDate
+            let seconds = instant.rounded(.down)
+            let nanoseconds = Int(((instant - seconds) * 1_000_000_000).rounded())
+            let fraction = String(format: "%09d", nanoseconds)
+            let whole = Date(timeIntervalSinceReferenceDate: seconds).ISO8601Format()
+            var value = encoder.singleValueContainer()
+            try value.encode("\(whole.dropLast()).\(fraction)Z")
+        }
         self.encoder = encoder
     }
 
