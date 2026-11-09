@@ -129,6 +129,12 @@ actor LocationProvider {
     /// Consumes both streaming and SLC delegate events
     @discardableResult
     func send(update: LocationUpdate) -> LocationAcceptance {
+        logger.debug("Presence stage=received")
+        var outcome = "rejected"
+        var reason = "invalid_or_out_of_order_observation"
+        defer {
+            logger.debug("Presence stage=\(outcome, privacy: .public) reason=\(reason, privacy: .public)")
+        }
         totalStreamEvents &+= 1
         // Force bypasses throttling only; it never bypasses observation validity or ordering.
         guard CLLocationCoordinate2DIsValid(update.coordinates),
@@ -143,14 +149,19 @@ actor LocationProvider {
         }
         if let lastSnapshot, update.timestamp == lastSnapshot.timestamp {
             suppressedCount &+= 1
-            return update.coordinates.latitude == lastSnapshot.coordinates.latitude &&
+            let identical = update.coordinates.latitude == lastSnapshot.coordinates.latitude &&
                 update.coordinates.longitude == lastSnapshot.coordinates.longitude &&
-                update.accuracy == lastSnapshot.accuracy ? .redundant : .rejected
+                update.accuracy == lastSnapshot.accuracy
+            outcome = identical ? "suppressed" : "rejected"
+            reason = identical ? "duplicate_observation" : "conflicting_timestamp"
+            return identical ? .redundant : .rejected
         }
 
         // 2) Check accept & update snapshot and task the placemark update
         let now = update.timestamp
         if update.forceAcceptance || shouldAccept(update, now: now) {
+            outcome = "accepted"
+            reason = "canonical_observation"
             acceptedCount &+= 1
             let snap = LocationSnapshot(coordinates: update.coordinates,
                                         timestamp: update.timestamp,
@@ -166,6 +177,8 @@ actor LocationProvider {
             Task { await updatePlacemarkIfNeeded(for: snap) }
             return .accepted
         } else {
+            outcome = "suppressed"
+            reason = "observation_throttle"
             suppressedCount &+= 1
             return .redundant
         }
@@ -201,7 +214,7 @@ actor LocationProvider {
             let summary = try await geocoder.reverseGeocode(observation.coordinates)
             _ = applyPlacemark(summary, to: observation)
         } catch {
-            logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Location enrichment failed reason=reverse_geocoding")
         }
     }
 
@@ -222,7 +235,7 @@ actor LocationProvider {
         do {
             return try hasher.h3Cell(for: coord)
         } catch {
-            logger.error("H3 indexing failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Presence stage=rejected reason=spatial_index_failure")
             return nil
         }
     }

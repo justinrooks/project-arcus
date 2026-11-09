@@ -846,8 +846,8 @@ struct LocationSessionTests {
         func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
     }
 
-    @Test @MainActor
-    func sharedBackgroundCadenceSurvivesCancelledDrainAndReopen() async throws {
+    @Test(arguments: [false, true]) @MainActor
+    func sharedBackgroundCadenceSurvivesCancelledDrainAndReopen(moveWhileOffline: Bool) async throws {
         let now = Date(timeIntervalSince1970: 10_000)
         let suite = "runtime-cancel-\(UUID())"
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
@@ -868,24 +868,34 @@ struct LocationSessionTests {
         let capture = now.addingTimeInterval(-120)
         #expect(await admission.accept(.init(coordinates: coordinates, timestamp: capture, accuracy: 20),
             source: .backgroundLocationChange).retention == .retained)
-        #expect(await admission.accept(.init(coordinates: coordinates, timestamp: now, accuracy: 20),
+        #expect(await admission.accept(.init(coordinates: coordinates, timestamp: now.addingTimeInterval(-90), accuracy: 20),
             source: .backgroundLocationChange).retention == .notAttempted)
         let delivery = Task { await original.drainPendingUploads() }
         try #require(await waitUntilAsync { await uploader.started })
         delivery.cancel()
         await delivery.value
         #expect(await uploader.delivered.isEmpty)
+        let latestCapture: Date
+        if moveWhileOffline {
+            latestCapture = now.addingTimeInterval(-30)
+            #expect(await admission.accept(.init(coordinates: .init(latitude: 40, longitude: -105),
+                timestamp: latestCapture, accuracy: 20), source: .backgroundLocationChange).retention == .retained)
+            #expect(await admission.accept(.init(coordinates: coordinates, timestamp: capture, accuracy: 20),
+                source: .backgroundLocationChange).acceptance == .rejected)
+        } else {
+            latestCapture = capture
+        }
         let reopened = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "pending")
         let pending = await reopened.loadPendingRequests()
         #expect(pending.count == 1)
         #expect(pending.first?.source == .backgroundLocationChange)
         if case .locationSnapshot(let context) = pending.first?.operation {
-            #expect(context.capturedAt == capture)
+            #expect(context.capturedAt == latestCapture)
         } else { Issue.record("Expected retained location") }
         await uploader.unblock()
         await pusher(store: reopened).drainPendingUploads()
         #expect(await reopened.loadPendingRequests().isEmpty)
-        #expect(await uploader.delivered.map(\.capturedAt) == [capture])
+        #expect(await uploader.delivered.map(\.capturedAt) == [latestCapture])
     }
 
     @MainActor
