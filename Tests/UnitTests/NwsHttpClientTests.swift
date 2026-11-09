@@ -387,16 +387,18 @@ struct RuntimeConnectivityStateTests {
 
 @Suite("HTTPLocationSnapshotUploader")
 struct HTTPLocationSnapshotUploaderTests {
-    @Test("upload builds location snapshot endpoint from Arcus signal base URL")
-    func upload_buildsLocationSnapshotsURL() async throws {
+    @Test("upload preserves fractional capture time through authenticated V3 and V4 HTTP",
+          arguments: [0.1, 0.9, 0.1001, 0.1009, 0.0000003], [false, true])
+    func upload_buildsLocationSnapshotsURL(offset: Double, v4: Bool) async throws {
         let http = ConsentHTTP()
         let uploader = HTTPLocationSnapshotUploader(
             baseURL: URL(string: "https://arcus.example.com")!,
-            http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore()
+            http: http, enrollment: enrolledTestCoordinator(), consent: isolatedConsentStore(),
+            protocolVersion: v4 ? .geographyInvalidatingV4 : .legacyV3
         )
 
         let payload = LocationSnapshotPushPayload(
-            capturedAt: Date(timeIntervalSince1970: 1_710_000_000),
+            capturedAt: Date(timeIntervalSinceReferenceDate: 731_692_800 + offset),
             locationAgeSeconds: 5,
             horizontalAccuracyMeters: 12,
             cellScheme: "h3",
@@ -425,11 +427,19 @@ struct HTTPLocationSnapshotUploaderTests {
         #expect(request.method == "POST")
         #expect(request.url.scheme == "https")
         #expect(request.url.host == "arcus.example.com")
-        #expect(request.url.path == ArcusSignalConfiguration.locationSnapshotsPath)
+        #expect(request.url.path == (v4 ? "/v4/devices/location-snapshots" : ArcusSignalConfiguration.locationSnapshotsPath))
         #expect(request.headers["Accept"] == "application/json")
         #expect(request.headers["Content-Type"] == "application/json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)
-        #expect(request.body?.isEmpty == false)
+        let body = try #require(request.body)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(DeviceLocationSnapshotV3Payload.self, from: body)
+        #expect(decoded.capturedAt == payload.capturedAt)
+        #expect(decoded.county == payload.county && decoded.h3Cell == payload.h3Cell)
+        #expect(request.headers["Authorization"]?.hasPrefix("Bearer ") == true)
+        // Preserve real production HTTP bytes as the cross-repository ingress fixture.
+        Attachment.record(body, named: "presence-\(offset)-v\(v4 ? 4 : 3).json")
     }
 }
 
