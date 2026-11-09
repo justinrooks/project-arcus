@@ -61,8 +61,7 @@ struct LocationSnapshotCache: LocationSnapshotCaching {
             return nil
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = LocationPersistenceCoding.makeDecoder()
 
         guard let persisted = try? decoder.decode(PersistedLocationSnapshot.self, from: data) else {
             return nil
@@ -81,7 +80,6 @@ struct LocationSnapshotCache: LocationSnapshotCaching {
 
         let persisted = PersistedLocationSnapshot(snapshot: snapshot)
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
 
         guard let data = try? encoder.encode(persisted) else { return }
         UserDefaults(suiteName: suiteName)?.set(data, forKey: key)
@@ -222,8 +220,7 @@ struct DurableLocationContextCache: DurableLocationContextCaching {
             return nil
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = LocationPersistenceCoding.makeDecoder()
         guard let persisted = try? decoder.decode(PersistedDurableLocationContext.self, from: data),
               let context = persisted.context,
               context.snapshot.timestamp <= nowProvider() else {
@@ -251,7 +248,6 @@ struct DurableLocationContextCache: DurableLocationContextCaching {
     func save(_ context: LocationContext) {
         guard let persisted = PersistedDurableLocationContext(context: context).context else { return }
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(PersistedDurableLocationContext(context: persisted)) else { return }
         UserDefaults(suiteName: suiteName)?.set(data, forKey: key)
     }

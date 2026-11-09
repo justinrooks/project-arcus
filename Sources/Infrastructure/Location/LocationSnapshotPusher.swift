@@ -63,6 +63,7 @@ extension LocationPresenceEnqueuing {
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
+    var isLocationSharingEnabled: Bool { get }
     var minimumLocationObservationTimestamp: Date? { get }
     func invalidateLocationEvidence(at date: Date)
     func acceptSubscriptionIntent(enabled: Bool) async
@@ -85,6 +86,7 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 }
 
 extension LocationUploadCoordinating {
+    var isLocationSharingEnabled: Bool { true }
     func enqueueEnrichment(
         _ context: LocationContext, source: LocationUploadSource, reason: LocationUploadReason
     ) async -> Bool {
@@ -243,7 +245,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         _ context: LocationContext, source: LocationUploadSource, reason: LocationUploadReason
     ) async -> Bool {
         await enqueueLocation(PersistedLocationContext(context), source: source, reason: reason,
-                              forceUpload: false, retainEnrichmentOnFailure: true)
+                              forceUpload: false, retainEnrichmentOnFailure: true, acceptsSupersededIntent: false)
     }
 
     @discardableResult
@@ -277,7 +279,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         forceUpload: Bool,
         processImmediately: Bool = true,
         retainEnrichmentOnFailure: Bool = false,
-        admissionOnly: Bool = false
+        admissionOnly: Bool = false,
+        acceptsSupersededIntent: Bool = true
     ) async -> Bool {
         var admissionResult = "accuracy_ineligible"
         defer {
@@ -375,7 +378,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         if let newest = newestContextByCoalescingKey[coalescingKey], !canReplace(newest, with: context) {
             let saved = await persistPendingState()
             admissionResult = saved ? "newer_intent_retained" : "persistence_failed"
-            return saved
+            // Presence admission may accept supersession; enrichment completion must retain this geography.
+            return saved && acceptsSupersededIntent
         }
         newestContextByCoalescingKey[coalescingKey] = context
         if let existing = pendingByCoalescingKey[coalescingKey], existing.operation == persisted.operation {
@@ -392,7 +396,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         admissionResult = "persisted"
         logger.debug("Presence stage=persisted")
         // Persistence suspends: a newer observation may already own this key.
-        guard pendingByCoalescingKey[coalescingKey] == persisted else { return true }
+        guard pendingByCoalescingKey[coalescingKey] == persisted else { return acceptsSupersededIntent }
         guard !admissionOnly else { return true }
         guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
@@ -408,6 +412,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         await processQueue()
         return true
     }
+
+    nonisolated var isLocationSharingEnabled: Bool { locationUploadEnabledProvider() }
 
     nonisolated var minimumLocationObservationTimestamp: Date? {
         do { return try preferenceUploader.savedLocationEvidenceCutoff() }

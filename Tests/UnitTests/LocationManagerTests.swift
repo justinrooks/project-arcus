@@ -2481,6 +2481,105 @@ struct LocationSessionTests {
         #expect(session.currentContext == current)
     }
 
+    @Test("all location stores reopen precise observations and remain readable from legacy ISO dates",
+          arguments: [false, true])
+    func locationDatePersistence(legacy: Bool) async throws {
+        let suite = "location-dates-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let captured = Date(timeIntervalSince1970: 1_790_000_000.1234567)
+        let context = durableContext(timestamp: captured)
+        LocationSnapshotCache(suiteName: suite).save(context.snapshot)
+        DurableLocationContextCache(suiteName: suite).save(context)
+        let request = PersistedLocationUploadRequest(source: .foregroundLocationChange, reason: .locationChanged,
+            forceUpload: false, installationId: "dates", requestedAt: captured.addingTimeInterval(0.5),
+            isSubscribed: true, authorizationState: "always", apnsToken: "",
+            operation: .locationSnapshot(context: PersistedLocationContext(context)))
+        try await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").savePendingRequests([request])
+        if legacy {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            defaults.set(try encoder.encode([request]), forKey: "queue")
+            for key in ["location.lastSnapshot.v1", "location.durableContext.v1"] {
+                let data = try #require(defaults.data(forKey: key))
+                var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                object["timestamp"] = captured.formatted(.iso8601)
+                defaults.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
+            }
+        }
+        let expected = legacy ? Date(timeIntervalSince1970: floor(captured.timeIntervalSince1970)) : captured
+        #expect(LocationSnapshotCache(suiteName: suite).load()?.timestamp == expected)
+        #expect(DurableLocationContextCache(suiteName: suite).load()?.snapshot.timestamp == expected)
+        let restored = try #require(await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue")
+            .loadPendingRequests().first)
+        guard case .locationSnapshot(let storedContext) = restored.operation else { Issue.record("Missing location"); return }
+        #expect(storedContext.capturedAt == expected)
+        if !legacy { #expect(restored.requestedAt == request.requestedAt) }
+    }
+
+    @Test("enrichment rejects retention of a conflicting older or equal-time intent", arguments: [false, true])
+    func conflictingEnrichmentAdmission(equalTime: Bool) async throws {
+        let suite = "conflicting-enrichment-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let newest = durableContext(timestamp: Date(timeIntervalSince1970: 1_790_000_000.9))
+        let conflict = durableContext(timestamp: newest.snapshot.timestamp.addingTimeInterval(equalTime ? 0 : -0.8),
+            county: "COC005", forecastZone: "COZ039")
+        let transport = ScheduledReuseTransport(losesAcknowledgment: true)
+        func makePusher() -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+                installationIdProvider: { "conflict" }, locationUploadEnabledProvider: { true },
+                authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+                retryDelaysSeconds: [0], queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue"))
+        }
+        await makePusher().enqueue(newest, source: .foregroundLocationChange, reason: .locationChanged)
+        #expect(await makePusher().enqueueEnrichment(conflict, source: .foregroundLocationChange, reason: .locationResolved) == false)
+        let pending = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests()
+        #expect(pending.map(\.operation) == [.locationSnapshot(context: PersistedLocationContext(newest))])
+    }
+
+    @MainActor
+    @Test("opt-out during lookup or publication preserves local context without recreating pending work",
+          arguments: ["lookup", "publication"])
+    func pendingEnrichmentOptOutDuringResolution(phase: String) async throws {
+        let suite = "ugc-opt-out-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let context = durableContext(timestamp: .now.addingTimeInterval(-1))
+        let resolver = ControlledResolver()
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        defer { entered.continuation.finish(); release.continuation.finish() }
+        let session = LocationSession(
+            locationClient: .init(snapshot: { context.snapshot }, updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                onUpdate: { _ in .accepted }), locationContextResolver: resolver,
+            locationUploadCoordinator: StubUploadCoordinator(), durableContextCache: DurableLocationContextCache(suiteName: suite),
+            onContextPublished: {
+                if phase == "publication" {
+                    entered.continuation.yield(())
+                    var iterator = release.stream.makeAsyncIterator()
+                    _ = await iterator.next()
+                }
+            })
+        let preparation = Task {
+            await session.prepareCurrentLocationContext(requiresFreshLocation: false, showsAuthorizationPrompt: false)
+        }
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .prepare).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .prepare).first)
+        if phase == "lookup" { session.captureLocationSharingPreferenceChange(enabled: false) }
+        await resolver.complete(id: id, with: .success(context))
+        if phase == "publication" {
+            var iterator = entered.stream.makeAsyncIterator()
+            _ = await iterator.next()
+            session.captureLocationSharingPreferenceChange(enabled: false)
+            release.continuation.finish()
+        }
+        #expect(await preparation.value == context)
+        #expect(session.startupState == .ready && session.currentContext == context)
+        let reopened = DurableLocationContextCache(suiteName: suite)
+        #expect(reopened.load() != nil)
+        #expect(!reopened.requiresPresenceEnrichment)
+    }
+
     @MainActor
     @Test("pending enrichment clears on privacy invalidation and remains suppressed after reopen")
     func pendingEnrichmentPrivacy() async throws {
@@ -2522,13 +2621,13 @@ struct LocationSessionTests {
 
     @MainActor
     @Test("offline enriched A then same-cell minimal B recovers current UGC after reopen",
-          arguments: ["normal", "admissionFailure", "timestampTie", "nilSource", "foregroundPending", "disabled"])
+          arguments: ["normal", "admissionFailure", "timestampTie", "beforeAdmission", "nilSource", "foregroundPending", "disabled"])
     func sameCellEnrichmentReopens(scenario: String) async throws {
-        let now = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970))
+        let now = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) - 2)
         let cell = try SwiftyH3Hasher().h3Cell(for: .init(latitude: 39.7392, longitude: -104.9903))
-        let old = durableContext(timestamp: now.addingTimeInterval(scenario == "timestampTie" ? 0.1 : -60), h3Cell: cell)
+        let old = durableContext(timestamp: now.addingTimeInterval(["timestampTie", "beforeAdmission"].contains(scenario) ? 0.1 : -60), h3Cell: cell)
         let snapshot = LocationSnapshot(coordinates: .init(latitude: 39.7400, longitude: -104.9903),
-            timestamp: now.addingTimeInterval(scenario == "timestampTie" ? 0.9 : 0), accuracy: 20, h3Cell: old.h3Cell)
+            timestamp: now.addingTimeInterval(["timestampTie", "beforeAdmission"].contains(scenario) ? 0.9 : 0), accuracy: 20, h3Cell: old.h3Cell)
         let grid = durableContext(timestamp: now, county: "COC005", forecastZone: "COZ039", fireZone: "COZ247").grid
         let current = LocationContext(snapshot: snapshot, h3Cell: old.h3Cell, grid: grid)
         let suite = "ugc-recovery-\(UUID())"
@@ -2543,23 +2642,29 @@ struct LocationSessionTests {
         }
         let original = makePusher()
         await original.enqueue(old, source: .foregroundLocationChange, reason: .locationChanged)
-        #expect(await original.retainPresence(snapshot, source: .foregroundLocationChange))
+        if scenario != "beforeAdmission" {
+            #expect(await original.retainPresence(snapshot, source: .foregroundLocationChange))
+        }
         let pending = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue").loadPendingRequests()
         #expect(pending.count == 1)
         DurableLocationContextCache(suiteName: suite).save(old)
         LocationSnapshotCache(suiteName: suite).save(snapshot)
         await transport.restoreConnectivity()
         let reopened = makePusher()
-        await reopened.drainPendingUploads()
-        let minimal = try #require(await transport.recordedPayloads().last)
-        #expect(floor(minimal.capturedAt.timeIntervalSince1970) == now.timeIntervalSince1970 && minimal.county == nil)
+        if scenario != "beforeAdmission" {
+            await reopened.drainPendingUploads()
+            let minimal = try #require(await transport.recordedPayloads().last)
+            #expect(floor(minimal.capturedAt.timeIntervalSince1970) == now.timeIntervalSince1970 && minimal.county == nil)
+        }
         let countBeforeOld = await transport.recordedPayloads().count
         // An older completion cannot restore A's UGC onto B.
-        if scenario != "timestampTie" {
+        if !["timestampTie", "beforeAdmission"].contains(scenario) {
             await reopened.enqueue(old, source: .foregroundLocationChange, reason: .locationResolved)
             #expect(await transport.recordedPayloads().count == countBeforeOld)
         }
         let restored = try #require(LocationSnapshotCache(suiteName: suite).load())
+        #expect(restored.timestamp == snapshot.timestamp)
+        #expect(DurableLocationContextCache(suiteName: suite).load()?.snapshot.timestamp == old.snapshot.timestamp)
         let recovered = LocationContext(snapshot: restored, h3Cell: current.h3Cell, grid: current.grid)
         let resolver = StubResolver(context: recovered, error: nil)
         if ["admissionFailure", "nilSource", "foregroundPending"].contains(scenario) {
@@ -2607,7 +2712,7 @@ struct LocationSessionTests {
         }
         #expect(!DurableLocationContextCache(suiteName: suite).requiresPresenceEnrichment)
         let enriched = try #require(await transport.recordedPayloads().last)
-        #expect(enriched.capturedAt == now)
+        #expect(enriched.capturedAt == restored.timestamp)
         #expect(enriched.county == "COC005" && enriched.zone == "COZ039" && enriched.fireZone == "COZ247")
         #expect(await resolver.recordedPrepareCallCount() == 1)
     }
