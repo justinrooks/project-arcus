@@ -140,22 +140,33 @@ struct LocationContextResolverTests {
         let pointPayload: Data
         let countyName: String?
         let fireZoneName: String?
+        var failedZones: Set<String>
 
-        init(pointPayload: Data, countyName: String?, fireZoneName: String?) {
+        init(pointPayload: Data, countyName: String?, fireZoneName: String?, failedZones: Set<String> = []) {
             self.pointPayload = pointPayload
             self.countyName = countyName
             self.fireZoneName = fireZoneName
+            self.failedZones = failedZones
         }
 
         func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data {
             Data()
         }
 
+        func setFailedZones(_ zones: Set<String>) { failedZones = zones }
+
         func fetchPointMetadata(for location: Coordinate2D) async throws -> Data {
             pointPayload
         }
 
         func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+            if failedZones.contains("slow") && zoneType == .fire {
+                try await Task.sleep(for: .seconds(30))
+            }
+            if failedZones.contains(zone) {
+                if zoneType == .county { throw TestError.geocodeFailed }
+                return Data("invalid JSON".utf8)
+            }
             let name = switch zoneType {
             case .county:
                 countyName ?? ""
@@ -247,6 +258,24 @@ struct LocationContextResolverTests {
         }
     }
 
+    private actor StalledLabelClient: NwsClient {
+        let pointPayload: Data
+        private var waiters: [CheckedContinuation<Data, Never>] = []
+        private(set) var starts = 0
+
+        init(pointPayload: Data) { self.pointPayload = pointPayload }
+        func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data { Data() }
+        func fetchPointMetadata(for location: Coordinate2D) async throws -> Data { pointPayload }
+        func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+            starts += 1
+            return await withCheckedContinuation { waiters.append($0) }
+        }
+        func release() {
+            for waiter in waiters { waiter.resume(returning: Data("invalid".utf8)) }
+            waiters.removeAll()
+        }
+    }
+
     @Test("late enrichment keeps context and NWS metadata tied to the requested observation", arguments: [false, true])
     func movedObservationDuringEnrichment(fails: Bool) async throws {
         let original = LocationSnapshot(coordinates: .init(latitude: 35.2226, longitude: -97.4395),
@@ -322,6 +351,95 @@ struct LocationContextResolverTests {
         let (countyLabel, fireZoneLabel) = try await labels
         #expect(countyLabel == "Oklahoma County")
         #expect(fireZoneLabel == "Central Oklahoma")
+    }
+
+    @Test("point identifiers survive independently failing optional labels", arguments: [
+        Set<String>(), ["OKC109"], ["OKZ025"], ["OKC109", "OKZ025"]
+    ])
+    func optionalLabelFailures(failedZones: Set<String>) async throws {
+        let snapshot = LocationSnapshot(coordinates: .init(latitude: 35.2226, longitude: -97.4395),
+                                        timestamp: Date(), accuracy: 15, placemarkSummary: "Norman, OK",
+                                        h3Cell: sampleH3Cell)
+        let provider = LocationProvider(geocoder: TestGeocoder(result: .failure(.geocodeFailed)),
+                                        hasher: TestHasher(h3Cell: sampleH3Cell))
+        let repo = NwsMetadataRepo()
+        let client = ResolverNwsClient(
+            pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
+            countyName: "Oklahoma", fireZoneName: "Central Oklahoma")
+        let gridProvider = GridPointProvider(client: client, repo: repo)
+        let resolver = LocationContextResolver(locationClient: makeLocationClient(provider: provider),
+            locationProvider: provider, gridPointProvider: gridProvider,
+            authorizationStatusProvider: { .authorizedWhenInUse }, authorizationRequester: { _ in },
+            refreshCurrentLocation: { _ in false })
+
+        let previous = try await resolver.resolveContext(from: snapshot)
+        #expect(previous.grid.countyLabel == "Oklahoma County")
+        await client.setFailedZones(failedZones)
+        let context = try await resolver.resolveContext(from: snapshot)
+        #expect(context.grid.countyCode == "OKC109")
+        #expect(context.grid.forecastZone == "OKZ025")
+        #expect(context.grid.fireZone == "OKZ025")
+        #expect(context.grid.countyLabel == (failedZones.contains("OKC109") ? nil : "Oklahoma County"))
+        #expect(context.grid.fireZoneLabel == (failedZones.contains("OKZ025") ? nil : "Central Oklahoma"))
+        let cached = await repo.currentRegionContextSnapshot()
+        #expect(cached?.countyCode == "OKC109")
+        #expect(cached?.forecastZone == "OKZ025")
+        #expect(cached?.fireZone == "OKZ025")
+    }
+
+    @Test("slow optional label times out without withholding the other label")
+    func slowOptionalLabel() async throws {
+        let repo = NwsMetadataRepo()
+        let client = ResolverNwsClient(pointPayload: Data(), countyName: "Oklahoma",
+                                       fireZoneName: "Central Oklahoma", failedZones: ["slow"])
+        let (county, fire) = try await repo.getLocationLabels(using: client, for: "OKC109", and: "OKZ025")
+        #expect(county == "Oklahoma County")
+        #expect(fire == nil)
+    }
+
+    @Test("non-cooperative labels cannot withhold targeting context")
+    func stalledLabelsDoNotBlockContext() async throws {
+        let client = StalledLabelClient(pointPayload: makePointPayload(includeCounty: true, includeFireZone: true))
+        let repo = NwsMetadataRepo(labelTimeout: .milliseconds(100))
+        let gridProvider = GridPointProvider(client: client, repo: repo)
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(2))
+            await client.release()
+        }
+        let start = ContinuousClock.now
+        let grid = await gridProvider.resolveGridPoint(for: .init(latitude: 35.2226, longitude: -97.4395))
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed < .seconds(1))
+        #expect(grid?.countyCode == "OKC109")
+        #expect(grid?.forecastZone == "OKZ025")
+        #expect(grid?.fireZone == "OKZ025")
+        #expect(grid?.countyLabel == nil && grid?.fireZoneLabel == nil)
+        _ = await gridProvider.resolveGridPoint(for: .init(latitude: 35.2226, longitude: -97.4395))
+        #expect(await client.starts == 2)
+        await client.release()
+        watchdog.cancel()
+        await watchdog.value
+    }
+
+    @Test("cancellation releases the label waiter even when the client does not cooperate")
+    func stalledLabelsRespectCancellation() async throws {
+        let client = StalledLabelClient(pointPayload: Data())
+        let repo = NwsMetadataRepo(labelTimeout: .seconds(30))
+        let task = Task { try await repo.getLocationLabels(using: client, for: "OKC109", and: "OKZ025") }
+        #expect(await waitUntil { await client.starts == 2 })
+        task.cancel()
+        let watchdog = Task { try? await Task.sleep(for: .seconds(2)); await client.release() }
+        let start = ContinuousClock.now
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        #expect(ContinuousClock.now - start < .seconds(1))
+        await client.release()
+        watchdog.cancel()
+        await watchdog.value
     }
 
     @Test("waits for authorization result before preparing a ready context")
