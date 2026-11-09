@@ -788,19 +788,24 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         _ workItem: QueuedUpload,
         deadline: ContinuousClock.Instant? = nil
     ) async -> UploadOutcome {
+        let operation: String
+        switch workItem.request.operation {
+        case .locationSnapshot: operation = "location_snapshot"
+        case .preferenceSync: operation = "preference_sync"
+        }
         preparedKeys.removeValue(forKey: workItem.coalescingKey)
         for (index, delay) in retryDelaysSeconds.enumerated() {
             do {
                 try Task.checkCancellation()
             } catch is CancellationError {
-                logger.notice("Location upload cancelled before attempt source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                logger.notice("Presence stage=deferred reason=cancelled_before_attempt source=\(workItem.source, privacy: .public) requestReason=\(workItem.reason.rawValue, privacy: .public) operation=\(operation, privacy: .public)")
                 return .pending
             } catch {
                 return .pending
             }
 
             if let deadline, !shouldContinueDraining(before: deadline) {
-                logger.notice("Location upload deadline reached before attempt source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                logger.notice("Presence stage=deferred reason=deadline_before_attempt source=\(workItem.source, privacy: .public) requestReason=\(workItem.reason.rawValue, privacy: .public) operation=\(operation, privacy: .public)")
                 return .pending
             }
 
@@ -811,7 +816,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                         let retryAt = clock.now.advanced(by: .seconds(Int(delay)))
                         try await clock.sleep(until: min(retryAt, deadline))
                         guard shouldContinueDraining(before: deadline) else {
-                            logger.notice("Location upload deadline reached during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                            logger.notice("Presence stage=deferred reason=deadline_during_backoff source=\(workItem.source, privacy: .public) requestReason=\(workItem.reason.rawValue, privacy: .public) operation=\(operation, privacy: .public)")
                             return .pending
                         }
                     } else {
@@ -819,14 +824,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                     }
                     try Task.checkCancellation()
                 } catch is CancellationError {
-                    logger.notice("Location upload cancelled during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                    logger.notice("Presence stage=deferred reason=cancelled_during_backoff source=\(workItem.source, privacy: .public) requestReason=\(workItem.reason.rawValue, privacy: .public) operation=\(operation, privacy: .public)")
                     return .pending
                 } catch {
                     return .pending
                 }
             }
             do {
-                logger.debug("Presence stage=attempted attempt=\(index + 1, privacy: .public) source=\(workItem.source, privacy: .public)")
+                logger.debug("Presence stage=attempted attempt=\(index + 1, privacy: .public) source=\(workItem.source, privacy: .public) operation=\(operation, privacy: .public)")
                 switch workItem.request.operation {
                 case .locationSnapshot:
                     try await checkLocationEvidence(for: workItem.request)
@@ -863,39 +868,39 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                         try await self.currentPreferencePayload(for: workItem.request, deadline: deadline)
                     }
                 }
-                logger.debug("Presence stage=acknowledged")
+                logger.debug("Presence stage=acknowledged operation=\(operation, privacy: .public)")
                 return .uploaded
             } catch TransferSuppressed.persistencePending {
-                logger.debug("Presence stage=deferred reason=persistence_pending")
+                logger.debug("Presence stage=deferred reason=persistence_pending operation=\(operation, privacy: .public)")
                 return .pending
             } catch is TransferSuppressed {
-                logger.debug("Presence stage=suppressed reason=obsolete_or_ineligible")
+                logger.debug("Presence stage=suppressed reason=obsolete_or_ineligible operation=\(operation, privacy: .public)")
                 return .discarded
             } catch InstallationConsentStore.Failure.consentConflictRequiresRecovery {
-                logger.debug("Presence stage=deferred reason=consent_conflict")
+                logger.debug("Presence stage=deferred reason=consent_conflict operation=\(operation, privacy: .public)")
                 return .pending
             } catch InstallationConsentStore.Failure.rejected(let status) where [400, 401].contains(status) {
-                logger.debug("Presence stage=deferred reason=consent_rejected")
+                logger.debug("Presence stage=deferred reason=consent_rejected operation=\(operation, privacy: .public)")
                 return .pending
             } catch LocationPushError.presenceNotAccepted {
-                logger.debug("Presence stage=suppressed reason=presence_not_accepted")
+                logger.debug("Presence stage=suppressed reason=presence_not_accepted operation=\(operation, privacy: .public)")
                 return .discarded
             } catch is LocationPushError {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
-                    logger.error("Presence stage=deferred reason=transport_failed retry_budget_exhausted=true")
+                    logger.error("Presence stage=deferred reason=transport_failed retry_budget_exhausted=true operation=\(operation, privacy: .public)")
                 } else {
-                    logger.warning("Presence stage=retried reason=transport_failed")
+                    logger.warning("Presence stage=retried reason=transport_failed operation=\(operation, privacy: .public)")
                 }
             } catch is CancellationError {
-                logger.notice("Location upload cancelled source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                logger.notice("Presence stage=deferred reason=cancelled_during_transfer source=\(workItem.source, privacy: .public) requestReason=\(workItem.reason.rawValue, privacy: .public) operation=\(operation, privacy: .public)")
                 return .pending
             } catch {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
-                    logger.error("Presence stage=deferred reason=transport_failed retry_budget_exhausted=true")
+                    logger.error("Presence stage=deferred reason=transport_failed retry_budget_exhausted=true operation=\(operation, privacy: .public)")
                 } else {
-                    logger.warning("Presence stage=retried reason=transport_failed")
+                    logger.warning("Presence stage=retried reason=transport_failed operation=\(operation, privacy: .public)")
                 }
             }
         }

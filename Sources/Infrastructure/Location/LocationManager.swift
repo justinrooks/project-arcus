@@ -325,7 +325,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor [weak self] in
-            self?.logger.error("Location manager failed with error: \(error.localizedDescription, privacy: .public)")
+            self?.logger.error("Presence stage=deferred reason=location_acquisition_failed source=delegate_callback")
             guard let self else { return }
             resolvePendingRefreshLocationContinuations(ids: Array(awaitingRefreshLocationIDs), with: false)
         }
@@ -357,7 +357,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 }
             } catch {
                 if !Task.isCancelled, self?.streamID == id {
-                    self?.logger.error("Streaming ended with error: \(String(describing: error), privacy: .public)")
+                    self?.logger.error("Presence stage=deferred reason=foreground_stream_failed source=foreground_stream")
                 }
             }
             guard self?.streamID == id else { return }
