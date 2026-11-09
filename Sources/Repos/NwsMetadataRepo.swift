@@ -19,6 +19,18 @@ struct NwsGridRegionContext: Sendable, Equatable {
 actor NwsMetadataRepo {
     private let logger = Logger.reposNwsMetadata
     private var currentRegionContext: NwsGridRegionContext?
+    private let labelTimeout: Duration
+    private struct LabelLookup {
+        let type: NwsZoneType
+        let worker: Task<Void, Never>
+        let timer: Task<Void, Never>
+        var waiter: CheckedContinuation<NWSZoneDTO?, Never>?
+    }
+    private var labelLookups: [UUID: LabelLookup] = [:]
+
+    init(labelTimeout: Duration = .seconds(5)) {
+        self.labelTimeout = labelTimeout
+    }
 
     func getPointMetadata(using client: any NwsClient, for location: Coordinate2D) async throws -> NWSGridPoint {
         logger.debug("Decoding NWS point metadata response")
@@ -86,13 +98,42 @@ actor NwsMetadataRepo {
         type: NwsZoneType,
         identifier: String?
     ) async -> NWSZoneDTO? {
-        do {
-            return try await withTimeout(timeout: 5) {
-                try await self.zoneMetadata(using: client, type: type, identifier: identifier)
+        // Keep a cancelled worker tracked until it actually exits; one per type bounds stalled work.
+        guard identifier != nil, !labelLookups.values.contains(where: { $0.type == type }) else { return nil }
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let worker = Task {
+                    let result = try? await self.zoneMetadata(using: client, type: type, identifier: identifier)
+                    self.finishLabelLookup(id: id, result: result)
+                }
+                let timer = Task {
+                    do { try await Task.sleep(for: self.labelTimeout) } catch { return }
+                    self.abandonLabelLookup(id: id)
+                }
+                labelLookups[id] = LabelLookup(type: type, worker: worker, timer: timer, waiter: continuation)
             }
-        } catch {
-            logger.debug("Optional NWS zone label unavailable")
-            return nil
+        } onCancel: {
+            Task { await self.abandonLabelLookup(id: id) }
         }
+    }
+
+    private func abandonLabelLookup(id: UUID) {
+        guard var lookup = labelLookups[id], let waiter = lookup.waiter else { return }
+        lookup.waiter = nil
+        labelLookups[id] = lookup
+        lookup.worker.cancel()
+        lookup.timer.cancel()
+        waiter.resume(returning: nil)
+    }
+
+    private func finishLabelLookup(id: UUID, result: NWSZoneDTO?) {
+        guard let lookup = labelLookups.removeValue(forKey: id) else { return }
+        lookup.timer.cancel()
+        lookup.waiter?.resume(returning: result)
     }
 }
