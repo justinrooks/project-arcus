@@ -1,6 +1,7 @@
 import ArcusCore
 import CoreLocation
 import UIKit
+import OSLog
 
 /// Process-lifetime location authority, available before the weather store can open.
 @MainActor
@@ -91,6 +92,7 @@ final class LocationPresenceAdmission {
         let acceptance: LocationAcceptance
         let retention: Retention
     }
+    private let logger = Logger.locationPushPusher
     private let provider: LocationProvider
     private let foreground: any LocationPresenceEnqueuing
     private let background: any LocationPresenceEnqueuing
@@ -114,7 +116,10 @@ final class LocationPresenceAdmission {
     func accept(_ update: LocationUpdate, source: LocationUploadSource) async -> Result {
         if source == .backgroundLocationChange {
             let age = now().timeIntervalSince(update.timestamp)
-            guard age >= 0, age <= 300 else { return .init(acceptance: .rejected, retention: .notAttempted) }
+            guard age >= 0, age <= 300 else {
+                logger.debug("Presence stage=rejected reason=background_freshness")
+                return .init(acceptance: .rejected, retention: .notAttempted)
+            }
         }
         let acceptance = await provider.send(update: update)
         guard acceptance == .accepted || (acceptance == .redundant && attempt?.failed == true),
@@ -134,16 +139,24 @@ final class LocationPresenceAdmission {
 
     func admit(_ snapshot: LocationSnapshot, source: LocationUploadSource,
                isEligible: (@MainActor @Sendable () -> Bool)? = nil) async -> Retention {
+        var reason = "ineligible_execution"
+        defer {
+            logger.debug("Presence stage=admission_result reason=\(reason, privacy: .public) source=\(source.rawValue, privacy: .public)")
+        }
         guard isEligible?() ?? true else { return .notAttempted }
         let time = now()
         let cutoff = evidenceCutoff()
         if cutoff != previousCutoff { attempt = nil; previousCutoff = cutoff }
+        reason = "evidence_cutoff"
         guard cutoff.map({ snapshot.timestamp >= $0 }) ?? true else { return .notAttempted }
+        reason = "missing_spatial_identity_or_in_flight"
         guard snapshot.h3Cell != nil, !inFlight.contains(snapshot.timestamp) else { return .notAttempted }
         if let previous = attempt {
+            reason = "older_than_admission"
             guard snapshot.timestamp >= previous.snapshot.timestamp else { return .notAttempted }
             if snapshot.h3Cell == previous.snapshot.h3Cell {
                 let elapsed = time.timeIntervalSince(previous.at)
+                reason = previous.failed ? "retry_cadence" : "same_cell_cadence"
                 guard previous.failed ? elapsed >= 30 :
                     (snapshot.timestamp > previous.snapshot.timestamp && elapsed >= 300) else { return .notAttempted }
             }
@@ -161,6 +174,7 @@ final class LocationPresenceAdmission {
         if attempt?.snapshot.hasSameObservation(as: snapshot) == true, attempt?.at == time {
             attempt?.failed = !retained
         }
+        reason = retained ? "durably_retained" : "retention_failed"
         return retained ? .retained : .failed
     }
 }

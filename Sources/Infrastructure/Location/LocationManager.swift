@@ -290,11 +290,13 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 accuracy: loc.horizontalAccuracy,
                 forceAcceptance: !waiterIDs.isEmpty
             )
+            self?.logger.debug("Presence stage=received source=delegate_callback")
             // Recheck authority at delivery, including callbacks queued before revocation.
             let status = self?.currentAuthorizationStatus()
             guard (status == .authorizedAlways || status == .authorizedWhenInUse),
                   self?.currentAccuracyAuthorization() != .reducedAccuracy,
                   !shouldHandleBackgroundLocationChange || status == .authorizedAlways else {
+                self?.logger.debug("Presence stage=rejected reason=callback_authority_or_accuracy")
                 self?.resolvePendingRefreshLocationContinuations(ids: waiterIDs, with: false)
                 return
             }
@@ -337,12 +339,16 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         streamTask = Task { [weak self, foregroundUpdates] in
             do {
                 try await foregroundUpdates { [weak self] loc in
+                    self?.logger.debug("Presence stage=received source=foreground_stream")
                     guard !Task.isCancelled, let self,
                           self.streamID == id, self.lastPhase == .active,
                           self.currentMode == .foreground,
                           self.currentAuthorizationStatus() == .authorizedAlways ||
                             self.currentAuthorizationStatus() == .authorizedWhenInUse,
-                          self.currentAccuracyAuthorization() != .reducedAccuracy else { return }
+                          self.currentAccuracyAuthorization() != .reducedAccuracy else {
+                        self?.logger.debug("Presence stage=suppressed reason=retired_or_ineligible_stream")
+                        return
+                    }
                     _ = await self.onUpdate(.init(
                         coordinates: loc.coordinate,
                         timestamp: loc.timestamp,

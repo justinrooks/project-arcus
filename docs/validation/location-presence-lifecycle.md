@@ -40,3 +40,24 @@ All rows below are **unperformed** in this implementation session. Simulator/uni
 | Background App Refresh disabled | Disable globally/per-app, repeat termination/movement, then reenable | No guaranteed relaunch while disabled; record actual supported restoration |
 
 A completed matrix requires device evidence, not a passing unit lane. Before-first-unlock storage accessibility, OS launch timing, energy behavior, and visible notification receipt remain device-only questions.
+
+## LOC-08 / #850 diagnostic and regression handoff
+
+On 2026-11-08 the owner authorized PR publication with physical-device evidence pending. This is a publication deferral, not proof of OS scheduling, real latency, battery impact, or APNs receipt. All physical-device matrix rows above remain unperformed for LOC-08.
+
+Use Console with the SkyAware process selected and filter for `Presence stage=`; include debug messages during the signed development-device exercise. Logs use fixed stage/reason codes and source names. They do not include coordinates, H3 cells, installation IDs, tokens, observation timestamps, or error descriptions. No diagnostic history is persisted. The existing outbox retains only its existing delivery intent. Concurrent messages describe stage outcomes; they do not establish a per-observation distributed trace or prove a network request reached Signal.
+
+| Boundary | Diagnostic evidence |
+| --- | --- |
+| Framework callback eligibility | `received` at delegate/stream delivery; `rejected/callback_authority_or_accuracy` or `suppressed/retired_or_ineligible_stream` before provider work |
+| Provider receipt and decision | `received`; `accepted/canonical_observation`; `rejected/invalid_or_out_of_order_observation`; `rejected/conflicting_timestamp`; `suppressed/duplicate_observation` or `observation_throttle` |
+| Background source eligibility | `rejected/background_freshness` before provider admission |
+| Admission cadence and privacy | `admission_result` with cutoff, execution, in-flight/spatial identity, older observation, same-cell/retry cadence, or retention outcome |
+| Durable outbox | `outbox_result` distinguishes persisted, already acknowledged, newer intent retained, disabled sharing, ineligible accuracy, cutoff, consent unavailable and persistence failure |
+| Delivery | `attempted` means an upload preparation attempt, possibly suppressed before HTTP; `acknowledged` means the uploader returned successfully; `retried`, `deferred`, and `suppressed` identify retry, consent, persistence and local/server rejection outcomes |
+
+Acknowledgment applies to the operation being drained, including preference-only work. It is neither evidence of fresh location capture nor APNs delivery. Cancellations and deadlines retain the existing source/reason notices and leave eligible durable intent retryable. Logs are diagnostic breadcrumbs, not percentile or delivery accounting.
+
+Reproduce deterministic evidence with `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/LocationManagerTests -only-testing:SkyAwareTests/LocationSessionTests -only-testing:SkyAwareTests/LocationProviderTests`, then run `tools/ci/run_test_lane.sh unit`. Existing coverage includes blocked discretionary weather (`backgroundOneShotCompletesBeforeBlockedWeather`), process admission without Home (`processPresenceWithoutHomeAndBoundedRetry`), consent cutoff cadence reset, reduced accuracy after reopen, scheduled recovery despite weather-store failure, same-cell freshness, cold launch and rejected fixes. The parameterized `sharedBackgroundCadenceSurvivesCancelledDrainAndReopen` additionally exercises cancellation followed by offline movement, rejection of an older fix, disk-backed reopen and acknowledgment of only the newest retained capture. No live weather or Signal services are used.
+
+For device latency, collect multiple trials separately for accepted fix → durable intent and accepted fix → HTTP acknowledgment. Record trial count and missing/censored acknowledgments; compute p50/p95 only from measured, correlated trials. No production latency samples are available in this change, so no percentile comparison is claimed. Debug log interleaving alone cannot establish those intervals. Measure energy on a signed device with the normal cadence and a stationary control; simulator test duration is not energy evidence. Keep any precise test records private and temporary. #760 owns Signal targeting/APNs verification; #759 owns general background cleanup. Reconnection requires an existing execution opportunity; it does not guarantee a suspended-app wake.
