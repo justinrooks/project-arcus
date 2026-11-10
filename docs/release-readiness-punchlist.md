@@ -6,25 +6,34 @@ The goal is not perfection. The goal is to make SkyAware feel reliable, trustwor
 
 ## Release ownership and version parity
 
-Xcode Cloud owns the marketing version and build number of a distributed build. The checked-in
-`MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` values are placeholders, not release provenance; do not use them
-to infer, reconcile, or assign a distributed version/build.
+The marketing version is manually maintained in Xcode. The shipping app (`SkyAware`) and widget
+(`SkyAwareWidgetsExtension`) must use the same `MARKETING_VERSION` in Debug and Release. Their checked-in
+`CURRENT_PROJECT_VERSION` values intentionally remain `1`; Xcode Cloud assigns the distributed build number.
+The release-preparation skill validates these settings without changing them. Test and performance targets have
+independent version settings and are not part of the shipping-target parity check.
 
-The repository-owned invariant is narrower: the app and widget (`SkyAware` and `SkyAwareWidgetsExtension`) must have
-matching marketing versions and matching build numbers in every shipping configuration (currently Debug and Release).
-Verify that parity without mutating either setting. Unit and UI test targets intentionally have independent values and
-are outside this invariant.
+`release/CHANGELOG.md` is the canonical, evidence-backed record of user-impacting changes. Maintain
+`Unreleased` while changes land. When explicitly preparing a TestFlight candidate, the `skyaware-release` skill
+uses the marketing version already set in Xcode and prepares a version-only heading (for example, `v1.6.0`),
+along with the matching `release/RELEASE_NOTES.md` section. Use the verified source revision of the previous
+**public App Store release** as the evidence baseline; do not infer it from the latest historical `v*` tag.
+A prepared version heading does not itself mean the version shipped. Never rewrite legacy build-number headings.
 
-`release/CHANGELOG.md` is the canonical record of user-impacting work. Add verified post-release impact under
-`Unreleased` as it lands, with an evidence comment that identifies the supporting commit or issue. Keep
-`release/RELEASE_NOTES.md` and `release/TESTFLIGHT_NOTES.md` concise derivatives of that canonical content; they must
-not introduce claims absent from the changelog evidence. Promote `Unreleased` to a numbered heading only after the
-actual Xcode Cloud/TestFlight marketing version and build are known. Placeholder settings never supply that heading.
+`TestFlight/WhatToTest.en-US.txt` is the **single current candidate's** tester-facing notes file. Prepare
+concise, actionable notes from the canonical changelog using `skyaware-release`, and commit them before
+explicitly triggering the Xcode Cloud TestFlight distribution workflow through the App Store Connect API.
+Xcode Cloud's documented TestFlight-notes integration reads the committed file; no post-build notes generator
+or separate metadata upload is needed. Verify that the **processed build's** What to Test field actually
+contains the intended text. A successful build trigger alone is not evidence of notes delivery.
 
-During an archive, `tools/ci/ci_post_xcodebuild.sh` writes `TestFlight/WhatToTest.en-US.txt` from the last three
-commit subjects. Repository evidence establishes that artifact generation only; it does not establish downstream
-upload or delivery ownership. Continue to curate TestFlight notes from the canonical changelog and confirm the actual
-distributed version/build in Xcode Cloud and TestFlight after the release merge.
+The former `release/TESTFLIGHT_NOTES.md` remains untouched as historical documentation; do not append new
+candidate entries. The active `ci_scripts/ci_post_xcodebuild.sh` still validates test results and does not
+generate tester notes. Do not use Git tags to start new TestFlight candidates. The old Xcode Cloud tag trigger
+remains configured temporarily until the API-based replacement is validated end-to-end.
+
+Only after an accepted TestFlight build is live on the App Store should public-release finalization create a
+stable Git tag such as `v1.6.0` at the **actual accepted binary's source commit**, then publish the matching
+GitHub Release. GitHub Releases represent public App Store releases, not TestFlight builds.
 
 ## Launch Recommendation
 
