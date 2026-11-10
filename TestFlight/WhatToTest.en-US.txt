@@ -1,0 +1,13 @@
+Highlights:
+- Retry an unavailable authorized location fix from Today, and check that Home resumes automatic updates after recovery.
+- Location sharing works independently of weather startup, keeps the newest pending observation after offline movement, and avoids redundant uploads when scheduled refreshes reuse unchanged evidence.
+- Device synchronization preserves current consent; changes to sharing, permission, or precision require newer location evidence.
+- Combined widget timelines include known alert expirations, and Lock Screen risk widgets distinguish unavailable data from quiet conditions.
+- Map accessibility summaries include local risk values and conditional intensity; delayed centering respects Reduce Motion.
+- Interrupted Local Alerts transitions settle their height, and background notification receipt keeps its own deadline while shared work continues.
+
+What to test:
+- Exercise location timeout, “Try Again,” background/foreground transitions, and return to the same location; confirm cached Home content remains useful and automatic updates recover.
+- Move while offline, restart, and reconnect; check that pending location sharing follows the newest observation. Toggle sharing, permission, and precision and confirm older evidence is not reused.
+- Check Combined widgets around known alert end times and compare unavailable versus accepted quiet risk states on Lock Screen widgets.
+- Use Map’s accessibility summary on risk layers, test delayed initial centering with Reduce Motion, and leave and reopen Local Alerts during a transition.
