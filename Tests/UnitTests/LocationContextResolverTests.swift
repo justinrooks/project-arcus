@@ -291,11 +291,11 @@ struct LocationContextResolverTests {
             locationProvider: provider, gridPointProvider: gridProvider,
             authorizationStatusProvider: { .authorizedWhenInUse }, authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in false })
+        let display = Task { await provider.updatePlacemarkIfNeeded(for: original) }
         let resolution = Task {
             let result: Result<LocationContext, any Error>
             do { result = .success(try await resolver.resolveContext(from: original)) }
             catch { result = .failure(error) }
-            await geocoder.finishStartWait()
             return result
         }
         do {
@@ -313,6 +313,7 @@ struct LocationContextResolverTests {
             #expect(context.grid.latitude == original.coordinates.latitude)
             #expect(context.grid.longitude == original.coordinates.longitude)
             #expect(await provider.snapshot() == newer)
+            await display.value
         } catch {
             await geocoder.finish(fails: true)
             _ = await resolution.value
@@ -373,14 +374,15 @@ struct LocationContextResolverTests {
             refreshCurrentLocation: { _ in false })
 
         let previous = try await resolver.resolveContext(from: snapshot)
-        #expect(previous.grid.countyLabel == "Oklahoma County")
+        #expect(previous.grid.countyLabel == nil)
+        #expect(await waitUntil { await repo.currentRegionContextSnapshot()?.countyLabel == "Oklahoma County" })
         await client.setFailedZones(failedZones)
         let context = try await resolver.resolveContext(from: snapshot)
         #expect(context.grid.countyCode == "OKC109")
         #expect(context.grid.forecastZone == "OKZ025")
         #expect(context.grid.fireZone == "OKZ025")
-        #expect(context.grid.countyLabel == (failedZones.contains("OKC109") ? nil : "Oklahoma County"))
-        #expect(context.grid.fireZoneLabel == (failedZones.contains("OKZ025") ? nil : "Central Oklahoma"))
+        #expect(context.grid.countyLabel == nil)
+        #expect(context.grid.fireZoneLabel == nil)
         let cached = await repo.currentRegionContextSnapshot()
         #expect(cached?.countyCode == "OKC109")
         #expect(cached?.forecastZone == "OKZ025")
@@ -415,7 +417,7 @@ struct LocationContextResolverTests {
         #expect(grid?.fireZone == "OKZ025")
         #expect(grid?.countyLabel == nil && grid?.fireZoneLabel == nil)
         _ = await gridProvider.resolveGridPoint(for: .init(latitude: 35.2226, longitude: -97.4395))
-        #expect(await client.starts == 2)
+        #expect(await waitUntil { await client.starts >= 2 })
         await client.release()
         watchdog.cancel()
         await watchdog.value

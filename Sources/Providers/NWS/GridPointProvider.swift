@@ -26,30 +26,10 @@ actor GridPointProvider {
         do {
             let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
             let decoded = try await metadataRepo.getPointMetadata(using: client, for: coordinates)
-            let (
-                countyLabel,
-                fireZoneLabel
-            ) = try await metadataRepo.getLocationLabels(
-                using: client,
-                for: decoded.properties.county?.lastPathComponent,
-                and: decoded.properties.fireWeatherZone?.lastPathComponent
-            )
-
-            let snapshot = GridPointSnapshot(
-                from: decoded,
-                with: coordinates,
-                countyLabel: countyLabel,
-                fireZoneLabel: fireZoneLabel
-            )
+            let snapshot = GridPointSnapshot(from: decoded, with: coordinates)
             lastSnapshot = snapshot
-            
-            await metadataRepo.updateCurrentRegionContext(
-                countyCode: snapshot.countyCode,
-                forecastZone: snapshot.forecastZone,
-                fireZone: snapshot.fireZone,
-                countyLabel: countyLabel,
-                fireZoneLabel: fireZoneLabel
-            )
+            await publish(snapshot)
+            Task { await self.resolveLabels(for: decoded, coordinates: coordinates, snapshot: snapshot) }
 
             logger.info(
                 "Resolved NWS grid point metadata hasCounty=\((snapshot.countyCode?.isEmpty == false), privacy: .public) hasFireZone=\((snapshot.fireZone?.isEmpty == false), privacy: .public)"
@@ -60,4 +40,21 @@ actor GridPointProvider {
             return nil
         }
     }
+    private func publish(_ snapshot: GridPointSnapshot) async {
+        await metadataRepo.updateCurrentRegionContext(
+            countyCode: snapshot.countyCode, forecastZone: snapshot.forecastZone,
+            fireZone: snapshot.fireZone, countyLabel: snapshot.countyLabel, fireZoneLabel: snapshot.fireZoneLabel
+        )
+    }
+
+    private func resolveLabels(for decoded: NWSGridPoint, coordinates: Coordinate2D,
+                               snapshot: GridPointSnapshot) async {
+        guard let (county, fire) = try? await metadataRepo.getLocationLabels(
+            using: client, for: snapshot.countyCode, and: snapshot.fireZone
+        ), lastSnapshot == snapshot else { return }
+        let enriched = GridPointSnapshot(from: decoded, with: coordinates, countyLabel: county, fireZoneLabel: fire)
+        lastSnapshot = enriched
+        await publish(enriched)
+    }
+
 }

@@ -201,10 +201,10 @@ actor LocationContextResolver: LocationContextResolving {
             throw LocationContextError.locationTimeout
         }
 
-        let enrichedSnapshot = await locationProvider.ensurePlacemark(
-            for: snapshot,
-            timeout: placemarkTimeout
-        )
+        // Display enrichment is owned by LocationProvider and arrives on its existing stream.
+        // It must never gate operational NWS metadata or change the supplied observation.
+        let current = await locationProvider.snapshot()
+        let enrichedSnapshot = current.flatMap { $0.hasSameObservation(as: snapshot) ? $0 : nil } ?? snapshot
 
         guard let h3Cell = enrichedSnapshot.h3Cell else {
             logger.notice("Rejecting location context because h3 cell is unavailable")
