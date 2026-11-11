@@ -148,6 +148,9 @@ final class LocationPresenceAdmission {
               snapshot.timestamp == update.timestamp || (acceptance == .redundant && attempt?.failed == true) else {
             return .init(acceptance: acceptance, retention: .notAttempted)
         }
+        LocationEnrichmentDiagnostics.record("admission_started",
+            token: LocationEnrichmentDiagnostics.token(h3: snapshot.h3Cell, capturedAt: snapshot.timestamp),
+            source: source.rawValue)
         let retention = await admit(snapshot, source: source)
         if retention != .failed, evidenceCutoff().map({ snapshot.timestamp >= $0 }) ?? true {
             onObservation(snapshot, source)

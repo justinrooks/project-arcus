@@ -134,6 +134,16 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
         let body = try encoder.encode(presence)
         var headers = requestHeaders
         headers["Authorization"] = "Bearer \(credential)"
+        let trace = LocationEnrichmentDiagnostics.token(h3: payload.h3Cell, capturedAt: payload.capturedAt)
+        let shape = LocationEnrichmentDiagnostics.shape(county: payload.county, forecast: payload.zone, fire: payload.fireZone)
+        var acknowledged = false
+        defer {
+            if !acknowledged {
+                LocationEnrichmentDiagnostics.record(Task.isCancelled ? "upload_cancelled" : "upload_failed",
+                    token: trace, shape: shape)
+            }
+        }
+        LocationEnrichmentDiagnostics.record("post_started", token: trace, source: payload.source, shape: shape)
         let response = try await http.post(endpoint, headers: headers, body: body)
         guard response.status == 200 else {
             throw LocationPushError.invalidResponseStatus(response.status)
@@ -147,6 +157,8 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
             throw InstallationConsentStore.Failure.inconsistentAcknowledgment
         }
         guard ack.status == "accepted" else { throw LocationPushError.presenceNotAccepted }
+        acknowledged = true
+        LocationEnrichmentDiagnostics.record("signal_accepted", token: trace, shape: shape)
         logger.info("Location snapshot uploaded")
     }
 

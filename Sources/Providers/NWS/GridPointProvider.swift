@@ -50,11 +50,18 @@ actor GridPointProvider {
             publicationID = id
             latestCapturedAt = capturedAt
         }
+        let trace = LocationEnrichmentDiagnostics.token(coordinate: Coordinate2D(point), capturedAt: capturedAt)
+        LocationEnrichmentDiagnostics.record("points_started", token: trace)
         logger.info("Resolving NWS grid point metadata")
         do {
             let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
-            let decoded = try await metadataRepo.getPointMetadata(using: client, for: coordinates)
+            let decoded = try await LocationEnrichmentDiagnostics.$pointTrace.withValue(trace) {
+                try await metadataRepo.getPointMetadata(using: client, for: coordinates)
+            }
             let snapshot = GridPointSnapshot(from: decoded, with: coordinates)
+            LocationEnrichmentDiagnostics.record("codes_ready", token: trace,
+                shape: LocationEnrichmentDiagnostics.shape(county: snapshot.countyCode,
+                    forecast: snapshot.forecastZone, fire: snapshot.fireZone))
             if publicationID == id {
                 lastSnapshot = snapshot
                 await publish(snapshot)
@@ -66,7 +73,8 @@ actor GridPointProvider {
             )
             return snapshot
         } catch {
-            logger.error("Failed to fetch gridpoint metadata: \(error, privacy: .public)")
+            LocationEnrichmentDiagnostics.record(error is CancellationError ? "points_cancelled" : "points_failed", token: trace)
+            logger.error("Failed to fetch gridpoint metadata")
             return nil
         }
     }

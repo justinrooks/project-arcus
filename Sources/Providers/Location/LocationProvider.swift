@@ -172,6 +172,7 @@ actor LocationProvider {
                                             ? lastSnapshot?.placemarkSummary
                                             : nil,
                                         h3Cell: resolvedH3Cell)
+            LocationEnrichmentDiagnostics.begin(snap)
             saveAndYieldSnapshot(snap, reason: "accepted-update")
             
             // 3) Reverse geocode – fire-and-forget
