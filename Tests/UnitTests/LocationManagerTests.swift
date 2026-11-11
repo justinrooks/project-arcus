@@ -555,6 +555,68 @@ struct LocationManagerTests {
 
 @Suite("LocationSession")
 struct LocationSessionTests {
+    private actor ReconciliationSnapshotGate {
+        private var armed = false
+        private var continuation: CheckedContinuation<Void, Never>?
+        var waiting: Bool { continuation != nil }
+        func arm() { armed = true }
+        func waitIfArmed() async {
+            guard armed else { return }
+            armed = false
+            await withCheckedContinuation { continuation = $0 }
+        }
+        func release() { continuation?.resume(); continuation = nil }
+    }
+
+    @Test("early placemark does not restart blocked operational resolution", arguments: [false, true], [false, true])
+    @MainActor
+    func earlyPlacemarkKeepsSingleResolution(hasPreviousContext: Bool, duringReconciliation: Bool) async throws {
+        let context = durableContext(timestamp: .now, h3Cell: 2)
+        let source = AcceptedSnapshotState()
+        let snapshotGate = ReconciliationSnapshotGate()
+        await source.accept(context.snapshot)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        let subscribed = AsyncStream<Void>.makeStream()
+        defer { updates.continuation.finish(); subscribed.continuation.finish() }
+        let client = LocationClient(snapshot: { await snapshotGate.waitIfArmed(); return await source.latest }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                                      onUpdate: { _ in .accepted })
+        let resolver = ControlledResolver()
+        let uploads = StubUploadCoordinator()
+        let session = LocationSession(locationClient: client, locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: uploads)
+        var subscription = subscribed.stream.makeAsyncIterator()
+        _ = await subscription.next()
+        session.currentContext = hasPreviousContext ? durableContext(timestamp: .now.addingTimeInterval(-10), h3Cell: 1) : nil
+        session.startupState = .ready
+        session.handleScenePhaseChange(.active)
+        try #require(await waitUntilAsync { await resolver.pendingIDs(for: .resolve).count == 1 })
+        let id = try #require(await resolver.pendingIDs(for: .resolve).first)
+        if duringReconciliation {
+            await snapshotGate.arm()
+            await resolver.complete(id: id, with: .success(context))
+            try #require(await waitUntilAsync { await snapshotGate.waiting })
+        }
+        var named = context.snapshot
+        named.placemarkSummary = "Early City"
+        await source.accept(named)
+        updates.continuation.yield(named)
+        try #require(await waitUntilAsync { @MainActor in session.currentSnapshot?.placemarkSummary == "Early City" })
+        #expect(await resolver.resolutionCalls == 1)
+        if duringReconciliation { await snapshotGate.release() }
+        else { await resolver.complete(id: id, with: .success(context)) }
+        try #require(await waitUntilAsync { @MainActor in session.startupState == .ready })
+        #expect(await resolver.resolutionCalls == 1)
+        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+        #expect(session.currentContext?.snapshot.placemarkSummary == "Early City")
+        #expect(session.currentSnapshot?.placemarkSummary == "Early City")
+        #expect(session.currentContext?.snapshot.timestamp == context.snapshot.timestamp)
+        #expect(await uploads.recordedEnqueueCount() == 1)
+    }
+
     @Test @MainActor
     func latePlacemarkPublishesDisplayWithoutOperationalWork() async throws {
         let original = durableContext(timestamp: .now)
@@ -1203,6 +1265,7 @@ struct LocationSessionTests {
 
         private(set) var lastPreparationRequiresFresh = false
         private(set) var lastPreparationMinimumTimestamp: Date?
+        private(set) var resolutionCalls = 0
         private var nextID = 0
         private var pendingRequests: [PendingRequest] = []
 
@@ -1224,7 +1287,8 @@ struct LocationSessionTests {
             maximumAcceptedLocationAge: TimeInterval?,
             placemarkTimeout: Double
         ) async throws -> LocationContext {
-            try await enqueue(.resolve)
+            resolutionCalls += 1
+            return try await enqueue(.resolve)
         }
 
         func pendingIDs(for operation: Operation) -> [Int] {
