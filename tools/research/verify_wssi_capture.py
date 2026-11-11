@@ -39,8 +39,37 @@ with tarfile.open(sys.argv[1], 'r:gz') as archive:
         assert [f['attributes'] for f in features] == row['attributes']
     assert not read('empty')['features']
     assert 'issue_time' not in read('empty')
-    assert read('forced-page-1')['exceededTransferLimit']
-    assert read('forced-page-1')['features'][0]['attributes']['objectid'] != read('forced-page-2')['features'][0]['attributes']['objectid']
-    positive = read('positive-point')['features']
-    assert positive and all('geometry' not in f for f in positive)
-print(f'PASS: {len(records)} recorded responses; 60 complete layer/scope inventories; empty/error/positive/pagination probes')
+    # Original committed capture predates probe availability metadata; keep it verifiable.
+    probes = read('probes') if 'capture/probes.json' in bodies else {
+        'pagination': dict(status='captured', layer=1, minimum_features=2),
+        'positive-point': dict(status='captured', layer=1, minimum_features=1),
+    }
+    assert set(probes) == {'pagination', 'positive-point'}
+    outcomes = []
+    for name, minimum in [('pagination', 2), ('positive-point', 1)]:
+        probe = probes[name]
+        assert probe['minimum_features'] == minimum
+        candidates = {r['layer'] for r in rows
+                      if r['strategy'] == 'nationwide' and r['count'] >= minimum}
+        if probe['status'] == 'not_observable':
+            assert not candidates and probe['reason']
+            files = ['forced-page-1', 'forced-page-2'] if name == 'pagination' else [name]
+            assert all('capture/' + f + '.json' not in bodies for f in files)
+            outcomes.append(name + ': not observable in this capture')
+            continue
+        assert probe['status'] == 'captured' and probe['layer'] in candidates
+        files = ['forced-page-1', 'forced-page-2'] if name == 'pagination' else [name]
+        for filename in files:
+            request = next(r for r in records if r['name'] == filename)
+            assert '/' + str(probe['layer']) + '/query?' in request['url']
+        if name == 'pagination':
+            first, second = read('forced-page-1'), read('forced-page-2')
+            assert first['exceededTransferLimit']
+            assert len(first['features']) == len(second['features']) == 1
+            assert first['features'][0]['attributes']['objectid'] != second['features'][0]['attributes']['objectid']
+        else:
+            positive = read(name)['features']
+            assert positive and all('geometry' not in f for f in positive)
+        outcomes.append(name + ': verified')
+print(f'PASS: {len(records)} recorded responses; 60 complete layer/scope inventories; empty/error probes')
+print('; '.join(outcomes))

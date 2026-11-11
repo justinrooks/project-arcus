@@ -80,15 +80,30 @@ for layer in layers:
             raise RuntimeError('ID inventory changed during capture')
         summary.append(dict(layer=lid, name=layer['name'], strategy=strategy,
                             count=len(features), attributes=[f['attributes'] for f in features]))
-# Force pagination with a small page, test invalid SQL, and legitimate geographic absence.
-query('forced-page-1', 1, outFields='*', returnGeometry='false', resultRecordCount=1, orderByFields='objectid ASC')
-query('forced-page-2', 1, outFields='*', returnGeometry='false', resultRecordCount=1, resultOffset=1, orderByFields='objectid ASC')
+# Probe availability follows the captured nationwide inventory, not a fixed layer.
+nationwide = [row for row in summary if row['strategy'] == 'nationwide']
+probes = {}
+for name, minimum in [('pagination', 2), ('positive-point', 1)]:
+    candidate = next((row for row in nationwide if row['count'] >= minimum), None)
+    if candidate is None:
+        probes[name] = dict(status='not_observable', minimum_features=minimum,
+                            reason='No captured nationwide layer has sufficient features')
+        continue
+    lid = candidate['layer']
+    probes[name] = dict(status='captured', layer=lid, minimum_features=minimum)
+    if name == 'pagination':
+        query('forced-page-1', lid, outFields='*', returnGeometry='false',
+              resultRecordCount=1, orderByFields='objectid ASC')
+        query('forced-page-2', lid, outFields='*', returnGeometry='false',
+              resultRecordCount=1, resultOffset=1, orderByFields='objectid ASC')
+    else:
+        first = json.loads((OUT / f'{lid}-nationwide-page-0.json').read_text())['features']
+        point = first[0]['geometry']['rings'][0][0]
+        query('positive-point', lid, geometry=','.join(map(str, point)),
+              geometryType='esriGeometryPoint', inSR=4326, returnGeometry='false', outFields='*')
+(OUT / 'probes.json').write_text(json.dumps(probes, indent=2) + '\n')
 fetch('error', '/1/query', where='nonexistent_field = 1', outFields='*')
-query('empty', 1, geometry='0,0', geometryType='esriGeometryPoint', inSR=4326, returnGeometry='false', outFields='*')
-first = json.loads((OUT / '1-nationwide-page-0.json').read_text())['features']
-if first:
-    point = first[0]['geometry']['rings'][0][0]
-    query('positive-point', 1, geometry=','.join(map(str, point)),
-          geometryType='esriGeometryPoint', inSR=4326, returnGeometry='false', outFields='*')
+query('empty', 1, geometry='0,0', geometryType='esriGeometryPoint', inSR=4326,
+      returnGeometry='false', outFields='*')
 (OUT / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
 print(f'Captured {len(records)} requests; {len(summary)} comparisons in {OUT}')
