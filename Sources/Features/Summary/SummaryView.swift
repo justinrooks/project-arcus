@@ -252,9 +252,9 @@ struct SummaryView: View {
             return placemark
         }
 
-        return readinessState == .locationUnavailable
-            ? "Location not available"
-            : "Finding your location…"
+        if readinessState == .locationUnavailable { return "Location not available" }
+        if snapshot != nil { return "Current location" }
+        return readinessState == .ready ? "Location not available" : readinessState.statusText
     }
 
     private var isLocationUnavailable: Bool {
