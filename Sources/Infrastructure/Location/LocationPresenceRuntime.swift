@@ -11,10 +11,16 @@ final class LocationPresenceRuntime {
     let provider: LocationProvider
     let pusher: LocationSnapshotPusher
     let manager: LocationManager
+    let metadataRepo: NwsMetadataRepo
+    let gridProvider: GridPointProvider
 
     private init() {
         let provider = LocationProvider(snapshotCache: LocationSnapshotCache())
         let http = URLSessionHTTPClient(observer: LastGlobalSuccessHTTPObserver(), urlCache: .skyAwareCache)
+        let metadataRepo = NwsMetadataRepo()
+        let gridProvider = GridPointProvider(client: NwsHttpClient(http: http), repo: metadataRepo)
+        self.metadataRepo = metadataRepo
+        self.gridProvider = gridProvider
         let baseURL = ArcusSignalConfiguration.baseURL()
         let pusher = LocationSnapshotPusher(
             locationUploader: HTTPLocationSnapshotUploader(
@@ -26,7 +32,14 @@ final class LocationPresenceRuntime {
         self.pusher = pusher
         let admission = LocationPresenceAdmission(provider: provider, foreground: ForegroundPresenceEnqueuer(pusher: pusher),
             background: BackgroundPresenceEnqueuer(pusher: pusher),
-            evidenceCutoff: { pusher.minimumLocationObservationTimestamp })
+            evidenceCutoff: { pusher.minimumLocationObservationTimestamp },
+            onObservation: { snapshot, source in
+                guard pusher.isLocationSharingEnabled else { return }
+                Task {
+                    _ = await Self.enrichObservation(snapshot, source: source, provider: provider,
+                                                     gridProvider: gridProvider, pusher: pusher)
+                }
+            })
         manager = LocationManager(
             onUpdate: { await admission.accept($0, source: .foregroundLocationChange).acceptance },
             onForegroundActivation: { isEligible in
@@ -38,6 +51,18 @@ final class LocationPresenceRuntime {
             },
             drainBackgroundPresence: { await pusher.drainPendingUploads() }
         )
+    }
+
+    /// Shared by process-owned delivery and deterministic tests; never waits before H3 retention.
+    static func enrichObservation(_ snapshot: LocationSnapshot, source: LocationUploadSource,
+                                  provider: LocationProvider, gridProvider: GridPointProvider,
+                                  pusher: LocationSnapshotPusher) async -> Bool {
+        guard pusher.isLocationSharingEnabled, let h3 = snapshot.h3Cell,
+              let grid = await gridProvider.resolveGridPoint(for: snapshot.coordinates, capturedAt: snapshot.timestamp),
+              !Task.isCancelled, let current = await provider.snapshot(),
+              current.hasSameObservation(as: snapshot) else { return false }
+        return await pusher.enqueueEnrichment(.init(snapshot: snapshot, h3Cell: h3, grid: grid),
+                                              source: source, reason: .locationChanged)
     }
 
     func restoreBackgroundMonitoring() {
@@ -101,16 +126,19 @@ final class LocationPresenceAdmission {
     private var inFlight: Set<Date> = []
     private let evidenceCutoff: @MainActor @Sendable () -> Date?
     private var previousCutoff: Date?
+    private let onObservation: @MainActor @Sendable (LocationSnapshot, LocationUploadSource) -> Void
 
     init(provider: LocationProvider, foreground: any LocationPresenceEnqueuing,
          background: any LocationPresenceEnqueuing,
          now: @escaping @MainActor @Sendable () -> Date = { .now },
-         evidenceCutoff: @escaping @MainActor @Sendable () -> Date? = { nil }) {
+         evidenceCutoff: @escaping @MainActor @Sendable () -> Date? = { nil },
+         onObservation: @escaping @MainActor @Sendable (LocationSnapshot, LocationUploadSource) -> Void = { _, _ in }) {
         self.provider = provider
         self.foreground = foreground
         self.background = background
         self.now = now
         self.evidenceCutoff = evidenceCutoff
+        self.onObservation = onObservation
     }
 
     func accept(_ update: LocationUpdate, source: LocationUploadSource) async -> Result {
@@ -127,14 +155,25 @@ final class LocationPresenceAdmission {
               snapshot.timestamp == update.timestamp || (acceptance == .redundant && attempt?.failed == true) else {
             return .init(acceptance: acceptance, retention: .notAttempted)
         }
-        return .init(acceptance: acceptance, retention: await admit(snapshot, source: source))
+        LocationEnrichmentDiagnostics.record("admission_started",
+            token: LocationEnrichmentDiagnostics.token(h3: snapshot.h3Cell, capturedAt: snapshot.timestamp),
+            source: source.rawValue)
+        let retention = await admit(snapshot, source: source)
+        if retention != .failed, evidenceCutoff().map({ snapshot.timestamp >= $0 }) ?? true {
+            onObservation(snapshot, source)
+        }
+        return .init(acceptance: acceptance, retention: retention)
     }
 
     func retryForegroundAdmission(
         isEligible: @escaping @MainActor @Sendable () -> Bool = { true }
     ) async {
         guard isEligible(), let snapshot = await provider.snapshot(), isEligible() else { return }
-        _ = await admit(snapshot, source: .foregroundLocationChange, isEligible: isEligible)
+        let retention = await admit(snapshot, source: .foregroundLocationChange, isEligible: isEligible)
+        if isEligible(), retention != .failed,
+           evidenceCutoff().map({ snapshot.timestamp >= $0 }) ?? true {
+            onObservation(snapshot, .foregroundLocationChange)
+        }
     }
 
     func admit(_ snapshot: LocationSnapshot, source: LocationUploadSource,

@@ -35,6 +35,7 @@ final class LocationSession: Sendable {
     private let presenceNow: @MainActor @Sendable () -> Date
     private let durableContextCache: any DurableLocationContextCaching
     private let retentionCoordinator: HomeProjectionRetentionCoordinator
+    private let onDisplayEnriched: @Sendable (LocationContext) async -> Void
     private let onContextPublished: @Sendable () async -> Void
 
     @ObservationIgnored
@@ -77,7 +78,8 @@ final class LocationSession: Sendable {
         presenceNow: @escaping @MainActor @Sendable () -> Date = { .now },
         durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache(),
         retentionCoordinator: HomeProjectionRetentionCoordinator = HomeProjectionRetentionCoordinator(),
-        onContextPublished: @escaping @Sendable () async -> Void = {}
+        onContextPublished: @escaping @Sendable () async -> Void = {},
+        onDisplayEnriched: @escaping @Sendable (LocationContext) async -> Void = { _ in }
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
@@ -88,6 +90,7 @@ final class LocationSession: Sendable {
         self.durableContextCache = durableContextCache
         self.retentionCoordinator = retentionCoordinator
         self.onContextPublished = onContextPublished
+        self.onDisplayEnriched = onDisplayEnriched
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -517,10 +520,25 @@ final class LocationSession: Sendable {
     }
 
     private func handleSnapshotUpdate(_ snapshot: LocationSnapshot) async {
+        // Display-only stream updates must not restart NWS resolution or presence ingestion.
+        if let context = currentContext, context.snapshot.hasSameObservation(as: snapshot) {
+            currentSnapshot = snapshot
+            let enriched = refreshedContextIfStable(context, snapshot: snapshot)
+            currentContext = enriched
+            if enriched.snapshot.placemarkSummary != context.snapshot.placemarkSummary {
+                await onDisplayEnriched(enriched)
+            }
+            return
+        }
         if currentSnapshot != snapshot {
             currentSnapshot = snapshot
         }
 
+        if startupState == .resolvingContext,
+           resolvingSnapshot?.hasSameObservation(as: snapshot) == true {
+            // Keep the display update for publication when this operational resolution completes.
+            return
+        }
         guard currentScenePhase == .active, authorizationStatus.isLocationAuthorized,
               acceptsPrecisionEvidence(snapshot) else { return }
         switch startupState {
@@ -615,8 +633,9 @@ final class LocationSession: Sendable {
     }
 
     private func applyResolvedContext(
-        _ context: LocationContext, generation: UInt64, needsPresenceEnrichment: Bool = true
+        _ resolvedContext: LocationContext, generation: UInt64, needsPresenceEnrichment: Bool = true
     ) async -> Bool {
+        var context = resolvedContext
         guard await reconcileResolvedContext(context, generation: generation) else { return false }
         guard await publishCurrentContext(context, when: {
             self.isCurrentLocationResolution(generation) && self.matchesLatestGeography(context)
@@ -626,6 +645,7 @@ final class LocationSession: Sendable {
         }
         // Publication can suspend for retention work or its callback; recheck before persisting/uploading.
         guard await reconcileResolvedContext(context, generation: generation) else { return false }
+        context = contextWithCurrentDisplay(context)
         if let currentSnapshot, currentSnapshot.timestamp > context.snapshot.timestamp {
             // Preserve a newer streamed fix until its pending resolution completes.
         } else {
@@ -670,21 +690,33 @@ final class LocationSession: Sendable {
         return true
     }
 
+    private func contextWithCurrentDisplay(_ context: LocationContext) -> LocationContext {
+        guard let snapshot = currentSnapshot, snapshot.hasSameObservation(as: context.snapshot) else { return context }
+        return refreshedContextIfStable(context, snapshot: snapshot)
+    }
+
     func publishCurrentContext(_ context: LocationContext?) async {
         _ = await publishCurrentContext(context, when: { true })
     }
 
     private func publishCurrentContext(_ context: LocationContext?, when isCurrent: () -> Bool) async -> Bool {
         var didPublish = false
+        var publishedContext: LocationContext?
         await retentionCoordinator.publish(context, when: isCurrent) {
             if context == nil, currentContext != nil {
                 contextInterruptionRevision &+= 1
             }
-            currentContext = context
+            publishedContext = context.map(contextWithCurrentDisplay)
+            currentContext = publishedContext
             didPublish = true
         }
         guard didPublish else { return false }
         await onContextPublished()
+        if let publishedContext,
+           publishedContext.snapshot.placemarkSummary != context?.snapshot.placemarkSummary {
+            let updateDisplay = onDisplayEnriched
+            Task { await updateDisplay(publishedContext) }
+        }
         return true
     }
 

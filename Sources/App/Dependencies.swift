@@ -391,7 +391,7 @@ final class Dependencies: Sendable {
             http: URLSessionHTTPClient(observer: responseObserver, foregroundPolicy: StormSetupHTTPClient.foregroundPolicy)
         )
         let airQualityClient = AirQualityHTTPClient(baseURL: arcusBaseURL, http: httpClient)
-        let metadataRepo = NwsMetadataRepo()
+        let metadataRepo = locationRuntime.metadataRepo
 
         // The same location authority survives weather-store startup failure and relaunch.
         let locationUploadCoordinator = locationRuntime.pusher
@@ -428,7 +428,7 @@ final class Dependencies: Sendable {
         let spcProvider = spc
         logger.debug("SPC provider initialized")
 
-        let gridProvider = GridPointProvider(client: nwsClient, repo: metadataRepo)
+        let gridProvider = locationRuntime.gridProvider
         logger.info("GridPoint provider initialized")
 
         let locationContextResolver = LocationContextResolver(
@@ -456,7 +456,11 @@ final class Dependencies: Sendable {
             locationUploadCoordinator: locationUploadCoordinator,
             durableContextCache: DurableLocationContextCache(),
             retentionCoordinator: HomeProjectionRetentionCoordinator.forStore(container),
-            onContextPublished: { await homeProjectionStore.publishAcceptedAwareness() }
+            onContextPublished: { await homeProjectionStore.publishAcceptedAwareness() },
+            onDisplayEnriched: { context in
+                do { try await homeProjectionStore.updateDisplayMetadata(for: context) }
+                catch { Logger.appHomeRefresh.error("Unable to retain location display metadata") }
+            }
         )
         logger.info("Location session initialized")
         Task { @MainActor in

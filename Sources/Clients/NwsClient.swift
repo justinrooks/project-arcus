@@ -48,7 +48,7 @@ struct NwsHttpClient: NwsClient {
             ]
         )
         logger.info(
-            "NWS request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=active-alerts"
+            "NWS request started endpoint=\(endpointName(url), privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=active-alerts"
         )
         
         return try await fetch(from: url)
@@ -60,7 +60,7 @@ struct NwsHttpClient: NwsClient {
             case .fire: try makeNwsUrl(path: "/zones/fire/\(zone)")
         }
         logger.info(
-            "NWS request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=zone-metadata"
+            "NWS request started endpoint=\(endpointName(url), privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=zone-metadata"
         )
         
         return try await fetch(from: url)
@@ -70,7 +70,7 @@ struct NwsHttpClient: NwsClient {
         let (lat, lon) = truncatedCoordinates(for: location)
         let url = try makeNwsUrl(path: "/points/\(lat),\(lon)")
         logger.info(
-            "NWS request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=point-metadata"
+            "NWS request started endpoint=\(endpointName(url), privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=point-metadata"
         )
         
         return try await fetch(from: url)
@@ -93,8 +93,10 @@ struct NwsHttpClient: NwsClient {
         let resp = try await http.get(url, headers: requestHeaders, fallbackPolicy: fallbackPolicy)
         try Task.checkCancellation()
 
+        LocationEnrichmentDiagnostics.record("points_http_completed", token: LocationEnrichmentDiagnostics.pointTrace,
+                                             networkSource: resp.source.description)
         if resp.source != .live {
-            logger.notice("NWS response served from \(resp.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
+            logger.notice("NWS response served from \(resp.source.description, privacy: .public) endpoint=\(endpointName(url), privacy: .public)")
         }
 
         switch resp.classifyStatus() {
@@ -105,27 +107,33 @@ struct NwsHttpClient: NwsClient {
             break
         case .rateLimited(let retryAfter):
             let error = NwsError.rateLimited(retryAfterSeconds: retryAfter)
-            logFailure(error: error, endpoint: url.path, status: resp.status)
+            logFailure(error: error, endpoint: endpointName(url), status: resp.status)
             throw error
         case .serviceUnavailable(let retryAfter):
             let error = NwsError.serviceUnavailable(retryAfterSeconds: retryAfter)
-            logFailure(error: error, endpoint: url.path, status: resp.status)
+            logFailure(error: error, endpoint: endpointName(url), status: resp.status)
             throw error
         case .failure(let status):
             let error = NwsError.networkError(status: status)
-            logFailure(error: error, endpoint: url.path, status: status)
+            logFailure(error: error, endpoint: endpointName(url), status: status)
             throw error
         }
         
         guard let data = resp.data else {
-            logger.error("NWS response missing body endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public)")
+            logger.error("NWS response missing body endpoint=\(endpointName(url), privacy: .public) status=\(resp.status, privacy: .public)")
             throw NwsError.missingData
         }
 
         logger.info(
-            "NWS request completed endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
+            "NWS request completed endpoint=\(endpointName(url), privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
         )
         return data
+    }
+
+    private func endpointName(_ url: URL) -> String {
+        if url.path.hasPrefix("/points/") { return "points" }
+        if url.path.hasPrefix("/zones/") { return "zones" }
+        return "alerts"
     }
 
     private func logFailure(error: NwsError, endpoint: String, status: Int) {

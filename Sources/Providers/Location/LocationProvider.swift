@@ -83,6 +83,7 @@ actor LocationProvider {
     private var lastSnapshot: LocationSnapshot?
     private var continuations: [UUID: AsyncStream<LocationSnapshot>.Continuation] = [:]
 
+    private var placemarkWork: (id: UUID, observation: LocationSnapshot, task: Task<String, Error>)?
     private let geocoder: LocationGeocoding
     private let hasher: LocationHashing
     private let snapshotCache: LocationSnapshotCaching
@@ -171,10 +172,11 @@ actor LocationProvider {
                                             ? lastSnapshot?.placemarkSummary
                                             : nil,
                                         h3Cell: resolvedH3Cell)
+            LocationEnrichmentDiagnostics.begin(snap)
             saveAndYieldSnapshot(snap, reason: "accepted-update")
             
             // 3) Reverse geocode – fire-and-forget
-            Task { await updatePlacemarkIfNeeded(for: snap) }
+            Task { _ = await ensurePlacemark(for: snap) }
             return .accepted
         } else {
             outcome = "suppressed"
@@ -187,18 +189,30 @@ actor LocationProvider {
     // MARK: - Placemark/Geocoding
     
     /// Enrich only the supplied observation; a newer accepted fix remains independently owned.
-    func ensurePlacemark(for observation: LocationSnapshot, timeout: Double = 8) async -> LocationSnapshot {
+    func ensurePlacemark(for observation: LocationSnapshot, timeout: Double = 8, refreshDisplay: Bool = false) async -> LocationSnapshot {
         guard let current = lastSnapshot, current.hasSameObservation(as: observation) else {
             return observation
         }
-        if current.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+        if !refreshDisplay, current.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             return current
         }
 
         do {
-            let place = try await withTimeout(timeout: timeout) {
-                try await self.geocoder.reverseGeocode(observation.coordinates)
+            let work: (id: UUID, observation: LocationSnapshot, task: Task<String, Error>)
+            if let pending = placemarkWork, pending.observation.hasSameObservation(as: observation) {
+                work = pending
+            } else {
+                placemarkWork?.task.cancel()
+                let geocoder = self.geocoder
+                work = (UUID(), observation, Task {
+                    try await withTimeout(timeout: timeout) {
+                        try await geocoder.reverseGeocode(observation.coordinates)
+                    }
+                })
+                placemarkWork = work
             }
+            defer { if placemarkWork?.id == work.id { placemarkWork = nil } }
+            let place = try await work.task.value
             return applyPlacemark(place, to: observation)
         } catch {
             // Keep any display metadata that another matching request already resolved.
@@ -208,14 +222,7 @@ actor LocationProvider {
 
     // MARK: Placemark Helpers
     func updatePlacemarkIfNeeded(for observation: LocationSnapshot) async {
-        guard lastSnapshot?.hasSameObservation(as: observation) == true else { return }
-        logger.debug("Resolving placemark for accepted location update")
-        do {
-            let summary = try await geocoder.reverseGeocode(observation.coordinates)
-            _ = applyPlacemark(summary, to: observation)
-        } catch {
-            logger.error("Location enrichment failed reason=reverse_geocoding")
-        }
+        _ = await ensurePlacemark(for: observation, refreshDisplay: true)
     }
 
     private func applyPlacemark(_ summary: String, to observation: LocationSnapshot) -> LocationSnapshot {

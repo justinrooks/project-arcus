@@ -416,14 +416,14 @@ public final class URLSessionHTTPClient: HTTPClient {
                     return liveResponse
                 case .notModified:
                     if let cached = getCachedResponse(for: url, timeout: policy.requestTimeout) {
-                        logger.notice("Using cache revalidation fallback (304) for host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
+                        logger.notice("Using cache revalidation fallback (304) for host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                         return HTTPResponse(status: liveResponse.status,
                                             headers: responseHeaders,
                                             data: cached.data.isEmpty ? nil : cached.data,
                                             source: .cacheRevalidated304)
                     }
 
-                    logger.error("Received 304 without cached body for host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
+                    logger.error("Received 304 without cached body for host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                     throw URLError(.badServerResponse)
                 case .rateLimited(let retryAfter), .serviceUnavailable(let retryAfter):
                     if policy.retryableStatusCodes.contains(liveResponse.status) {
@@ -442,7 +442,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                                     reason: "deadline_before_retry"
                                 )
                             }
-                            logger.debug("Retrying HTTP status \(liveResponse.status, privacy: .public) in \(wait, privacy: .public)s host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
+                            logger.debug("Retrying HTTP status \(liveResponse.status, privacy: .public) in \(wait, privacy: .public)s host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                             try await sleepFor(wait)
                             try Task.checkCancellation()
                             continue
@@ -465,7 +465,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                 }
             } catch {
                 if error is CancellationError || Task.isCancelled {
-                    logger.debug("Request cancelled for host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
+                    logger.debug("Request cancelled for host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                     throw CancellationError()
                 }
 
@@ -481,7 +481,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                                 reason: "deadline_before_retry"
                             )
                         }
-                        logger.debug("Retrying transient transport failure in \(wait, privacy: .public)s host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
+                        logger.debug("Retrying transient transport failure in \(wait, privacy: .public)s host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                         try await sleepFor(wait)
                         try Task.checkCancellation()
                         continue
@@ -497,7 +497,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                         return fallback
                     }
 
-                    logger.error("Transient request error exhausted retries host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public): \(error, privacy: .public)")
+                    logger.error("Transient request error exhausted retries host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public): \(error, privacy: .private)")
                     throw error
                 }
 
@@ -635,7 +635,7 @@ public final class URLSessionHTTPClient: HTTPClient {
         guard method == "GET", policy.allowCacheFallback else { return nil }
         guard let cached = getCachedResponse(for: url, timeout: policy.requestTimeout) else { return nil }
         guard allowsFallback(cached, policy: fallbackPolicy) else {
-            logger.notice("Rejected cached HTTP fallback host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public) reason=\(reason, privacy: .public)")
+            logger.notice("Rejected cached HTTP fallback host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public) reason=\(reason, privacy: .public)")
             return nil
         }
 
@@ -649,7 +649,7 @@ public final class URLSessionHTTPClient: HTTPClient {
             status = 200
         }
 
-        logger.notice("Serving cached HTTP fallback host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public) reason=\(reason, privacy: .public)")
+        logger.notice("Serving cached HTTP fallback host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public) reason=\(reason, privacy: .public)")
 
         return HTTPResponse(status: status,
                             headers: headers,
@@ -687,6 +687,15 @@ public final class URLSessionHTTPClient: HTTPClient {
         }
 
         return output
+    }
+
+    private func diagnosticPath(for url: URL) -> String {
+        // NWS points paths contain precise coordinates; transport retries must not expose them.
+        if url.host == "api.weather.gov" {
+            if url.path.hasPrefix("/points/") { return "/points/[redacted]" }
+            if url.path.hasPrefix("/zones/") { return "/zones/[redacted]" }
+        }
+        return url.path
     }
 
     private func source(for metrics: URLSessionTaskMetrics?) -> HTTPResponse.Source {

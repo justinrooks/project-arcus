@@ -395,6 +395,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         }
         admissionResult = "persisted"
         logger.debug("Presence stage=persisted")
+        LocationEnrichmentDiagnostics.record("outbox_retained",
+            token: LocationEnrichmentDiagnostics.token(h3: context.h3Cell, capturedAt: context.capturedAt),
+            source: source.rawValue,
+            shape: LocationEnrichmentDiagnostics.shape(county: context.county, forecast: context.forecastZone, fire: context.fireZone))
         // Persistence suspends: a newer observation may already own this key.
         guard pendingByCoalescingKey[coalescingKey] == persisted else { return acceptsSupersededIntent }
         guard !admissionOnly else { return true }

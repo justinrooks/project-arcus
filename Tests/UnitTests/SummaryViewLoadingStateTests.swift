@@ -213,20 +213,20 @@ struct TodayResolvingSurfaceStateTests {
 @Suite("Today Location Label Presentation")
 @MainActor
 struct TodayLocationLabelPresentationTests {
-    @Test("ready with no usable placemark shows location resolution copy")
+    @Test("accepted location without a placemark uses a stable location label")
     func readyWithoutPlacemarkShowsLocationResolutionCopy() {
         #expect(
             SummaryView.locationStatusText(
                 snapshot: makeLocationSnapshot(placemarkSummary: nil),
                 readinessState: .ready
-            ) == "Finding your location…"
+            ) == "Current location"
         )
         #expect(
-            SummaryView.locationStatusText(snapshot: nil, readinessState: .ready) != "Ready"
+            SummaryView.locationStatusText(snapshot: nil, readinessState: .ready) == "Location not available"
         )
     }
 
-    @Test("intermediate readiness states use the location placeholder instead of generic progress")
+    @Test("no-snapshot readiness states describe their actual work")
     func intermediateReadinessStatesUseLocationPlaceholder() {
         for readinessState in [
             SummaryReadinessState.loadingLocation,
@@ -235,7 +235,7 @@ struct TodayLocationLabelPresentationTests {
         ] {
             #expect(
                 SummaryView.locationStatusText(snapshot: nil, readinessState: readinessState)
-                    == "Finding your location…"
+                    == readinessState.statusText
             )
         }
     }
@@ -277,7 +277,7 @@ struct TodayLocationLabelPresentationTests {
         #expect(SummaryView.locationStatusText(snapshot: previousLocation, readinessState: .ready) == "Bennett, CO")
         #expect(
             SummaryView.locationStatusText(snapshot: newLocationWithoutPlacemark, readinessState: .ready)
-                == "Finding your location…"
+                == "Current location"
         )
     }
 
@@ -287,8 +287,18 @@ struct TodayLocationLabelPresentationTests {
             SummaryView.locationStatusText(
                 snapshot: makeLocationSnapshot(placemarkSummary: "   "),
                 readinessState: .ready
-            ) == "Finding your location…"
+            ) == "Current location"
         )
+    }
+
+    @Test("scoped display name takes precedence without modifying the accepted snapshot")
+    func scopedDisplayNameOverridesUnnamedSnapshot() {
+        let snapshot = makeLocationSnapshot(placemarkSummary: nil)
+        #expect(SummaryView.locationStatusText(snapshot: snapshot, readinessState: .ready,
+                                              displayName: "New City") == "New City")
+        #expect(snapshot.placemarkSummary == nil)
+        #expect(SummaryView.locationStatusText(snapshot: snapshot, readinessState: .ready,
+                                              displayName: "   ") == "Current location")
     }
 
     private func makeLocationSnapshot(

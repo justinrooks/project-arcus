@@ -427,6 +427,35 @@ actor HomeProjectionStore {
     }
 #endif
 
+    /// Display-only enrichment does not accept weather, risks, alerts, or a new observation.
+    func updateDisplayMetadata(for context: LocationContext) async throws {
+        guard let name = context.snapshot.placemarkSummary,
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        await retentionCoordinator.acquire()
+        defer { retentionCoordinator.release() }
+        guard retentionCoordinator.currentActiveProjectionKey() == HomeProjection.projectionKey(for: context) else { return }
+        let model: HomeProjection
+        if let existing = try fetchProjection(withKey: HomeProjection.projectionKey(for: context)) {
+            guard matchesDisplayObservation(existing.record, context), existing.placemarkSummary != name else { return }
+            model = existing
+            model.placemarkSummary = name
+        } else {
+            model = HomeProjection(context: context, createdAt: context.snapshot.timestamp)
+            modelContext.insert(model)
+        }
+        try saveProjection(named: "Location Display Save")
+        if var accepted = acceptedWidgetPublication?.projection, matchesDisplayObservation(accepted, context) {
+            accepted.placemarkSummary = name
+            acceptedWidgetPublication = WidgetSnapshotPublication(projection: accepted)
+        }
+        await publishAcceptedAwareness()
+    }
+
+    private func matchesDisplayObservation(_ record: HomeProjectionRecord, _ context: LocationContext) -> Bool {
+        record.h3Cell == context.h3Cell && record.locationTimestamp == context.snapshot.timestamp &&
+            record.latitude == context.snapshot.coordinates.latitude && record.longitude == context.snapshot.coordinates.longitude
+    }
+
     func projection(for context: LocationContext) throws -> HomeProjectionRecord? {
         try fetchProjection(withKey: HomeProjection.projectionKey(for: context))?.record
     }
@@ -1029,7 +1058,9 @@ actor HomeProjectionStore {
         persistsExplicitly: Bool = false
     ) throws -> HomeProjection {
         if let existing = try fetchProjection(withKey: HomeProjection.projectionKey(for: context)) {
+            let displayName = matchesDisplayObservation(existing.record, context) ? existing.placemarkSummary : nil
             existing.updateLocationContext(context, touchedAt: touchedAt, viewedAt: viewedAt)
+            if existing.placemarkSummary == nil { existing.placemarkSummary = displayName }
             if persistsExplicitly {
                 try saveProjection(named: "Projection Touch Save")
             }

@@ -9,6 +9,7 @@ extension HomeView {
     struct HomePresentationSnapshot {
         let projection: HomeProjectionRecord?
         let locationSnapshot: LocationSnapshot?
+        let locationDisplayName: String?
         let stormRisk: StormRiskLevel?
         let severeRisk: SevereWeatherThreat?
         let fireRisk: FireRiskLevel?
@@ -57,7 +58,31 @@ extension HomeView {
             )
 
             self.projection = projection
-            self.locationSnapshot = projection?.locationSnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
+            var displaySnapshot = projection?.locationSnapshot
+            if var accepted = displaySnapshot, let observed = currentContext?.snapshot,
+               accepted.h3Cell == observed.h3Cell, accepted.timestamp == observed.timestamp,
+               accepted.coordinates.latitude == observed.coordinates.latitude,
+               accepted.coordinates.longitude == observed.coordinates.longitude,
+               observed.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                accepted.placemarkSummary = observed.placemarkSummary
+                displaySnapshot = accepted
+            }
+            self.locationSnapshot = displaySnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
+            let acceptedDisplay = visibleRevision?.locationDisplay ?? projection
+            let acceptedName = acceptedDisplay?.placemarkSummary
+            if let projection, let currentContext,
+               HomeProjection.projectionKey(for: currentContext) == projection.projectionKey,
+               currentContext.snapshot.timestamp >= (visibleRevision?.locationDisplay?.locationTimestamp ?? projection.locationTimestamp) {
+                // The current observation is authoritative even before its weather is accepted.
+                // An explicit fallback prevents Summary from reviving the cached snapshot's name.
+                let name = currentContext.snapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let sameCaptureName = currentContext.snapshot.timestamp == acceptedDisplay?.locationTimestamp
+                    ? acceptedName?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+                locationDisplayName = name?.isEmpty == false ? name
+                    : (sameCaptureName?.isEmpty == false ? sameCaptureName : "Current location")
+            } else {
+                locationDisplayName = acceptedName
+            }
             self.stormRisk = visibleRevision?.stormRisk ?? (isUITestStaticMode ? pipelineStormRisk : nil)
             self.severeRisk = visibleRevision?.severeRisk ?? (isUITestStaticMode ? pipelineSevereRisk : nil)
             self.fireRisk = visibleRevision?.fireRisk ?? (isUITestStaticMode ? pipelineFireRisk : nil)

@@ -345,6 +345,7 @@ struct HomeView: View {
     ) -> some View {
         TodayTabView(
             snap: presentation.locationSnapshot,
+            locationDisplayName: presentation.locationDisplayName,
             stormSetup: presentation.stormSetup,
             stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
             stormSetupPreferences: stormSetupPreferences,
