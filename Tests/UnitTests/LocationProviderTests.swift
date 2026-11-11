@@ -822,8 +822,8 @@ struct LocationProviderTests {
         func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
     }
 
-    @Test("late admission failure cannot recreate concurrently acknowledged enrichment", arguments: [false, true])
-    func lateEnrichmentFailureDoesNotReplay(preacknowledged: Bool) async throws {
+    @Test("late admission failure cannot recreate concurrently acknowledged enrichment", arguments: [false, true], [false, true])
+    func lateEnrichmentFailureDoesNotReplay(preacknowledged: Bool, newerCapture: Bool) async throws {
         let boundary = RecoverableAdmissionBoundary()
         let uploader = MockSnapshotUploader()
         let clock = Mutex(Date(timeIntervalSince1970: 300))
@@ -834,10 +834,12 @@ struct LocationProviderTests {
             accuracyAuthorizationProvider: { .fullAccuracy }, nowProvider: { clock.withLock { $0 } },
             retryDelaysSeconds: [0], queueStore: boundary
         )
-        let context = makeContext(timestamp: Date(timeIntervalSince1970: 300))
+        let acknowledged = makeContext(timestamp: Date(timeIntervalSince1970: 300))
         if preacknowledged {
-            await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationResolved)
+            await pusher.enqueue(acknowledged, source: .foregroundLocationChange, reason: .locationResolved)
         }
+        let context = newerCapture ? makeContext(timestamp: Date(timeIntervalSince1970: 301)) : acknowledged
+        clock.withLock { $0 = context.snapshot.timestamp }
         await boundary.pauseNextConsent()
         let failing = Task { await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationResolved) }
         while await !boundary.isBlocked() { await Task.yield() }
