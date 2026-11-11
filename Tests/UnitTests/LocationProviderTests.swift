@@ -456,6 +456,7 @@ struct LocationProviderTests {
     }
 
     private actor RacingGeocoder: LocationGeocoding {
+        private let start = AsyncStream<Void>.makeStream()
         private var callCount = 0
         private var firstContinuation: CheckedContinuation<String, any Error>?
 
@@ -464,12 +465,16 @@ struct LocationProviderTests {
             if callCount == 1 {
                 return try await withCheckedThrowingContinuation { continuation in
                     firstContinuation = continuation
+                    start.continuation.yield(())
                 }
             }
             return "Latest City"
         }
 
         func hasStarted() -> Bool { callCount > 0 }
+        func waitForStart() async {
+            for await _ in start.stream { return }
+        }
 
         func resolveFirst(with value: String, fails: Bool = false) {
             if fails { firstContinuation?.resume(throwing: GeocodeError.noResults) }
@@ -1575,13 +1580,10 @@ struct LocationProviderTests {
         let provider = LocationProvider(geocoder: gate,
             hasher: MockHasher(mode: .success(sampleH3Cell)), nowProvider: { now })
         await provider.send(update: makeUpdate(lat: 39, lon: -104, timestamp: now.addingTimeInterval(-10), accuracy: 25))
-        #expect(await waitUntilLocationSnapshot(timeout: .seconds(1)) {
-            await gate.callCount() == 1
-        })
-        let original = try #require(await provider.snapshot())
-        let enrichment = Task { await provider.ensurePlacemark(for: original) }
         var started = gate.started.makeAsyncIterator()
         _ = await started.next()
+        let original = try #require(await provider.snapshot())
+        let enrichment = Task { await provider.ensurePlacemark(for: original) }
         await provider.send(update: makeUpdate(lat: 41, lon: -106, timestamp: now, accuracy: 25, forceAcceptance: true))
         await gate.finish()
         let enriched = await enrichment.value
@@ -4004,7 +4006,7 @@ struct LocationProviderTests {
         let provider = LocationProvider(geocoder: geocoder, hasher: MockHasher(mode: .success(sampleH3Cell)),
                                         snapshotCache: cache)
         let enrichment = Task { await provider.updatePlacemarkIfNeeded(for: original) }
-        #expect(await waitUntilLocationSnapshot { await geocoder.hasStarted() })
+        await geocoder.waitForStart()
         await geocoder.resolveFirst(with: response, fails: response == "failure")
         await enrichment.value
         #expect(await provider.snapshot() == original)
@@ -4023,7 +4025,7 @@ struct LocationProviderTests {
         let provider = LocationProvider(geocoder: geocoder, hasher: MockHasher(mode: .success(sampleH3Cell)),
                                         snapshotCache: cache)
         let enrichment = Task { await provider.updatePlacemarkIfNeeded(for: original) }
-        #expect(await waitUntilLocationSnapshot { await geocoder.hasStarted() })
+        await geocoder.waitForStart()
 
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t1, accuracy: 50))
 

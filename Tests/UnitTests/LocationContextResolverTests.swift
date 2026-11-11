@@ -280,6 +280,7 @@ struct LocationContextResolverTests {
     }
 
     private actor PointGateClient: NwsClient {
+        private let start = AsyncStream<Void>.makeStream()
         var payload: Data
         var fails = false
         var starts = 0
@@ -290,9 +291,14 @@ struct LocationContextResolverTests {
             starts += 1
             let response = payload
             let shouldFail = fails
-            if blocked { await withCheckedContinuation { waiters.append($0) } }
+            if blocked {
+                await withCheckedContinuation { waiters.append($0); start.continuation.yield(()) }
+            } else { start.continuation.yield(()) }
             if shouldFail { throw TestError.geocodeFailed }
             return response
+        }
+        func waitForStart() async {
+            for await _ in start.stream { return }
         }
         func releaseLatest() { waiters.removeLast().resume() }
         func setPayload(_ data: Data, fails: Bool = false) { payload = data; self.fails = fails }
@@ -312,9 +318,9 @@ struct LocationContextResolverTests {
         let point = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
         let timestamp = Date()
         let first = Task { await provider.resolveGridPoint(for: point, capturedAt: timestamp) }
-        #expect(await waitUntil { await client.starts == 1 })
+        await client.waitForStart()
         let second = Task { await provider.resolveGridPoint(for: point, capturedAt: timestamp) }
-        #expect(await waitUntil { await provider.coalescedRequestCount == 1 })
+        #expect(await waitUntil(timeout: .seconds(10)) { await provider.coalescedRequestCount == 1 })
         await client.release()
         let grid = try #require(await first.value)
         #expect(await second.value == grid)
@@ -332,11 +338,11 @@ struct LocationContextResolverTests {
         let provider = GridPointProvider(client: client, repo: repo)
         let timestamp = Date()
         let old = Task { await provider.resolveGridPoint(for: .init(latitude: 35, longitude: -97), capturedAt: timestamp) }
-        #expect(await waitUntil { await client.starts == 1 })
+        await client.waitForStart()
         await client.setPayload(Data(String(decoding: payload, as: UTF8.self).replacingOccurrences(of: "OKC109", with: "COC031").utf8))
         let newer = Task { await provider.resolveGridPoint(for: .init(latitude: 40, longitude: -105),
                                                           capturedAt: timestamp.addingTimeInterval(1)) }
-        #expect(await waitUntil { await client.starts == 2 })
+        await client.waitForStart()
         await client.releaseLatest()
         #expect(await newer.value?.countyCode == "COC031")
         await client.release()
@@ -375,7 +381,7 @@ struct LocationContextResolverTests {
         let grid = GridPointProvider(client: client, repo: NwsMetadataRepo())
         let enrichment = Task { await LocationPresenceRuntime.enrichObservation(snapshot,
             source: .foregroundLocationChange, provider: provider, gridProvider: grid, pusher: pusher) }
-        #expect(await waitUntil { await client.starts == 1 })
+        await client.waitForStart()
         let retained = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "outbox").loadPendingRequests()
         #expect(retained.count == 1)
         #expect(await uploads.payloads.isEmpty)
