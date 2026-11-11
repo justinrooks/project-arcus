@@ -1,5 +1,21 @@
 # Release Notes
 
+## v1.5.0
+
+## Overview
+SkyAware 1.5.0 expands Outlooks and Map to SPC Days 1–3, adds a weather-awareness Siri Shortcut and pressure-history tools, and improves location recovery, notification navigation, and widget reliability.
+
+## Highlights
+- Browse SPC Day 1–3 outlooks and discussions, choose a forecast day on Map, and keep that day selected when moving between Outlooks, details, and Map.
+- Map refreshes preserve the legend and unchanged geometry, retain warning polygon holes, and provide more complete accessibility summaries. Delayed initial centering respects Reduce Motion.
+- Open NWS notifications without waiting for Home to refresh, and open mesoscale discussion notifications directly to the matching discussion. Mesoscale discussion data and notification preferences use Arcus Signal.
+- Use the weather-awareness Siri Shortcut for an accepted local summary, including active-alert coverage. Review retained pressure readings with a chart, observation statistics, location elevation, CSV export, and session restart.
+- Recover an unavailable location fix with Today’s “Try Again.” Location sharing keeps the newest queued observation through offline movement and restart, preserves current consent, and resolves targeting codes independently of optional place descriptions. Unchanged complete targeting avoids redundant updates while geographic changes remain eligible promptly.
+- Storm Setup keeps progress and timeout states accurate during slow requests. Home and widgets reject stale publications, Combined widgets update for known alert expirations, and Lock Screen risk widgets distinguish unavailable data from quiet conditions.
+
+## Maintenance
+Improved refresh lifetimes, background notification handling, privacy declarations, diagnostic coverage, and automated regression validation.
+
 ## v1.5.0(290)
 
 ## Overview

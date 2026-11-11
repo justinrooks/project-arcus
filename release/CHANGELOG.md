@@ -1,5 +1,85 @@
 # Changelog
 
+## v1.5.0
+
+<!-- Prepared TestFlight candidate; public baseline: v1.4.0(236) (afa5ee007ea9d3bacdec8767eaa1c363d05251cd); evidence through: 19be064e8c027e371a99fba7ba24cb9b322a89c0. -->
+
+### UI / UX
+- Outlooks and Map now support SPC Days 1–3, with forecast-day selection, day-specific risk scenes, discussion browsing, and navigation that preserves the selected forecast day.
+<!-- evidence: 4d5c734, b67368e, ad45a8b, b3545cc, 3b71e42, 9d704f6, d3b99de, c591839, d633fb7, 907a0a8 -->
+- Map refreshes now update only affected sources, show update status, keep the legend stable while data refreshes, and avoid rebuilding unchanged geometry; warning polygons retain interior holes and intensity hatching is bounded to the draw region.
+<!-- evidence: 6972eb9, 00872b6, 78237f7, b33f8e7, fe865f7 -->
+- Barometric pressure diagnostics now chart retained station readings, summarize observation coverage and variability, show location elevation, and export retained samples as CSV.
+<!-- evidence: 9fb0091, 6508636, 685b1cc -->
+- Pressure tendency now rolls over its observation window correctly and supports restarting a collection session.
+<!-- evidence: d28c270 -->
+- Today now offers “Try Again” when location access is granted but a fix is unavailable, with separate recovery guidance for permission and precision failures.
+<!-- evidence: 6b12d27 -->
+- Local Alerts returns to its stable height when an interrupted transition is cancelled and the view reappears.
+<!-- evidence: 036b28b -->
+- Map accessibility summaries now include applicable local risk categories, hazard probabilities, and supported conditional intensity.
+<!-- evidence: 3f52775 -->
+- Delayed initial Map centering now respects Reduce Motion.
+<!-- evidence: ac714a6 -->
+
+### Background & Notifications
+- NWS notification taps can open a cached alert immediately or fetch the requested revision directly, without waiting for Home ingestion; unavailable alerts have an explicit destination.
+<!-- evidence: 57ef8ad -->
+- Mesoscale discussions and notification preferences now use Arcus Signal as their source, including typed notification links that open the matching discussion; direct SPC mesoscale ingestion has been retired.
+<!-- evidence: 4735447, 7aa4a3c, 4e7798e, 0b08c1d, 446d956, 8eb0352, 467f8fd, 828b856 -->
+- Eligible foreground and background location observations can reach the durable upload queue independently of Home, geocoding, NWS, and weather-store startup; Always-authorized significant-change monitoring is restored on scene-based launches.
+<!-- evidence: f621a52, 376d13e, 864d40f, aa9150b -->
+- Pending location uploads retain the newest observation across same-cell updates, offline movement, and restart, while older acknowledgments cannot erase newer pending evidence.
+<!-- evidence: 6eae70d, ad12b9a -->
+- Scheduled refreshes can retry persisted location uploads when weather startup fails, and reuse of unchanged cached weather context no longer creates redundant location requests; transient enrichment admission failures remain retryable while the process stays alive.
+<!-- evidence: a812985, 003f1c1 -->
+- Device synchronization uses authenticated installation credentials and durable consent revisions, rechecks current consent before replay, and keeps preference changes separate from location evidence, including opt-out without an APNs token.
+<!-- evidence: 95cf973, bd1b965, 9f8b2a6 -->
+- Location sharing now requires current precision and consent, rejects evidence captured before a permission or sharing transition, and retains preference-sync intent independently of the location queue.
+<!-- evidence: 1390dcb -->
+- Combined widgets now receive future timeline entries for known alert expirations, updating alert selection, counts, freshness, and relevance from the accepted snapshot.
+<!-- evidence: d2bb0bd -->
+- Background remote-notification receipt completes within its own deadline without cancelling useful ingestion shared with other owners or allowing late receipt-only publications.
+<!-- evidence: 69bc416 -->
+- County, forecast-zone, and fire-zone targeting codes resolve independently of display labels and Home weather startup; incomplete same-cell enrichment remains recoverable after interruption or restart.
+<!-- evidence: 9c791bb, 1293d2e, 0ff3791 -->
+- Presence uploads preserve subsecond observation ordering, so distinct captures in the same second remain distinguishable and stale results cannot replace newer evidence.
+<!-- evidence: 7eab7e8 -->
+- Newer observations with unchanged complete targeting follow a 300-second cadence from the latest successful acknowledgment, while geographic changes, partial completion, and pending recovery remain eligible.
+<!-- evidence: 19be064 -->
+
+### Siri & Shortcuts
+- Weather awareness is available through a Siri Shortcut, using accepted weather snapshots and reporting active-alert coverage with iOS 18-compatible execution behavior.
+<!-- evidence: 0ef147a, 1a3ea62, e177585, 7df5407, 233b856, b36c696 -->
+
+### Reliability
+- SkyAware can request an App Store review after a successful Today refresh when eligible.
+<!-- evidence: bdd73e4 -->
+- Storm Setup remains in an analyzing state during slow foreground requests, reports timeout and unavailable outcomes accurately, and returns promptly when a request exceeds its 30-second foreground budget.
+<!-- evidence: 2cc6f1e -->
+- Home and widgets reject stale snapshot publications, and superseded Home ingestion requests complete their waiting callers.
+<!-- evidence: 508d0fd, 8460233 -->
+- Home automatically resumes updates after location recovery, preserves cached content while resolving a fix, and refreshes when recovery returns to the previously accepted location.
+<!-- evidence: 6907863 -->
+- One-shot location requests finish on timeout or cancellation without waiting for another callback, and foreground streaming recovers correctly across interrupted or overlapping lifecycle transitions.
+<!-- evidence: 1c63e51, addce8c -->
+- Location acceptance validates coordinates, accuracy, timestamp ordering, and geographic identity; delayed placemark and region enrichment preserve the original observation and cannot replace newer geography.
+<!-- evidence: b30695b, b5a42cc -->
+- Lock Screen risk widgets distinguish missing data from accepted quiet conditions for each risk domain.
+<!-- evidence: 55d0e2c -->
+- Home avoids repeated projection conversion and unnecessary observation of transient values that do not affect accepted presentation.
+<!-- evidence: 1050ec5, 4757a3d -->
+- Foreground refresh timers stop with their owners, and hosted data-query observers retire before their temporary stores are released.
+<!-- evidence: 1995c2e -->
+
+### Tests / QA
+- Expanded deterministic coverage for notification routing, mesoscale reads, SPC Days 1–3 persistence, Map rendering, Siri awareness, pressure diagnostics, Home and widget publication, location chronology, consent, cadence, offline replay, concurrent admissions, and enrichment recovery; regression lanes verify native result coverage separately from optional performance measurements.
+<!-- evidence: 57ef8ad, 4735447, 7aa4a3c, 4e7798e, 0b08c1d, 446d956, 8eb0352, 467f8fd, 828b856, 4d5c734, b67368e, ad45a8b, b3545cc, 3b71e42, 9d704f6, d3b99de, c591839, d633fb7, 907a0a8, 6972eb9, c83d137, 00872b6, 234be1f, 78237f7, b33f8e7, fe865f7, bdd73e4, 0ef147a, 1a3ea62, e177585, 7df5407, 233b856, b36c696, 2cc6f1e, 508d0fd, 8460233, 685b1cc, 6508636, 9fb0091, d28c270, 842905f, 056d9c1, 4e62d5e, 82a9ae1, 7d42d5f, 29cbe1d, b30695b, b5a42cc, 1390dcb, 6eae70d, ad12b9a, aa9150b, a812985, 003f1c1, 69bc416, 55d0e2c, d2bb0bd, 6907863, 4ef7ab4, 9c791bb, 1293d2e, 7eab7e8, 0ff3791, 19be064 -->
+
+### Maintenance / Cleanup
+- Updated dependencies, privacy declarations, privacy-safe location diagnostics, project test ordering, release and listing documentation, and committed TestFlight tester-note integration.
+<!-- evidence: d4fc915, 0d73339, 29cbe1d, 7d42d5f, 056d9c1, 4e62d5e, 1995c2e, 9758fe6, c1f8588, 84dafad, 8ac1fe9, f4699f1, c636f71, e72d452, 4c55392, 6a319c8 -->
+
 ## v1.5.0(290)
 
 ### UI / UX
