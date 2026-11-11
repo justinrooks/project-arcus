@@ -154,6 +154,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
     private var lastObservedConsent: DeviceConsentSnapshotV3?
     private var lastObservedEvidenceCutoff: Date?
     private var lastUploadBySemanticKey: [DeduplicationKey: (uploadedAt: Date, capturedAt: Date?)] = [:]
+    // Unknown after restart: conservatively deliver first current evidence and recover the durable outbox.
+    private var latestCompleteAcknowledgment: [String: (key: DeduplicationKey, at: Date, capturedAt: Date)] = [:]
     private var pendingByCoalescingKey: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var queuedOrActiveCoalescingKeys: Set<PendingCoalescingKey> = []
     private var activeRequests: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
@@ -363,6 +365,22 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             authorizationState: Self.authorizationName(for: authorizationStatus),
             forceUpload: forceUpload
         )
+        let locationKey = PendingCoalescingKey.location(installationId: installationId)
+        if pendingByCoalescingKey[locationKey] == nil, activeRequests[locationKey] == nil,
+           suppressUnchangedComplete(dedupeKey, capturedAt: context.capturedAt, now: now) {
+            // Advance chronology without claiming a new acknowledgment or extending cadence.
+            if newestContextByCoalescingKey[locationKey].map({ canReplace($0, with: context) }) ?? true {
+                newestContextByCoalescingKey[locationKey] = context
+            }
+            if successfulAdmissions[installationId].map({ $0.revision < revision }) ?? true {
+                successfulAdmissions[installationId] = (revision, context)
+            }
+            admissionResult = "unchanged_signature_cadence"
+            LocationEnrichmentDiagnostics.record("unchanged_signature_cadence",
+                token: LocationEnrichmentDiagnostics.token(h3: context.h3Cell, capturedAt: context.capturedAt),
+                source: source.rawValue)
+            return true
+        }
         if shouldDedupeRequest(for: dedupeKey, now: now, capturedAt: context.capturedAt) {
             admissionResult = "already_acknowledged"
             if successfulAdmissions[installationId].map({ $0.revision < revision }) ?? true {
@@ -696,7 +714,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
             if outcome != .pending {
                 await waitForPendingSave()
                 if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
-                    lastUploadBySemanticKey[semanticDedupeKey] = (nowProvider(), capturedAt(of: workItem.request))
+                    recordAcknowledgment(semanticDedupeKey, request: workItem.request)
                 }
                 if pendingByCoalescingKey[coalescingKey] == workItem.request,
                    !queue.contains(where: { $0.coalescingKey == coalescingKey }) {
@@ -713,6 +731,30 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
 
     private func shouldContinueDraining(before deadline: ContinuousClock.Instant) -> Bool {
         !Task.isCancelled && ContinuousClock().now < deadline
+    }
+
+    private func recordAcknowledgment(_ key: DeduplicationKey, request: PersistedLocationUploadRequest) {
+        let now = nowProvider()
+        lastUploadBySemanticKey[key] = (now, capturedAt(of: request))
+        if isComplete(key), let capture = capturedAt(of: request),
+           minimumLocationObservationTimestamp.map({ capture >= $0 }) ?? true,
+           locationUploadEnabledProvider(), accuracyAuthorizationProvider() == .fullAccuracy,
+           key.isSubscribed == currentSubscription(),
+           key.authorizationState == Self.authorizationName(for: authorizationStatusProvider()) {
+            latestCompleteAcknowledgment[key.installationId] = (key, now, capture)
+        }
+    }
+
+    private func isComplete(_ key: DeduplicationKey) -> Bool {
+        guard case .locationSnapshot(_, let county, let fire, let forecast) = key.operation else { return false }
+        return [county, fire, forecast].allSatisfy { $0?.isEmpty == false }
+    }
+
+    private func suppressUnchangedComplete(_ key: DeduplicationKey, capturedAt: Date, now: Date) -> Bool {
+        guard isComplete(key), let last = latestCompleteAcknowledgment[key.installationId],
+              last.key == key, capturedAt > last.capturedAt else { return false }
+        let elapsed = now.timeIntervalSince(last.at)
+        return elapsed >= 0 && elapsed < 300
     }
 
     private func shouldDedupeRequest(for key: DeduplicationKey, now: Date, capturedAt: Date? = nil) -> Bool {
@@ -769,7 +811,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
                     "Location upload work completed source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
                 if outcome == .uploaded, let semanticDedupeKey = preparedKeys[workItem.coalescingKey] {
-                    lastUploadBySemanticKey[semanticDedupeKey] = (nowProvider(), capturedAt(of: workItem.request))
+                    recordAcknowledgment(semanticDedupeKey, request: workItem.request)
                 }
                 if pendingByCoalescingKey[workItem.coalescingKey] == workItem.request,
                    !queue.contains(where: { $0.coalescingKey == workItem.coalescingKey }) {
@@ -962,6 +1004,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         let cutoff = minimumLocationObservationTimestamp
         if lastObservedConsent != consent || lastObservedEvidenceCutoff != cutoff {
             lastUploadBySemanticKey.removeAll()
+            latestCompleteAcknowledgment.removeAll()
             lastObservedConsent = consent
             lastObservedEvidenceCutoff = cutoff
         }
@@ -1014,6 +1057,21 @@ actor LocationSnapshotPusher: LocationUploadCoordinating, LocationPresenceEnqueu
         let token = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let subscribed = currentSubscription()
         recordPreparedKey(request, token: token, subscribed: subscribed, authorization: authorization)
+        if let key = preparedKeys[coalescingKey(for: request)] {
+            if let last = latestCompleteAcknowledgment[request.installationId],
+               request.requestedAt > last.at,
+               suppressUnchangedComplete(key, capturedAt: context.capturedAt, now: nowProvider()) {
+                logger.debug("Presence stage=suppressed reason=unchanged_signature_cadence")
+                throw TransferSuppressed.obsolete
+            }
+            let previous = latestCompleteAcknowledgment[request.installationId]
+            let reason = previous == nil ? "retry_recovery" :
+                (previous?.key == key ? "scheduled_freshness" : "geography_change")
+            logger.debug("Presence stage=eligible reason=\(reason, privacy: .public)")
+            // A prepared request can reach Signal even when its acknowledgment is lost.
+            // Never use prior complete geography to suppress a subsequent completion.
+            latestCompleteAcknowledgment.removeValue(forKey: request.installationId)
+        }
         return makeLocationPayload(
             from: request, apnsToken: token, isSubscribed: subscribed,
             authorizationState: Self.authorizationName(for: authorization), now: nowProvider(),

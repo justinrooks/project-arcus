@@ -2563,6 +2563,7 @@ struct LocationSessionTests {
 
         func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
         func restoreConnectivity() { losesAcknowledgment = false }
+        func loseAcknowledgment() { losesAcknowledgment = true }
         func recordedCaptures() -> [Date] { captures }
         func recordedPayloads() -> [LocationSnapshotPushPayload] { payloads }
     }
@@ -2645,6 +2646,105 @@ struct LocationSessionTests {
         guard case .locationSnapshot(let storedContext) = restored.operation else { Issue.record("Missing location"); return }
         #expect(storedContext.capturedAt == expected)
         if !legacy { #expect(restored.requestedAt == request.requestedAt) }
+    }
+
+    @Test @MainActor
+    func acceptedSameCellCadenceDoesNotBypassThroughEnrichment() async throws {
+        let suite = "accepted-cadence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let start = Date.now.addingTimeInterval(-60)
+        let clock = Mutex(start)
+        let point = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        let cell = try SwiftyH3Hasher().h3Cell(for: point)
+        let transport = ScheduledReuseTransport(losesAcknowledgment: false)
+        let pusher = LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+            installationIdProvider: { "accepted-cadence" }, locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+            nowProvider: { clock.withLock { $0 } }, retryDelaysSeconds: [0],
+            queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue"))
+        let provider = LocationProvider(geocoder: UnavailablePresenceGeocoder(),
+            nowProvider: { clock.withLock { $0 } })
+        var completions: [Task<Bool, Never>] = []
+        let admission = LocationPresenceAdmission(provider: provider, foreground: pusher, background: pusher,
+            now: { clock.withLock { $0 } }, onObservation: { snapshot, source in
+                let context = durableContext(timestamp: snapshot.timestamp, h3Cell: cell, forecastZone: "COZ040")
+                completions.append(Task { await pusher.enqueueEnrichment(context, source: source, reason: .locationResolved) })
+            })
+        for offset in [0.0, 10, 20, 30] {
+            let timestamp = start.addingTimeInterval(offset)
+            clock.withLock { $0 = timestamp }
+            let result = await admission.accept(.init(coordinates: point, timestamp: timestamp,
+                accuracy: 20, forceAcceptance: true), source: .foregroundLocationChange)
+            #expect(result.acceptance == .accepted)
+            #expect(result.retention == (offset == 0 ? .retained : .notAttempted))
+            #expect(await completions.last?.value == true)
+        }
+        let sent = await transport.recordedPayloads()
+        #expect(sent.count == 2)
+        #expect(sent.first?.county == nil)
+        #expect(sent.last?.county == "COC031")
+        #expect(sent.last?.capturedAt == start)
+    }
+
+    @Test("complete cadence follows latest acknowledgment and preserves recovery",
+          arguments: ["stationary", "county", "forecast", "fire", "h3", "freshness", "partial", "lost_ack", "restart"])
+    func completePresenceCadence(scenario: String) async throws {
+        let suite = "complete-cadence-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let start = Date.now.addingTimeInterval(-600)
+        let cell = try SwiftyH3Hasher().h3Cell(for: .init(latitude: 39.7392, longitude: -104.9903))
+        let clock = Mutex(start)
+        let transport = ScheduledReuseTransport(losesAcknowledgment: false)
+        func makePusher() -> LocationSnapshotPusher {
+            LocationSnapshotPusher(locationUploader: transport, preferenceUploader: transport,
+                installationIdProvider: { "cadence" }, locationUploadEnabledProvider: { true },
+                authorizationStatusProvider: { .authorizedAlways }, accuracyAuthorizationProvider: { .fullAccuracy },
+                nowProvider: { clock.withLock { $0 } }, retryDelaysSeconds: [0],
+                queueStore: UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "queue"))
+        }
+        var pusher = makePusher()
+        let original = durableContext(timestamp: start, h3Cell: cell, forecastZone: "COZ040")
+        await pusher.enqueue(original, source: .foregroundLocationChange, reason: .locationResolved)
+        for offset in [10.0, 20, 30] {
+            clock.withLock { $0 = start.addingTimeInterval(offset) }
+            await pusher.enqueue(durableContext(timestamp: start.addingTimeInterval(offset), h3Cell: cell, forecastZone: "COZ040"),
+                source: .foregroundPrime, reason: .locationResolved)
+        }
+        #expect(await transport.recordedPayloads().count == 1)
+        if scenario == "county" {
+            let stale = durableContext(timestamp: start.addingTimeInterval(15), h3Cell: cell,
+                county: "COC005", forecastZone: "COZ040")
+            #expect(await pusher.enqueueEnrichment(stale, source: .foregroundLocationChange,
+                reason: .locationResolved) == false)
+            #expect(await transport.recordedPayloads().count == 1)
+        }
+        let elapsed = scenario == "freshness" ? 300.0 : 40
+        clock.withLock { $0 = start.addingTimeInterval(elapsed) }
+        let current = durableContext(timestamp: start.addingTimeInterval(elapsed),
+            h3Cell: scenario == "h3" ? cell + 1 : cell,
+            county: scenario == "county" ? "COC005" : "COC031",
+            forecastZone: scenario == "forecast" ? "COZ039" : "COZ040",
+            fireZone: scenario == "fire" ? "COZ245" : "COZ246")
+        if scenario == "restart" { pusher = makePusher() }
+        if scenario == "partial" || scenario == "lost_ack" {
+            if scenario == "lost_ack" { await transport.loseAcknowledgment() }
+            await pusher.enqueuePresence(current.snapshot, source: .foregroundLocationChange, reason: .locationChanged)
+            await transport.restoreConnectivity()
+        }
+        await pusher.enqueue(current, source: .foregroundLocationChange, reason: .locationResolved)
+        let sent = await transport.recordedPayloads()
+        #expect(sent.count == (scenario == "stationary" ? 1 :
+            (scenario == "partial" || scenario == "lost_ack" ? 3 : 2)))
+        #expect(sent.last?.county == (scenario == "county" ? "COC005" : "COC031"))
+        #expect(sent.last?.capturedAt == (scenario == "stationary" ? start : current.snapshot.timestamp))
+        #expect(sent.last?.zone != nil)
+        #expect(sent.last?.fireZone != nil)
+        if ["county", "forecast", "fire", "h3"].contains(scenario) {
+            clock.withLock { $0 = start.addingTimeInterval(50) }
+            await pusher.enqueue(durableContext(timestamp: start.addingTimeInterval(50), h3Cell: cell, forecastZone: "COZ040"),
+                source: .foregroundPrime, reason: .locationResolved)
+            #expect(await transport.recordedPayloads().count == 3)
+        }
     }
 
     @Test("enrichment rejects retention of a conflicting older or equal-time intent", arguments: [false, true])
