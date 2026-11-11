@@ -698,6 +698,30 @@ struct LocationSessionTests {
     }
 
     @Test @MainActor
+    func enrichmentStartsAfterAdmissionAndStillRunsForSameCellMovement() async throws {
+        let now = Date()
+        let provider = LocationProvider(geocoder: UnavailablePresenceGeocoder(), nowProvider: { now })
+        let presence = RecordingPresence()
+        var observations: [LocationSnapshot] = []
+        let admission = LocationPresenceAdmission(provider: provider, foreground: presence, background: presence,
+            now: { now }, onObservation: { snapshot, _ in observations.append(snapshot) })
+        let point = CLLocationCoordinate2D(latitude: 39, longitude: -104)
+        let first = await admission.accept(.init(coordinates: point, timestamp: now.addingTimeInterval(-1),
+            accuracy: 25, forceAcceptance: true), source: .foregroundLocationChange)
+        #expect(first.retention == .retained)
+        #expect(await presence.count() == 1)
+        #expect(observations.count == 1)
+        let second = await admission.accept(.init(coordinates: point, timestamp: now,
+            accuracy: 25, forceAcceptance: true), source: .foregroundLocationChange)
+        #expect(second.retention == .notAttempted)
+        #expect(observations.count == 2)
+        #expect(observations.last?.timestamp == now)
+        _ = await admission.accept(.init(coordinates: point, timestamp: now.addingTimeInterval(-2),
+            accuracy: 25, forceAcceptance: true), source: .foregroundLocationChange)
+        #expect(observations.count == 2)
+    }
+
+    @Test @MainActor
     func consentCutoffResetsCadenceWithoutReplayingOldEvidence() async {
         let clock = PresenceClock()
         let presence = RecordingPresence()

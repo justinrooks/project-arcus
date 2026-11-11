@@ -276,6 +276,53 @@ struct LocationContextResolverTests {
         }
     }
 
+    private actor PointGateClient: NwsClient {
+        let payload: Data
+        var starts = 0
+        var waiters: [CheckedContinuation<Void, Never>] = []
+        var blocked = true
+        init(payload: Data) { self.payload = payload }
+        func fetchPointMetadata(for location: Coordinate2D) async throws -> Data {
+            starts += 1
+            if blocked { await withCheckedContinuation { waiters.append($0) } }
+            return payload
+        }
+        func release() {
+            blocked = false
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+        }
+        func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data { Data() }
+        func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data { Data() }
+    }
+
+    @Test("same observation shares points work while newer captures resolve independently")
+    func coalescesObservationWork() async throws {
+        let client = PointGateClient(payload: makePointPayload(includeCounty: true, includeFireZone: true))
+        let provider = GridPointProvider(client: client, repo: NwsMetadataRepo())
+        let point = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
+        let timestamp = Date()
+        let first = Task { await provider.resolveGridPoint(for: point, capturedAt: timestamp) }
+        #expect(await waitUntil { await client.starts == 1 })
+        let second = Task { await provider.resolveGridPoint(for: point, capturedAt: timestamp) }
+        await client.release()
+        let grid = try #require(await first.value)
+        #expect(await second.value == grid)
+        #expect(grid.hasCompleteTargetingSignature)
+        #expect(await client.starts == 1)
+        _ = await provider.resolveGridPoint(for: point, capturedAt: timestamp.addingTimeInterval(1))
+        #expect(await client.starts == 2)
+    }
+
+    @Test("targeting completeness requires every operational identifier", arguments: [false, true])
+    func partialSignature(includeCounty: Bool) async throws {
+        let provider = GridPointProvider(client: ResolverNwsClient(
+            pointPayload: makePointPayload(includeCounty: includeCounty, includeFireZone: false),
+            countyName: nil, fireZoneName: nil), repo: NwsMetadataRepo())
+        let grid = try #require(await provider.resolveGridPoint(for: .init(latitude: 35, longitude: -97)))
+        #expect(!grid.hasCompleteTargetingSignature)
+    }
+
     @Test("late enrichment keeps context and NWS metadata tied to the requested observation", arguments: [false, true])
     func movedObservationDuringEnrichment(fails: Bool) async throws {
         let original = LocationSnapshot(coordinates: .init(latitude: 35.2226, longitude: -97.4395),

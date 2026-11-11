@@ -1557,7 +1557,7 @@ struct LocationProviderTests {
 
         func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
             calls += 1
-            if calls == 2 {
+            if calls == 1 {
                 return await withCheckedContinuation { release = $0; signal.yield(()) }
             }
             return ""
@@ -3889,11 +3889,11 @@ struct LocationProviderTests {
         #expect(accepted.coordinates.longitude == coordB.longitude)
         #expect(accepted.placemarkSummary == nil)
 
-        let resolved = await provider.ensurePlacemark(for: accepted, timeout: 1)
-        #expect(resolved.placemarkSummary == "B City")
-        #expect(await geocoder.callCountValue() == 2)
-
+        let resolution = Task { await provider.ensurePlacemark(for: accepted, timeout: 1) }
         await geocoder.releaseFirst()
+        let resolved = await resolution.value
+        #expect(resolved.placemarkSummary == "B City")
+        #expect(await geocoder.callCountValue() == 1)
     }
 
     @Test("updatePlacemarkIfNeeded updates snapshot when summary changes")

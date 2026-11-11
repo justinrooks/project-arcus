@@ -211,7 +211,7 @@ actor LocationContextResolver: LocationContextResolving {
             throw LocationContextError.missingH3Cell
         }
 
-        guard let grid = await gridPointProvider.resolveGridPoint(for: enrichedSnapshot.coordinates),
+        guard let grid = await gridPointProvider.resolveGridPoint(for: enrichedSnapshot.coordinates, capturedAt: snapshot.timestamp),
               let countyCode = grid.countyCode,
               let fireZone = grid.fireZone,
               !countyCode.isEmpty,
@@ -220,6 +220,7 @@ actor LocationContextResolver: LocationContextResolving {
             throw LocationContextError.missingRegionContext
         }
 
+        try Task.checkCancellation()
         let context = LocationContext(snapshot: enrichedSnapshot, h3Cell: h3Cell, grid: grid)
         logger.info(
             "Location context resolved hasPlacemark=\((enrichedSnapshot.placemarkSummary != nil), privacy: .public) hasCounty=\((grid.countyCode?.isEmpty == false), privacy: .public) hasFireZone=\((grid.fireZone?.isEmpty == false), privacy: .public)"

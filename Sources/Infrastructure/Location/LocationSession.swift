@@ -517,6 +517,12 @@ final class LocationSession: Sendable {
     }
 
     private func handleSnapshotUpdate(_ snapshot: LocationSnapshot) async {
+        // Display-only stream updates must not restart NWS resolution or presence ingestion.
+        if let context = currentContext, context.snapshot.hasSameObservation(as: snapshot) {
+            currentSnapshot = snapshot
+            currentContext = refreshedContextIfStable(context, snapshot: snapshot)
+            return
+        }
         if currentSnapshot != snapshot {
             currentSnapshot = snapshot
         }
