@@ -1,6 +1,6 @@
 # Location enrichment timing — LOC-16 / #878
 
-The production policy remains immediate durable H3 admission and best-effort dispatch. No 250 ms or 500 ms dispatch holdback is implemented. NWS identifiers are resolved independently of reverse geocoding, optional zone labels, Home, and weather-store initialization. County, forecast-zone, and fire-zone identifiers must all be nonempty for a complete targeting signature; missing identifiers produce a partial signature rather than invented codes. The existing resolver still requires county and fire metadata for weather context, while the process-owned presence path can retain partial metadata.
+The production policy remains immediate durable H3 admission and best-effort dispatch. No 250 ms or 500 ms dispatch holdback is implemented. NWS identifiers are resolved independently of reverse geocoding, Home, and weather-store initialization. The targeting provider does not request optional zone labels because its consumers do not use late label results. County, forecast-zone, and fire-zone identifiers must all be nonempty for a complete targeting signature; missing identifiers produce a partial signature rather than invented codes. The existing resolver still requires county and fire metadata for weather context, while the process-owned presence path can retain partial metadata.
 
 ## Diagnostic boundaries
 

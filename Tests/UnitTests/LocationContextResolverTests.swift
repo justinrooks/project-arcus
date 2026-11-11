@@ -534,12 +534,11 @@ struct LocationContextResolverTests {
         #expect(context.grid.fireZone == "OKZ025")
         #expect(context.grid.countyLabel == nil)
         #expect(context.grid.fireZoneLabel == nil)
-        #expect(await waitUntil {
-            let finished = await client.completedZones
-            let display = await repo.currentRegionContextSnapshot()
-            return finished == 2 && display?.countyLabel == (failedZones.contains("OKC109") ? nil : "Oklahoma County") &&
-                display?.fireZoneLabel == (failedZones.contains("OKZ025") ? nil : "Central Oklahoma")
-        })
+        #expect(await client.completedZones == 0)
+        // Explicit label callers still get independent optional-label failure handling.
+        let (county, fire) = try await repo.getLocationLabels(using: client, for: "OKC109", and: "OKZ025")
+        #expect(county == (failedZones.contains("OKC109") ? nil : "Oklahoma County"))
+        #expect(fire == (failedZones.contains("OKZ025") ? nil : "Central Oklahoma"))
         let cached = await repo.currentRegionContextSnapshot()
         #expect(cached?.countyCode == "OKC109")
         #expect(cached?.forecastZone == "OKZ025")
@@ -556,7 +555,7 @@ struct LocationContextResolverTests {
         #expect(fire == nil)
     }
 
-    @Test("non-cooperative labels cannot withhold targeting context")
+    @Test("targeting resolution never starts unused zone-label requests")
     func stalledLabelsDoNotBlockContext() async throws {
         let client = StalledLabelClient(pointPayload: makePointPayload(includeCounty: true, includeFireZone: true))
         let repo = NwsMetadataRepo(labelTimeout: .seconds(30))
@@ -574,7 +573,7 @@ struct LocationContextResolverTests {
         #expect(grid?.fireZone == "OKZ025")
         #expect(grid?.countyLabel == nil && grid?.fireZoneLabel == nil)
         _ = await gridProvider.resolveGridPoint(for: .init(latitude: 35.2226, longitude: -97.4395))
-        #expect(await waitUntil { await client.starts >= 2 })
+        #expect(await client.starts == 0)
         await client.release()
         watchdog.cancel()
         await watchdog.value

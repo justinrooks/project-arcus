@@ -14,7 +14,6 @@ actor GridPointProvider {
     let logger = Logger.providersNwsGrid
     private let client: NwsClient
     private let metadataRepo: NwsMetadataRepo
-    private var lastSnapshot: GridPointSnapshot?
     private struct RequestKey: Hashable {
         let coordinate: Coordinate2D
         let capturedAt: Date?
@@ -67,9 +66,7 @@ actor GridPointProvider {
                 shape: LocationEnrichmentDiagnostics.shape(county: snapshot.countyCode,
                     forecast: snapshot.forecastZone, fire: snapshot.fireZone))
             if publicationID == id {
-                lastSnapshot = snapshot
                 await publish(snapshot)
-                Task { await self.resolveLabels(for: decoded, coordinates: coordinates, snapshot: snapshot, id: id) }
             }
 
             logger.info(
@@ -89,15 +86,6 @@ actor GridPointProvider {
         )
     }
 
-    private func resolveLabels(for decoded: NWSGridPoint, coordinates: Coordinate2D,
-                               snapshot: GridPointSnapshot, id: UUID) async {
-        guard let (county, fire) = try? await metadataRepo.getLocationLabels(
-            using: client, for: snapshot.countyCode, and: snapshot.fireZone
-        ), publicationID == id else { return }
-        let enriched = GridPointSnapshot(from: decoded, with: coordinates, countyLabel: county, fireZoneLabel: fire)
-        lastSnapshot = enriched
-        await publish(enriched)
-    }
 
 }
 
