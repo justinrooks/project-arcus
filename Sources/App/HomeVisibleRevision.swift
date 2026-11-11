@@ -61,7 +61,10 @@ struct HomeVisibleRevision: Sendable, Equatable {
         let enrichment = (observed.lastAirQualityLoadAt != nil || observed.lastStormSetupLoadAt != nil) &&
             observed.updatedAt >= (priorEnrichment?.updatedAt ?? .distantPast)
             ? observed : previous?.enrichment
-        let priorDisplay = previous?.locationDisplay ?? core
+        // A newer accepted observation retires names from older captures in this scope.
+        let priorDisplay = previous?.locationDisplay.flatMap {
+            $0.locationTimestamp >= core.locationTimestamp ? $0 : nil
+        } ?? core
         let display = observed.locationTimestamp >= priorDisplay.locationTimestamp &&
             observed.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? observed : priorDisplay

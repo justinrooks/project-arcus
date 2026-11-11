@@ -852,6 +852,47 @@ struct HomeViewProjectionLaunchTests {
 }
 
 extension HomeViewProjectionLaunchTests {
+    @Test("newer unnamed accepted capture retires the old name until its own enrichment arrives")
+    func acceptedUnnamedCaptureRetiresPriorDisplayName() {
+        let a = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let weather = SummaryWeather(temperature: .init(value: 75, unit: .fahrenheit), symbolName: "sun.max",
+            conditionText: "Clear", asOf: .init(timeIntervalSince1970: 201),
+            dewPoint: .init(value: 50, unit: .fahrenheit), humidity: 0.4,
+            windSpeed: .init(value: 5, unit: .milesPerHour), windGust: nil, windDirection: "N",
+            pressure: .init(value: 30, unit: .inchesOfMercury), pressureTrend: "steady", visibility: nil)
+        let recordA = makeProjectionRecord(context: a, updatedAt: .init(timeIntervalSince1970: 200))
+        let acceptedA = HomeVisibleRevision.derive(previous: nil, observed: recordA, projectionKey: recordA.projectionKey)
+        let snapshotB = LocationSnapshot(coordinates: a.snapshot.coordinates,
+            timestamp: a.snapshot.timestamp.addingTimeInterval(1), accuracy: a.snapshot.accuracy,
+            placemarkSummary: nil, h3Cell: a.h3Cell)
+        let b = LocationContext(snapshot: snapshotB, h3Cell: a.h3Cell, grid: a.grid)
+        let recordB = makeProjectionRecord(context: b, updatedAt: .init(timeIntervalSince1970: 201), weather: weather)
+        let acceptedB = HomeVisibleRevision.derive(previous: acceptedA, observed: recordB, projectionKey: recordB.projectionKey)
+        func presentation(_ revision: HomeVisibleRevision?) -> HomeView.HomePresentationSnapshot {
+            .init(visibleRevision: revision, newestStartupProjection: recordB, currentContext: nil,
+                pipelineSnap: nil, pipelineStormRisk: nil, pipelineSevereRisk: nil, pipelineFireRisk: nil,
+                pipelineWeather: nil, pipelineAirQuality: nil, pipelineMesos: [], pipelineAlerts: [],
+                resolvedLocationScopedRefreshKey: nil, alertSnapshotRefreshKey: nil, pipelineStormSetup: nil,
+                pipelineStormSetupCurrentResponse: nil, stormSetupRefreshKey: nil, isUITestStaticMode: false, now: .now)
+        }
+        let interim = presentation(acceptedB)
+        #expect(acceptedB?.core == recordB)
+        #expect(interim.locationDisplayName == nil)
+        #expect(SummaryView.locationStatusText(snapshot: interim.locationSnapshot, readinessState: .ready,
+                                             displayName: interim.locationDisplayName) == "Current location")
+        let stale = HomeVisibleRevision.derive(previous: acceptedB, observed: recordA, projectionKey: recordB.projectionKey)
+        #expect(presentation(stale).locationDisplayName == nil)
+        var namedB = snapshotB
+        namedB.placemarkSummary = "City B"
+        let enriched = makeProjectionRecord(context: .init(snapshot: namedB, h3Cell: b.h3Cell, grid: b.grid),
+            updatedAt: recordB.updatedAt, weather: weather)
+        let named = HomeVisibleRevision.derive(previous: stale, observed: enriched, projectionKey: recordB.projectionKey)
+        #expect(presentation(named).locationDisplayName == "City B")
+        #expect(named?.core == recordB)
+        #expect(presentation(named).weather == weather)
+        #expect(presentation(named).locationSnapshot?.timestamp == snapshotB.timestamp)
+    }
+
     @Test("late placemark reaches Today without promoting a new weather revision")
     func latePlacemarkReachesPresentation() {
         let named = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
@@ -934,6 +975,7 @@ extension HomeViewProjectionLaunchTests {
     private func makeProjectionRecord(
         context: LocationContext,
         updatedAt: Date,
+        weather: SummaryWeather? = nil,
         stormSetup: StormSetupDTO? = nil,
         airQuality: AirQualityCurrentResponse? = nil,
         timeZoneId: String? = nil,
@@ -955,7 +997,7 @@ extension HomeViewProjectionLaunchTests {
             createdAt: updatedAt,
             updatedAt: updatedAt,
             lastViewedAt: updatedAt,
-            weather: nil,
+            weather: weather,
             stormRisk: nil,
             severeRisk: nil,
             fireRisk: nil,
