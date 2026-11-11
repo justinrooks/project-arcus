@@ -7,6 +7,8 @@ struct HomeVisibleRevision: Sendable, Equatable {
     let core: HomeProjectionRecord
     let alerts: HomeProjectionRecord?
     let enrichment: HomeProjectionRecord?
+    // Display metadata advances independently; core observation and assessment evidence stay immutable.
+    var locationDisplay: HomeProjectionRecord? = nil
 
     var projectionKey: String { core.projectionKey }
     var weather: SummaryWeather? { core.weather }
@@ -59,7 +61,11 @@ struct HomeVisibleRevision: Sendable, Equatable {
         let enrichment = (observed.lastAirQualityLoadAt != nil || observed.lastStormSetupLoadAt != nil) &&
             observed.updatedAt >= (priorEnrichment?.updatedAt ?? .distantPast)
             ? observed : previous?.enrichment
-        return HomeVisibleRevision(core: core, alerts: alerts, enrichment: enrichment)
+        let priorDisplay = previous?.locationDisplay ?? core
+        let display = observed.locationTimestamp >= priorDisplay.locationTimestamp &&
+            observed.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? observed : priorDisplay
+        return HomeVisibleRevision(core: core, alerts: alerts, enrichment: enrichment, locationDisplay: display)
     }
 }
 
@@ -169,13 +175,15 @@ struct HomeVisiblePresentation: Sendable, Equatable {
         case .alertsAccepted(let record):
             guard record.projectionKey == contextKey, record.lastHotAlertsLoadAt != nil,
                   let current = revision, record.updatedAt >= (current.alerts ?? current.core).updatedAt else { return }
-            revision = HomeVisibleRevision(core: current.core, alerts: record, enrichment: current.enrichment)
+            revision = HomeVisibleRevision(core: current.core, alerts: record, enrichment: current.enrichment,
+                                           locationDisplay: current.locationDisplay)
         case .enrichmentAccepted(let record):
             guard record.projectionKey == contextKey,
                   record.lastAirQualityLoadAt != nil || record.lastStormSetupLoadAt != nil,
                   let current = revision,
                   record.updatedAt >= (current.enrichment ?? current.core).updatedAt else { return }
-            revision = HomeVisibleRevision(core: current.core, alerts: current.alerts, enrichment: record)
+            revision = HomeVisibleRevision(core: current.core, alerts: current.alerts, enrichment: record,
+                                           locationDisplay: current.locationDisplay)
         case .failed(let id):
             guard activeAttemptID == id else { return }
             outcome = .failed

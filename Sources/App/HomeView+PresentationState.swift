@@ -9,6 +9,7 @@ extension HomeView {
     struct HomePresentationSnapshot {
         let projection: HomeProjectionRecord?
         let locationSnapshot: LocationSnapshot?
+        let locationDisplayName: String?
         let stormRisk: StormRiskLevel?
         let severeRisk: SevereWeatherThreat?
         let fireRisk: FireRiskLevel?
@@ -67,6 +68,15 @@ extension HomeView {
                 displaySnapshot = accepted
             }
             self.locationSnapshot = displaySnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
+            let acceptedName = (visibleRevision?.locationDisplay ?? projection)?.placemarkSummary
+            if let projection, let currentContext,
+               HomeProjection.projectionKey(for: currentContext) == projection.projectionKey,
+               currentContext.snapshot.timestamp >= (visibleRevision?.locationDisplay?.locationTimestamp ?? projection.locationTimestamp),
+               currentContext.snapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                locationDisplayName = currentContext.snapshot.placemarkSummary
+            } else {
+                locationDisplayName = acceptedName
+            }
             self.stormRisk = visibleRevision?.stormRisk ?? (isUITestStaticMode ? pipelineStormRisk : nil)
             self.severeRisk = visibleRevision?.severeRisk ?? (isUITestStaticMode ? pipelineSevereRisk : nil)
             self.fireRisk = visibleRevision?.fireRisk ?? (isUITestStaticMode ? pipelineFireRisk : nil)

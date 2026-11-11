@@ -10,6 +10,7 @@ struct TodayTabView: View {
     @State private var selectedSummaryAlertDetent: PresentationDetent = .medium
 
     let snap: LocationSnapshot?
+    var locationDisplayName: String? = nil
     let stormSetup: StormSetupDTO?
     let stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
     let stormSetupPreferences: StormSetupPreferences
@@ -97,6 +98,7 @@ struct TodayTabView: View {
                 ScrollView {
                     SummaryView(
                         snap: snap,
+                        locationDisplayName: locationDisplayName,
                         stormSetup: stormSetup,
                         stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
                         stormSetupPreferences: stormSetupPreferences,

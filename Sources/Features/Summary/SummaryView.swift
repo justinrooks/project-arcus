@@ -130,6 +130,7 @@ struct SummaryView: View {
     }
 
     let snap: LocationSnapshot?
+    let locationDisplayName: String?
     let stormSetup: StormSetupDTO?
     let stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
     let stormSetupPreferences: StormSetupPreferences
@@ -167,6 +168,7 @@ struct SummaryView: View {
 
     init(
         snap: LocationSnapshot? = nil,
+        locationDisplayName: String? = nil,
         stormSetup: StormSetupDTO? = nil,
         stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse? = nil,
         stormSetupPreferences: StormSetupPreferences = StormSetupPreferences(),
@@ -198,6 +200,7 @@ struct SummaryView: View {
         onRecoverLocation: @escaping () async -> Void = {}
     ) {
         self.snap = snap
+        self.locationDisplayName = locationDisplayName
         self.stormSetup = stormSetup
         self.stormSetupProfileAnalysisResponse = stormSetupProfileAnalysisResponse
         self.stormSetupPreferences = stormSetupPreferences
@@ -234,13 +237,15 @@ struct SummaryView: View {
     }
 
     private var statusText: String {
-        Self.locationStatusText(snapshot: snap, readinessState: readinessState)
+        Self.locationStatusText(snapshot: snap, readinessState: readinessState, displayName: locationDisplayName)
     }
 
     static func locationStatusText(
         snapshot: LocationSnapshot?,
-        readinessState: SummaryReadinessState
+        readinessState: SummaryReadinessState,
+        displayName: String? = nil
     ) -> String {
+        if let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
         if let placemark = snapshot?.placemarkSummary?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            placemark.isEmpty == false {
