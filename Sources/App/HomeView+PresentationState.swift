@@ -68,12 +68,18 @@ extension HomeView {
                 displaySnapshot = accepted
             }
             self.locationSnapshot = displaySnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
-            let acceptedName = (visibleRevision?.locationDisplay ?? projection)?.placemarkSummary
+            let acceptedDisplay = visibleRevision?.locationDisplay ?? projection
+            let acceptedName = acceptedDisplay?.placemarkSummary
             if let projection, let currentContext,
                HomeProjection.projectionKey(for: currentContext) == projection.projectionKey,
-               currentContext.snapshot.timestamp >= (visibleRevision?.locationDisplay?.locationTimestamp ?? projection.locationTimestamp),
-               currentContext.snapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-                locationDisplayName = currentContext.snapshot.placemarkSummary
+               currentContext.snapshot.timestamp >= (visibleRevision?.locationDisplay?.locationTimestamp ?? projection.locationTimestamp) {
+                // The current observation is authoritative even before its weather is accepted.
+                // An explicit fallback prevents Summary from reviving the cached snapshot's name.
+                let name = currentContext.snapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let sameCaptureName = currentContext.snapshot.timestamp == acceptedDisplay?.locationTimestamp
+                    ? acceptedName?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+                locationDisplayName = name?.isEmpty == false ? name
+                    : (sameCaptureName?.isEmpty == false ? sameCaptureName : "Current location")
             } else {
                 locationDisplayName = acceptedName
             }

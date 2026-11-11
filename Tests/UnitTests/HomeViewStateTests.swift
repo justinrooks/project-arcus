@@ -852,6 +852,47 @@ struct HomeViewProjectionLaunchTests {
 }
 
 extension HomeViewProjectionLaunchTests {
+    @Test("newer unnamed current observation hides cached name before weather acceptance")
+    func unnamedCurrentCaptureDoesNotReviveCachedName() {
+        let a = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let weather = SummaryWeather(temperature: .init(value: 75, unit: .fahrenheit), symbolName: "sun.max",
+            conditionText: "Clear", asOf: .init(timeIntervalSince1970: 200),
+            dewPoint: .init(value: 50, unit: .fahrenheit), humidity: 0.4,
+            windSpeed: .init(value: 5, unit: .milesPerHour), windGust: nil, windDirection: "N",
+            pressure: .init(value: 30, unit: .inchesOfMercury), pressureTrend: "steady", visibility: nil)
+        let cached = makeProjectionRecord(context: a, updatedAt: .init(timeIntervalSince1970: 200), weather: weather)
+        let visible = HomeVisibleRevision.derive(previous: nil, observed: cached, projectionKey: cached.projectionKey)
+        let b = LocationContext(snapshot: .init(
+            coordinates: .init(latitude: a.snapshot.coordinates.latitude + 0.0001, longitude: a.snapshot.coordinates.longitude),
+            timestamp: a.snapshot.timestamp.addingTimeInterval(1), accuracy: a.snapshot.accuracy,
+            placemarkSummary: nil, h3Cell: a.h3Cell), h3Cell: a.h3Cell, grid: a.grid)
+        func presentation(_ context: LocationContext, revision: HomeVisibleRevision? = nil) -> HomeView.HomePresentationSnapshot {
+            .init(visibleRevision: revision ?? visible, newestStartupProjection: cached, currentContext: context,
+                pipelineSnap: nil, pipelineStormRisk: nil, pipelineSevereRisk: nil, pipelineFireRisk: nil,
+                pipelineWeather: nil, pipelineAirQuality: nil, pipelineMesos: [], pipelineAlerts: [],
+                resolvedLocationScopedRefreshKey: nil, alertSnapshotRefreshKey: nil, pipelineStormSetup: nil,
+                pipelineStormSetupCurrentResponse: nil, stormSetupRefreshKey: nil, isUITestStaticMode: false, now: .now)
+        }
+        var unnamedA = a.snapshot
+        unnamedA.placemarkSummary = nil
+        #expect(presentation(.init(snapshot: unnamedA, h3Cell: a.h3Cell, grid: a.grid)).locationDisplayName == "Bennett, CO")
+        let waiting = presentation(b)
+        #expect(waiting.locationSnapshot?.placemarkSummary == "Bennett, CO")
+        #expect(SummaryView.locationStatusText(snapshot: waiting.locationSnapshot, readinessState: .ready,
+                                             displayName: waiting.locationDisplayName) == "Current location")
+        #expect(waiting.projection == cached)
+        #expect(waiting.weather == weather)
+        #expect(waiting.locationSnapshot?.timestamp == a.snapshot.timestamp)
+        var namedB = b.snapshot
+        namedB.placemarkSummary = "City B"
+        let current = LocationContext(snapshot: namedB, h3Cell: b.h3Cell, grid: b.grid)
+        #expect(presentation(current).locationDisplayName == "City B")
+        let namedRecord = makeProjectionRecord(context: current, updatedAt: cached.updatedAt, weather: weather)
+        let namedRevision = HomeVisibleRevision.derive(previous: visible, observed: namedRecord, projectionKey: cached.projectionKey)
+        #expect(presentation(a, revision: namedRevision).locationDisplayName == "City B")
+        #expect(namedRevision?.core == cached)
+    }
+
     @Test("newer unnamed accepted capture retires the old name until its own enrichment arrives")
     func acceptedUnnamedCaptureRetiresPriorDisplayName() {
         let a = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
