@@ -19,6 +19,7 @@ actor GridPointProvider {
         let coordinate: Coordinate2D
         let capturedAt: Date?
     }
+    private(set) var coalescedRequestCount = 0
     private var inFlight: [RequestKey: Task<GridPointSnapshot?, Never>] = [:]
     private var completed: (key: RequestKey, snapshot: GridPointSnapshot)?
     private var publicationID = UUID()
@@ -33,12 +34,15 @@ actor GridPointProvider {
     func resolveGridPoint(for point: CLLocationCoordinate2D, capturedAt: Date? = nil) async -> GridPointSnapshot? {
         let key = RequestKey(coordinate: Coordinate2D(point), capturedAt: capturedAt)
         if capturedAt != nil, completed?.key == key { return completed?.snapshot }
-        if let task = inFlight[key] { return await task.value }
+        if let task = inFlight[key] {
+            coalescedRequestCount += 1
+            return await task.value
+        }
         let task = Task { await self.loadGridPoint(for: point, capturedAt: capturedAt) }
         inFlight[key] = task
         let result = await task.value
         inFlight[key] = nil
-        if let result, let capturedAt, capturedAt >= (completed?.key.capturedAt ?? .distantPast) {
+        if let result, result.hasCompleteTargetingSignature, let capturedAt, capturedAt >= (completed?.key.capturedAt ?? .distantPast) {
             completed = (key, result)
         }
         return result

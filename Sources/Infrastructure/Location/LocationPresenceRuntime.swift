@@ -36,13 +36,8 @@ final class LocationPresenceRuntime {
             onObservation: { snapshot, source in
                 guard pusher.isLocationSharingEnabled else { return }
                 Task {
-                    guard let h3 = snapshot.h3Cell,
-                          let grid = await gridProvider.resolveGridPoint(for: snapshot.coordinates,
-                                                                        capturedAt: snapshot.timestamp),
-                          !Task.isCancelled,
-                          let current = await provider.snapshot(), current.hasSameObservation(as: snapshot) else { return }
-                    _ = await pusher.enqueueEnrichment(.init(snapshot: snapshot, h3Cell: h3, grid: grid),
-                                                       source: source, reason: .locationChanged)
+                    _ = await Self.enrichObservation(snapshot, source: source, provider: provider,
+                                                     gridProvider: gridProvider, pusher: pusher)
                 }
             })
         manager = LocationManager(
@@ -56,6 +51,18 @@ final class LocationPresenceRuntime {
             },
             drainBackgroundPresence: { await pusher.drainPendingUploads() }
         )
+    }
+
+    /// Shared by process-owned delivery and deterministic tests; never waits before H3 retention.
+    static func enrichObservation(_ snapshot: LocationSnapshot, source: LocationUploadSource,
+                                  provider: LocationProvider, gridProvider: GridPointProvider,
+                                  pusher: LocationSnapshotPusher) async -> Bool {
+        guard pusher.isLocationSharingEnabled, let h3 = snapshot.h3Cell,
+              let grid = await gridProvider.resolveGridPoint(for: snapshot.coordinates, capturedAt: snapshot.timestamp),
+              !Task.isCancelled, let current = await provider.snapshot(),
+              current.hasSameObservation(as: snapshot) else { return false }
+        return await pusher.enqueueEnrichment(.init(snapshot: snapshot, h3Cell: h3, grid: grid),
+                                              source: source, reason: .locationChanged)
     }
 
     func restoreBackgroundMonitoring() {

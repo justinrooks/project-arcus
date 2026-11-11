@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import Testing
+import Synchronization
 import ArcusCore
 @testable import SkyAware
 
@@ -141,6 +142,7 @@ struct LocationContextResolverTests {
         let countyName: String?
         let fireZoneName: String?
         var failedZones: Set<String>
+        var completedZones = 0
 
         init(pointPayload: Data, countyName: String?, fireZoneName: String?, failedZones: Set<String> = []) {
             self.pointPayload = pointPayload
@@ -160,6 +162,7 @@ struct LocationContextResolverTests {
         }
 
         func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+            defer { completedZones += 1 }
             if failedZones.contains("slow") && zoneType == .fire {
                 try await Task.sleep(for: .seconds(30))
             }
@@ -277,16 +280,22 @@ struct LocationContextResolverTests {
     }
 
     private actor PointGateClient: NwsClient {
-        let payload: Data
+        var payload: Data
+        var fails = false
         var starts = 0
         var waiters: [CheckedContinuation<Void, Never>] = []
         var blocked = true
         init(payload: Data) { self.payload = payload }
         func fetchPointMetadata(for location: Coordinate2D) async throws -> Data {
             starts += 1
+            let response = payload
+            let shouldFail = fails
             if blocked { await withCheckedContinuation { waiters.append($0) } }
-            return payload
+            if shouldFail { throw TestError.geocodeFailed }
+            return response
         }
+        func releaseLatest() { waiters.removeLast().resume() }
+        func setPayload(_ data: Data, fails: Bool = false) { payload = data; self.fails = fails }
         func release() {
             blocked = false
             waiters.forEach { $0.resume() }
@@ -305,6 +314,7 @@ struct LocationContextResolverTests {
         let first = Task { await provider.resolveGridPoint(for: point, capturedAt: timestamp) }
         #expect(await waitUntil { await client.starts == 1 })
         let second = Task { await provider.resolveGridPoint(for: point, capturedAt: timestamp) }
+        #expect(await waitUntil { await provider.coalescedRequestCount == 1 })
         await client.release()
         let grid = try #require(await first.value)
         #expect(await second.value == grid)
@@ -314,10 +324,94 @@ struct LocationContextResolverTests {
         #expect(await client.starts == 2)
     }
 
-    @Test("targeting completeness requires every operational identifier", arguments: [false, true])
-    func partialSignature(includeCounty: Bool) async throws {
+    @Test("older points completion cannot replace newer region publication")
+    func pointsPublicationSurvivesOutOfOrderCompletion() async throws {
+        let payload = makePointPayload(includeCounty: true, includeFireZone: true)
+        let client = PointGateClient(payload: payload)
+        let repo = NwsMetadataRepo()
+        let provider = GridPointProvider(client: client, repo: repo)
+        let timestamp = Date()
+        let old = Task { await provider.resolveGridPoint(for: .init(latitude: 35, longitude: -97), capturedAt: timestamp) }
+        #expect(await waitUntil { await client.starts == 1 })
+        await client.setPayload(Data(String(decoding: payload, as: UTF8.self).replacingOccurrences(of: "OKC109", with: "COC031").utf8))
+        let newer = Task { await provider.resolveGridPoint(for: .init(latitude: 40, longitude: -105),
+                                                          capturedAt: timestamp.addingTimeInterval(1)) }
+        #expect(await waitUntil { await client.starts == 2 })
+        await client.releaseLatest()
+        #expect(await newer.value?.countyCode == "COC031")
+        await client.release()
+        #expect(await old.value?.countyCode == "OKC109")
+        #expect(await repo.currentRegionContextSnapshot()?.countyCode == "COC031")
+    }
+
+    private actor PresenceUploads: LocationSnapshotUploading {
+        var payloads: [LocationSnapshotPushPayload] = []
+        func upload(_ payload: LocationSnapshotPushPayload) async throws { payloads.append(payload) }
+    }
+    private struct PreferenceUploads: DevicePreferenceSyncUploading {
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {}
+    }
+
+    @Test("process enrichment preserves durable H3 and retries failure/partial metadata", arguments: ["complete", "partial", "failure", "move", "revoke"])
+    @MainActor
+    func processEnrichmentReachesOutbox(scenario: String) async throws {
+        let now = Date()
+        let provider = LocationProvider(geocoder: TestGeocoder(result: .failure(.geocodeFailed)))
+        await provider.send(update: .init(coordinates: .init(latitude: 35.2226, longitude: -97.4395),
+                                         timestamp: now, accuracy: 15, forceAcceptance: true))
+        let snapshot = try #require(await provider.snapshot())
+        let suite = "process-enrichment-\(UUID())"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let queue = UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "outbox")
+        let uploads = PresenceUploads()
+        let sharing = Mutex(true)
+        let pusher = LocationSnapshotPusher(locationUploader: uploads, preferenceUploader: PreferenceUploads(),
+            apnsTokenProvider: { "" }, installationIdProvider: { "install-878" }, subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { sharing.withLock { $0 } }, authorizationStatusProvider: { .authorizedAlways },
+            accuracyAuthorizationProvider: { .fullAccuracy }, retryDelaysSeconds: [0], queueStore: queue)
+        #expect(await pusher.retainPresence(snapshot, source: .foregroundLocationChange))
+        let client = PointGateClient(payload: makePointPayload(includeCounty: scenario != "partial", includeFireZone: true))
+        if scenario == "failure" { await client.setPayload(Data(), fails: true) }
+        let grid = GridPointProvider(client: client, repo: NwsMetadataRepo())
+        let enrichment = Task { await LocationPresenceRuntime.enrichObservation(snapshot,
+            source: .foregroundLocationChange, provider: provider, gridProvider: grid, pusher: pusher) }
+        #expect(await waitUntil { await client.starts == 1 })
+        let retained = await UserDefaultsLocationUploadQueueStore(suiteName: suite, key: "outbox").loadPendingRequests()
+        #expect(retained.count == 1)
+        #expect(await uploads.payloads.isEmpty)
+        if scenario == "move" {
+            await provider.send(update: .init(coordinates: .init(latitude: 40, longitude: -105),
+                timestamp: now.addingTimeInterval(0.001), accuracy: 15, forceAcceptance: true))
+        }
+        if scenario == "revoke" { sharing.withLock { $0 = false } }
+        await client.release()
+        let success = await enrichment.value
+        #expect(success == (scenario == "complete" || scenario == "partial"))
+        if scenario == "failure" || scenario == "partial" {
+            await client.setPayload(makePointPayload(includeCounty: true, includeFireZone: true))
+            #expect(await LocationPresenceRuntime.enrichObservation(snapshot, source: .foregroundLocationChange,
+                provider: provider, gridProvider: grid, pusher: pusher))
+            #expect(await client.starts == 2)
+        }
+        let sent = await uploads.payloads
+        if scenario == "move" || scenario == "revoke" { #expect(sent.isEmpty) }
+        else {
+            let latest = try #require(sent.last)
+            #expect(latest.county == "OKC109" && latest.zone == "OKZ025" && latest.fireZone == "OKZ025")
+            #expect(latest.capturedAt == snapshot.timestamp)
+        }
+    }
+
+    @Test("targeting completeness requires every operational identifier", arguments: ["county", "fire", "forecast"])
+    func partialSignature(missing: String) async throws {
+        let payload = makePointPayload(includeCounty: missing != "county", includeFireZone: missing != "fire")
+        var object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        if missing == "forecast", var properties = object["properties"] as? [String: Any] {
+            properties.removeValue(forKey: "forecastZone")
+            object["properties"] = properties
+        }
         let provider = GridPointProvider(client: ResolverNwsClient(
-            pointPayload: makePointPayload(includeCounty: includeCounty, includeFireZone: false),
+            pointPayload: try JSONSerialization.data(withJSONObject: object),
             countyName: nil, fireZoneName: nil), repo: NwsMetadataRepo())
         let grid = try #require(await provider.resolveGridPoint(for: .init(latitude: 35, longitude: -97)))
         #expect(!grid.hasCompleteTargetingSignature)
@@ -354,8 +448,16 @@ struct LocationContextResolverTests {
                 for await snapshot in updates where snapshot.placemarkSummary == "New City" { return snapshot }
                 throw CancellationError()
             }
-            await geocoder.finish(fails: fails)
+            let watchdog = Task {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                await geocoder.finish(fails: fails)
+            }
+            let readyStart = ContinuousClock.now
             let context = try await resolution.value.get()
+            #expect(ContinuousClock.now - readyStart < .seconds(1))
+            await geocoder.finish(fails: fails)
+            watchdog.cancel()
+            await watchdog.value
             #expect(context.snapshot == original)
             #expect(context.grid.latitude == original.coordinates.latitude)
             #expect(context.grid.longitude == original.coordinates.longitude)
@@ -413,23 +515,25 @@ struct LocationContextResolverTests {
         let repo = NwsMetadataRepo()
         let client = ResolverNwsClient(
             pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
-            countyName: "Oklahoma", fireZoneName: "Central Oklahoma")
+            countyName: "Oklahoma", fireZoneName: "Central Oklahoma", failedZones: failedZones)
         let gridProvider = GridPointProvider(client: client, repo: repo)
         let resolver = LocationContextResolver(locationClient: makeLocationClient(provider: provider),
             locationProvider: provider, gridPointProvider: gridProvider,
             authorizationStatusProvider: { .authorizedWhenInUse }, authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in false })
 
-        let previous = try await resolver.resolveContext(from: snapshot)
-        #expect(previous.grid.countyLabel == nil)
-        #expect(await waitUntil { await repo.currentRegionContextSnapshot()?.countyLabel == "Oklahoma County" })
-        await client.setFailedZones(failedZones)
         let context = try await resolver.resolveContext(from: snapshot)
         #expect(context.grid.countyCode == "OKC109")
         #expect(context.grid.forecastZone == "OKZ025")
         #expect(context.grid.fireZone == "OKZ025")
         #expect(context.grid.countyLabel == nil)
         #expect(context.grid.fireZoneLabel == nil)
+        #expect(await waitUntil {
+            let finished = await client.completedZones
+            let display = await repo.currentRegionContextSnapshot()
+            return finished == 2 && display?.countyLabel == (failedZones.contains("OKC109") ? nil : "Oklahoma County") &&
+                display?.fireZoneLabel == (failedZones.contains("OKZ025") ? nil : "Central Oklahoma")
+        })
         let cached = await repo.currentRegionContextSnapshot()
         #expect(cached?.countyCode == "OKC109")
         #expect(cached?.forecastZone == "OKZ025")
@@ -449,7 +553,7 @@ struct LocationContextResolverTests {
     @Test("non-cooperative labels cannot withhold targeting context")
     func stalledLabelsDoNotBlockContext() async throws {
         let client = StalledLabelClient(pointPayload: makePointPayload(includeCounty: true, includeFireZone: true))
-        let repo = NwsMetadataRepo(labelTimeout: .milliseconds(100))
+        let repo = NwsMetadataRepo(labelTimeout: .seconds(30))
         let gridProvider = GridPointProvider(client: client, repo: repo)
         let watchdog = Task {
             try? await Task.sleep(for: .seconds(2))
