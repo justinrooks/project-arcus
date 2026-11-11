@@ -65,7 +65,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let countyCode: String
     let forecastZone: String?
     let fireZone: String
-    let placemarkSummary: String?
+    var placemarkSummary: String?
     let timeZoneId: String?
     let locationTimestamp: Date
     let createdAt: Date

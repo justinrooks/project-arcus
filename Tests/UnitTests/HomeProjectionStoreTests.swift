@@ -8,6 +8,48 @@ import Testing
 @Suite("Home Projection Store")
 @MainActor
 struct HomeProjectionStoreTests {
+    @Test("late location display survives reopen without accepting weather or newer geography", arguments: [false, true])
+    func lateLocationDisplaySurvivesReopen(pendingWeather: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration("Display", schema: schema, url: root.appendingPathComponent("display.sqlite"))
+        let named = makeContext(placemarkSummary: "Late City")
+        var snapshot = named.snapshot
+        snapshot.placemarkSummary = nil
+        let unresolved = LocationContext(snapshot: snapshot, h3Cell: named.h3Cell, grid: named.grid)
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let store = HomeProjectionStore(modelContainer: container)
+            let retention = HomeProjectionRetentionCoordinator.forStore(container)
+            await retention.publish(unresolved) {}
+            let widgetCore = try await store.updateWeather(makeWeather(), for: unresolved, loadedAt: Date(timeIntervalSince1970: 500))
+            _ = try await store.widgetPublication(for: unresolved)
+            if pendingWeather {
+                _ = try await store.updateWeather(makeWeather(temperature: 88), for: unresolved, loadedAt: Date(timeIntervalSince1970: 501))
+            }
+            let accepted = try #require(await store.projection(for: unresolved))
+            try await store.updateDisplayMetadata(for: named)
+            let updated = try #require(await store.projection(for: named))
+            #expect(updated.placemarkSummary == "Late City")
+            #expect(updated.weather == accepted.weather)
+            #expect(updated.updatedAt == accepted.updatedAt)
+            #expect(updated.lastWeatherLoadAt == accepted.lastWeatherLoadAt)
+            #expect(try await store.latestWidgetPublication()?.projection.placemarkSummary == "Late City")
+            #expect(try await store.latestWidgetPublication()?.projection.weather == widgetCore.weather)
+            // A later weather commit carrying the original unnamed context cannot erase the display update.
+            _ = try await store.updateWeather(makeWeather(), for: unresolved, loadedAt: Date(timeIntervalSince1970: 501))
+            let older = makeContext(timestamp: 99, placemarkSummary: "Old City")
+            try await store.updateDisplayMetadata(for: older)
+            #expect(try await store.projection(for: named)?.placemarkSummary == "Late City")
+        }
+        let reopened = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+        let restored = try #require(await reopened.projection(for: named))
+        #expect(restored.placemarkSummary == "Late City")
+        #expect(restored.locationTimestamp == named.snapshot.timestamp)
+    }
+
     @Test("build 113 upgrades use an isolated versioned store and leave the legacy cache untouched")
     func productionStoreFixture_opensIsolatedVersionedStore() throws {
         let root = FileManager.default.temporaryDirectory

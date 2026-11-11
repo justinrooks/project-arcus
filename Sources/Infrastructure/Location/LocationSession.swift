@@ -35,6 +35,7 @@ final class LocationSession: Sendable {
     private let presenceNow: @MainActor @Sendable () -> Date
     private let durableContextCache: any DurableLocationContextCaching
     private let retentionCoordinator: HomeProjectionRetentionCoordinator
+    private let onDisplayEnriched: @Sendable (LocationContext) async -> Void
     private let onContextPublished: @Sendable () async -> Void
 
     @ObservationIgnored
@@ -77,7 +78,8 @@ final class LocationSession: Sendable {
         presenceNow: @escaping @MainActor @Sendable () -> Date = { .now },
         durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache(),
         retentionCoordinator: HomeProjectionRetentionCoordinator = HomeProjectionRetentionCoordinator(),
-        onContextPublished: @escaping @Sendable () async -> Void = {}
+        onContextPublished: @escaping @Sendable () async -> Void = {},
+        onDisplayEnriched: @escaping @Sendable (LocationContext) async -> Void = { _ in }
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
@@ -88,6 +90,7 @@ final class LocationSession: Sendable {
         self.durableContextCache = durableContextCache
         self.retentionCoordinator = retentionCoordinator
         self.onContextPublished = onContextPublished
+        self.onDisplayEnriched = onDisplayEnriched
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -520,7 +523,11 @@ final class LocationSession: Sendable {
         // Display-only stream updates must not restart NWS resolution or presence ingestion.
         if let context = currentContext, context.snapshot.hasSameObservation(as: snapshot) {
             currentSnapshot = snapshot
-            currentContext = refreshedContextIfStable(context, snapshot: snapshot)
+            let enriched = refreshedContextIfStable(context, snapshot: snapshot)
+            currentContext = enriched
+            if enriched.snapshot.placemarkSummary != context.snapshot.placemarkSummary {
+                await onDisplayEnriched(enriched)
+            }
             return
         }
         if currentSnapshot != snapshot {

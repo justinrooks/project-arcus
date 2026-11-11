@@ -556,6 +556,48 @@ struct LocationManagerTests {
 @Suite("LocationSession")
 struct LocationSessionTests {
     @Test @MainActor
+    func latePlacemarkPublishesDisplayWithoutOperationalWork() async throws {
+        let original = durableContext(timestamp: .now)
+        var unnamed = original.snapshot
+        unnamed.placemarkSummary = nil
+        let context = LocationContext(snapshot: unnamed, h3Cell: original.h3Cell, grid: original.grid)
+        let updates = AsyncStream<LocationSnapshot>.makeStream()
+        let subscribed = AsyncStream<Void>.makeStream()
+        let displays = AsyncStream<LocationContext>.makeStream()
+        defer { updates.continuation.finish(); subscribed.continuation.finish(); displays.continuation.finish() }
+        let acceptedSnapshot = unnamed
+        let client = LocationClient(snapshot: { acceptedSnapshot }, updates: {
+            subscribed.continuation.yield(())
+            return updates.stream
+        })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways),
+                                      onUpdate: { _ in .accepted })
+        let resolver = ControlledResolver()
+        let uploads = StubUploadCoordinator()
+        let publications = Mutex(0)
+        let session = LocationSession(locationClient: client, locationManager: manager,
+            locationContextResolver: resolver, locationUploadCoordinator: uploads,
+            onContextPublished: { publications.withLock { $0 += 1 } },
+            onDisplayEnriched: { displays.continuation.yield($0) })
+        var subscription = subscribed.stream.makeAsyncIterator()
+        _ = await subscription.next()
+        session.currentContext = context
+        session.startupState = .ready
+        var named = unnamed
+        named.placemarkSummary = "Late City"
+        updates.continuation.yield(named)
+        let displayed = try await withTimeout(timeout: 5) {
+            var iterator = displays.stream.makeAsyncIterator()
+            return await iterator.next()
+        }
+        #expect(displayed?.snapshot.placemarkSummary == "Late City")
+        #expect(session.currentContext?.snapshot.timestamp == context.snapshot.timestamp)
+        #expect(await resolver.pendingIDs(for: .resolve).isEmpty)
+        #expect(await uploads.recordedEnqueueCount() == 0)
+        #expect(publications.withLock { $0 } == 0)
+    }
+
+    @Test @MainActor
     func accuracyRecoveryRejectsCachedEvidence() async throws {
         let (publications, published) = AsyncStream<Void>.makeStream()
         defer { published.finish() }

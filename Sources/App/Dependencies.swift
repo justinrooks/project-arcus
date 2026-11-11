@@ -456,7 +456,11 @@ final class Dependencies: Sendable {
             locationUploadCoordinator: locationUploadCoordinator,
             durableContextCache: DurableLocationContextCache(),
             retentionCoordinator: HomeProjectionRetentionCoordinator.forStore(container),
-            onContextPublished: { await homeProjectionStore.publishAcceptedAwareness() }
+            onContextPublished: { await homeProjectionStore.publishAcceptedAwareness() },
+            onDisplayEnriched: { context in
+                do { try await homeProjectionStore.updateDisplayMetadata(for: context) }
+                catch { Logger.appHomeRefresh.error("Unable to retain location display metadata") }
+            }
         )
         logger.info("Location session initialized")
         Task { @MainActor in

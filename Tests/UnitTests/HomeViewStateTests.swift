@@ -851,6 +851,35 @@ struct HomeViewProjectionLaunchTests {
     }
 }
 
+extension HomeViewProjectionLaunchTests {
+    @Test("late placemark reaches Today without promoting a new weather revision")
+    func latePlacemarkReachesPresentation() {
+        let named = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        var snapshot = named.snapshot
+        snapshot.placemarkSummary = nil
+        let unresolved = LocationContext(snapshot: snapshot, h3Cell: named.h3Cell, grid: named.grid)
+        let accepted = makeProjectionRecord(context: unresolved, updatedAt: Date(timeIntervalSince1970: 200))
+        let revision = HomeVisibleRevision(core: accepted, alerts: nil, enrichment: nil)
+        func presentation(_ context: LocationContext) -> HomeView.HomePresentationSnapshot {
+            .init(visibleRevision: revision, newestStartupProjection: accepted, currentContext: context,
+                pipelineSnap: nil, pipelineStormRisk: nil, pipelineSevereRisk: nil, pipelineFireRisk: nil,
+                pipelineWeather: nil, pipelineAirQuality: nil, pipelineMesos: [], pipelineAlerts: [],
+                resolvedLocationScopedRefreshKey: nil, alertSnapshotRefreshKey: nil, pipelineStormSetup: nil,
+                pipelineStormSetupCurrentResponse: nil, stormSetupRefreshKey: nil, isUITestStaticMode: false, now: .now)
+        }
+        #expect(presentation(unresolved).locationSnapshot?.placemarkSummary == nil)
+        #expect(presentation(named).locationSnapshot?.placemarkSummary == "Bennett, CO")
+        #expect(presentation(named).projection == accepted)
+        #expect(presentation(named).weather == revision.weather)
+        let newerSnapshot = LocationSnapshot(coordinates: named.snapshot.coordinates,
+            timestamp: named.snapshot.timestamp.addingTimeInterval(1), accuracy: named.snapshot.accuracy,
+            placemarkSummary: named.snapshot.placemarkSummary, h3Cell: named.h3Cell)
+        let newer = LocationContext(snapshot: newerSnapshot, h3Cell: named.h3Cell, grid: named.grid)
+        #expect(presentation(newer).locationSnapshot?.placemarkSummary == nil)
+    }
+
+}
+
     private func makeContext(
         h3Cell: Int64,
         countyCode: String,

@@ -57,7 +57,16 @@ extension HomeView {
             )
 
             self.projection = projection
-            self.locationSnapshot = projection?.locationSnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
+            var displaySnapshot = projection?.locationSnapshot
+            if var accepted = displaySnapshot, let observed = currentContext?.snapshot,
+               accepted.h3Cell == observed.h3Cell, accepted.timestamp == observed.timestamp,
+               accepted.coordinates.latitude == observed.coordinates.latitude,
+               accepted.coordinates.longitude == observed.coordinates.longitude,
+               observed.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                accepted.placemarkSummary = observed.placemarkSummary
+                displaySnapshot = accepted
+            }
+            self.locationSnapshot = displaySnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
             self.stormRisk = visibleRevision?.stormRisk ?? (isUITestStaticMode ? pipelineStormRisk : nil)
             self.severeRisk = visibleRevision?.severeRisk ?? (isUITestStaticMode ? pipelineSevereRisk : nil)
             self.fireRisk = visibleRevision?.fireRisk ?? (isUITestStaticMode ? pipelineFireRisk : nil)
