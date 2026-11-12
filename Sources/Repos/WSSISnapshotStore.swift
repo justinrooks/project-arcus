@@ -89,11 +89,13 @@ actor WSSISnapshotStore {
         try persist(boundedPayload(&next, byteLimit: byteLimit), failureAfterMutation: false)
     }
 
-    func prune(now: Date) throws {
+    func prune(now: Date, failureAfterMutation: Bool = false) throws {
         guard now.timeIntervalSince1970.isFinite else { throw WSSISnapshotError.invalidSnapshot }
         var next = try contents()
+        let previousCount = next.snapshots.count
         prune(&next, now: now)
-        try persist(encode(next), failureAfterMutation: false)
+        guard next.snapshots.count != previousCount else { return }
+        try persist(encode(next), failureAfterMutation: failureAfterMutation)
     }
 
     private func prune(_ contents: inout WSSICacheContents, now: Date) {

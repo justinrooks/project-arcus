@@ -291,6 +291,48 @@ struct WSSISnapshotStoreTests {
         #expect(try await store.read() == expected)
     }
 
+    @Test("Empty startup pruning does not create a canonical record, including after reopen")
+    func emptyStartupDoesNotWrite() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("cache.store")
+        do {
+            let container = try container(at: url)
+            let store = WSSISnapshotStore(modelContainer: container)
+            _ = try await store.acceptedCoverage(at: now)
+            #expect(try ModelContext(container).fetchCount(FetchDescriptor<WSSICacheRecord>()) == 0)
+        }
+        let reopened = try container(at: url)
+        #expect(try ModelContext(reopened).fetchCount(FetchDescriptor<WSSICacheRecord>()) == 0)
+    }
+
+    @Test("Healthy no-op prune skips persistence; changed prune rolls back on failure")
+    func prunePersistenceBoundary() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("cache.store")
+        var expected: [WSSICachedSnapshot] = []
+        var watermarks: [WSSIIssuanceWatermark] = []
+        do {
+            let store = WSSISnapshotStore(modelContainer: try container(at: url))
+            _ = try await store.replace(with: snapshot(), select: true, now: now)
+            expected = try await store.read()
+            watermarks = try await store.issuanceWatermarks()
+            // The injected persistence failure must be unreachable for a healthy no-op.
+            try await store.prune(now: now, failureAfterMutation: true)
+            await #expect(throws: WSSISnapshotError.injectedFailure) {
+                try await store.prune(now: now.addingTimeInterval(86400), failureAfterMutation: true)
+            }
+            #expect(try await store.read() == expected)
+        }
+        let store = WSSISnapshotStore(modelContainer: try container(at: url))
+        #expect(try await store.read() == expected)
+        #expect(try await store.issuanceWatermarks() == watermarks)
+        try await store.prune(now: now.addingTimeInterval(86400))
+        #expect(try await store.read().isEmpty)
+        #expect(try await store.issuanceWatermarks() == watermarks)
+    }
+
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
