@@ -1,0 +1,47 @@
+# WSSI foreground evidence and 1.6.0 activation decision
+
+Issue [#897](https://github.com/justinrooks/project-arcus/issues/897), baseline `0accc8859a2041e4c444c42cb8137204de2e6a27`, captured November 12, 2026. **Decision: NO-GO for user activation.** Keep the existing disabled-by-default `internalWSSIIngestionEnabled` gate and background deferral. Host live canonical acceptance is demonstrated; physical-device resource limits, transferred bytes, radio/energy cost and representative widespread-storm behavior remain unproven. Follow-up [#905](https://github.com/justinrooks/project-arcus/issues/905) owns memory attribution and the device/resource activation blocker; background feasibility remains [#898](https://github.com/justinrooks/project-arcus/issues/898).
+
+## Reproduce and inspect
+
+Run `bash tools/research/run_wssi_live_probe.sh /tmp/wssi-new-foreground-capture` from the repository root on macOS with Xcode. The directory must not exist. This explicitly makes live NOAA requests; it is not a test-lane dependency. The executable compiles the current production client, bounded reusable downloader, decoder, observed-publication validator, assessment and canonical store/coordinator with Swift 6 and `-O`. It extracts the production `HTTPResponse` value/header lookup without unrelated HTTP retry policy. A source template is copied outside the repo before compilation to avoid Xcode automatic app membership. Record source changes separately if running with a dirty tree.
+
+The probe uses the public research envelope `-112,36,-102,43`, never a user's location. It wraps the production downloader to retain each response and an exact URL/header/timing inventory. It calls `selectCoverage` and `refreshCoverage` with default production limits against an isolated, single-model SwiftData store containing the production V8 record. It does not exercise the entire app schema/migration, foreground admission actor, Home, UI or background execution. A second executable invocation performs disk readback with no network calls and evaluates real retained polygons. Failed live acceptance is recorded as `failed` with the actual error; a failed attempt must leave the isolated store empty. Instrumentation/persistence/readback failures stop the runner or appear as diagnostic errors; an `accepted` outcome must be assessed alongside readback and assessment artifacts.
+
+The [capture archive](foreground-evidence.tar.xz) contains all 120 raw bodies, `requests.json`, `outcome.json`, accepted snapshot, process-restart readback, polygon assessments, host/compiler identity, baseline revision, probe source and SHA-256 manifest. Extract with `tar -xf docs/research/wssi/foreground-evidence.tar.xz -C /tmp`; verify `SHA256SUMS` inside `foreground-live` with `shasum -a 256 -c SHA256SUMS`. Neither executable nor SQLite files are archived; `accepted.json` is the exact value compared against disk after restart. The standalone capture originally compiled the template directly; after moving it outside automatic app membership, it was rebuilt for offline readback/assessment only. No additional live scan was performed for that packaging correction.
+
+## Observed live result
+
+| Measurement | Observation |
+| --- | --- |
+| Environment | Apple Silicon macOS 27.2.1 (26B131), Swift 6.4.2, optimized standalone research executable |
+| Interval | 2026-11-12 21:49:48–21:50:32 UTC; snapshot verified at 21:50:25 UTC |
+| Outcome | Accepted revision 1; one complete snapshot matched after process restart |
+| Requests | 120 HTTP 200 responses: 80 before/after ID inventories and 40 geometry pages; no conditional request headers or retries |
+| Decoded response-body bytes | 80,032,104 including inventories; largest response 5,939,210 bytes |
+| Elapsed | 43.931 seconds including acquisition, acceptance, capture writes, diagnostic export and initial assessment; not isolated network latency |
+| Host process peak resident memory | 922,222,592 bytes from macOS `getrusage(RUSAGE_SELF).ru_maxrss`; includes capture and serialization, not attributable production allocations or an iPhone estimate |
+| Accepted JSON export | 61,711,947 bytes; 23 features across 12 identified layers, plus 8 unidentified empty observations |
+| Transferred bytes / allocations / energy | Unmeasured. Bodies are decoded by URLSession; gzip response headers occur, some lack Content-Length, and body totals exclude HTTP/TLS overhead. No Instruments allocation trace, battery delta, radio duration or Wi-Fi/cellular comparison |
+
+Both complete scans used the same regional envelope, page size 100 and one shared 120-second/100,000,000-decoded-byte/400-request budget. The production validator matched decoded content by object ID, retaining full polygon/ring coordinates. The snapshot provenance records two unconditional scans, exact request/decoded-byte counts and all twenty layer hashes. This proves observed stability during this retrieval, not NOAA atomic publication, latest-official-product status, long-term source reliability or device feasibility. No ArcGIS JSON error body occurred in these 120 responses; previously captured HTTP-200 errors remain a documented source risk.
+
+## Layer observations and local assessment
+
+`accepted.json` preserves every layer's source dates, full features, state and coverage; inventories and pages remain independently inspectable. Overall, Snow Amount, Snow Load and Blowing Snow Day 1 were `observedEmpty`; all four Ice Accumulation periods were `observedEmpty`. Those eight observations have no issuance/validity and no assessment layer. They remain unavailable forecast assessment, never forecast no-impact. The other twelve layers contain identified data. Source issuances include 19:16Z and 21:16Z on November 12; independent layer dates are intentional under the approved V8 policy.
+
+After process restart, the production assessment classified the actual Overall polygon boundary at longitude/latitude `-106.26915612350979,36.42708052682889` as `winterWeatherArea`; the in-coverage comparison point `-105,40` returned `noImpact`. Both outcomes were established for Days 1–3 at the snapshot verification time. Day 2 and Day 3 were also assessed at their actual future `validFrom` instants, explicitly as scenario-time evaluations, not current-impact claims. Initial current-time assessment correctly returned `notYetValid` for those future periods. Point `0,0` produced `outsideCoverage` for identified layers and `notLoaded` for omitted unidentified empties. No device location was sampled.
+
+## Device evidence and release budget
+
+CoreDevice initially listed a paired iPhone 18 Pro Max, but the detailed connection attempt returned “A connection to this device could not be established” and device state `unavailable`. No installation, device trace or device measurement occurred. The owner explicitly authorized proceeding with missing device evidence documented. Network interface/radio type and battery/thermal context were not captured for this host run. No device Wi-Fi, cellular, battery/energy, peak allocation, or widespread-storm measurement is claimed. Small feature inventories do not imply small geometry: intersecting features retain intact multipolygons outside the requested envelope.
+
+Proposed 1.6.0 activation budget is **zero user acquisitions until #905 resolves the resource gate**. Retain existing hard ceilings as rejection limits, not performance targets or a shipping traffic allowance. An activated per-device daily budget, cellular policy and energy allowance cannot responsibly be assigned from this host capture. Require attributable device peak memory and latency, wire-traffic metrics, Wi-Fi/cellular context and an explicit subsequent activation decision. Keep bounded foreground opportunities, persisted verification reuse, region reuse, one in-flight acquisition and failure backoff; do not introduce polling or automatic retries in this evidence change.
+
+For scale only, repeating this exact observed attempt twelve times/day would be 1,440 requests and 960,385,248 decoded body bytes/device/day; at 10,000 devices that would be 14.4 million requests and 9.604 TB decoded bodies/day (decimal units). These are arithmetic scenarios, not observed fleet traffic, transferred-byte estimates, NOAA capacity/quota evidence, or a proposed schedule. Even one attempt is 120 requests/device under this protocol. WPC's approximate two-hour cadence neither mandates polling nor guarantees freshness; reuse/backoff may reduce opportunities but cannot establish a safe fleet budget. The probe has no retry loop.
+
+## Validation and remaining limits
+
+The optimized Swift 6 probe compiled and completed live acceptance. Separate-process disk reconstruction equaled the complete accepted snapshot, including revision/provenance/layer states. Offline polygon evaluations used production geometry and assessment code. The archive manifest authenticates the retained local evidence against accidental drift, not NOAA publication identity. Focused native regression and final unit-lane evidence are reported in the PR. No coverage delta is claimed.
+
+The evidence supports a specific resource/device blocker and an explicit no-go decision, not a completed device release qualification. Revisit activation under #905 after phase-level attribution and physical-device measurements; do not widen resource limits, simplify geometry, loosen the two-scan contract or enable background acquisition based on this report.
