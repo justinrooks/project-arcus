@@ -64,7 +64,8 @@ actor WSSISnapshotStore {
         let previousIndex = next.snapshots.firstIndex { $0.snapshot.scope == snapshot.scope }
         next.snapshots.removeAll { $0.snapshot.scope == snapshot.scope }
         // Array order is selection recency, independent of wall-clock adjustments.
-        next.snapshots.insert(entry, at: select ? 0 : min(previousIndex ?? next.snapshots.count, next.snapshots.count))
+        // New unselected coverage replaces the secondary slot without displacing current selection.
+        next.snapshots.insert(entry, at: select ? 0 : min(previousIndex ?? 1, next.snapshots.count))
         next.snapshots = Array(next.snapshots.prefix(2))
         prune(&next, now: now)
         try next.validate()
