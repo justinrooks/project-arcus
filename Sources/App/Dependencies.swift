@@ -14,6 +14,7 @@ final class Dependencies: Sendable {
     static let liveAppRefreshID = "com.skyaware.app.refresh"
     // MARK: Core config
 
+    let wssiIngestion: WSSIForegroundIngestion?
     let appRefreshID: String
     let logger: Logger
     let persistenceMode: SkyAwarePersistentStoreBootstrap.Mode
@@ -291,8 +292,10 @@ final class Dependencies: Sendable {
         cadencePolicy: CadencePolicy?,
         orchestrator: BackgroundOrchestrator?,
         scheduler: BackgroundScheduler?,
-        weatherClient: WeatherClient?
+        weatherClient: WeatherClient?,
+        wssiIngestion: WSSIForegroundIngestion? = nil
     ) {
+        self.wssiIngestion = wssiIngestion
         self.appRefreshID = appRefreshID
         self.logger = logger
         self.persistenceMode = persistenceMode
@@ -554,9 +557,14 @@ final class Dependencies: Sendable {
             logger.error("Widget snapshot store unavailable; widget refresh writes are disabled")
             widgetSnapshotRefresher = nil
         }
+        let wssiIngestion = try WSSIForegroundIngestion(
+            store: WSSISnapshotStore(modelContainer: container), client: WSSIClient(),
+            enabled: { UserDefaults.standard.bool(forKey: "internalWSSIIngestionEnabled") }
+        )
         let homeIngestionExecutor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger.appHomeRefresh,
+                wssiIngestion: wssiIngestion,
                 spcSync: spc,
                 arcusAlertSync: arcus,
                 weatherClient: weatherClient,
@@ -627,7 +635,8 @@ final class Dependencies: Sendable {
             cadencePolicy: cadencePolicy,
             orchestrator: orchestrator,
             scheduler: scheduler,
-            weatherClient: weatherClient
+            weatherClient: weatherClient,
+            wssiIngestion: wssiIngestion
         )
     }
     

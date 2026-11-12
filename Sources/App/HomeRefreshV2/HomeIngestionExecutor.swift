@@ -287,6 +287,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
     struct Environment: Sendable {
         let logger: Logger
+        let wssiIngestion: WSSIForegroundIngestion?
         let spcSync: any SpcSyncing
         let arcusAlertSync: any ArcusAlertSyncing
         let weatherClient: any HomeWeatherQuerying
@@ -306,6 +307,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
         init(
             logger: Logger,
+            wssiIngestion: WSSIForegroundIngestion? = nil,
             spcSync: any SpcSyncing,
             arcusAlertSync: any ArcusAlertSyncing,
             weatherClient: any HomeWeatherQuerying,
@@ -326,6 +328,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             }
         ) {
             self.logger = logger
+            self.wssiIngestion = wssiIngestion
             self.spcSync = spcSync
             self.arcusAlertSync = arcusAlertSync
             self.weatherClient = weatherClient
@@ -417,6 +420,16 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             using: environment.locationSession
         )
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
+        if plan.executionClass == .foreground, let context, let wssi = environment.wssiIngestion {
+            let point = context.snapshot.coordinates
+            // Stable regional cells avoid a new acquisition for every small location movement.
+            let south = floor(point.latitude / 5) * 5
+            let west = floor(point.longitude / 5) * 5
+            if let scope = try? WSSIScope(south: south, west: west,
+                                           north: min(90, south + 5), east: min(180, west + 5)) {
+                await wssi.admit(scope: scope, foreground: true)
+            }
+        }
         let now = Date()
         let hotFeedID = context.map { "home.hot.\(HomeProjection.projectionKey(for: $0))" }
         let weatherFeedID = context.map { "home.weather.\(HomeProjection.projectionKey(for: $0))" }

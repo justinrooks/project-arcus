@@ -3040,6 +3040,54 @@ struct HomeRefreshPipelineTests {
         #expect(repairedProjection.activeMesos == [refreshedMeso])
     }
 
+    @Test("Foreground WSSI never blocks Home ingestion and background plans never admit it")
+    func wssiForegroundIsolation() async throws {
+        let context = makeContext()
+        let container = try TestStore.container(for: SkyAwarePersistenceSchema.models)
+        let gate = WSSIAcceptanceTests.Gate()
+        let requests = WSSIIsolationCounter()
+        let wssi = WSSIForegroundIngestion(store: WSSISnapshotStore(modelContainer: container),
+            client: try WSSIClient(transport: { _, _ in
+                await requests.increment()
+                await gate.pause()
+                throw WSSIAcquisitionError.invalidResponse
+            }), enabled: { true })
+        let spc = FakeSpcProvider(activeMesos: [], outlooks: sampleOutlooks())
+        let expectedAlert = Watch.sampleWatchRows[1]
+        let alerts = FakeAlertProvider(activeAlerts: [expectedAlert])
+        let weather = FakeWeatherClient(weather: sampleWeather())
+        let executor = HomeIngestionExecutor(environment: .init(
+            logger: Logger(subsystem: "SkyAwareTests", category: "WSSI"), wssiIngestion: wssi,
+            spcSync: spc, arcusAlertSync: alerts, weatherClient: weather,
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts, arcusMesos: spc),
+            projectionStore: nil, widgetSnapshotRefresher: nil))
+        _ = try await executor.run(plan: .init(request: .init(trigger: .backgroundRefresh)))
+        #expect(await requests.count == 0)
+        let beforeMap = await spc.syncMapProductsCount()
+        let beforeAlerts = await alerts.syncCount()
+        let beforeWeather = await weather.callCount()
+        let snapshot = try await executor.run(plan: .init(request: .init(trigger: .manualRefresh)))
+        await gate.waitForEntry()
+        #expect(snapshot.weather != nil)
+        #expect(snapshot.alerts == [expectedAlert])
+        #expect(await spc.syncMapProductsCount() > beforeMap)
+        #expect(await alerts.syncCount() > beforeAlerts)
+        #expect(await weather.callCount() > beforeWeather)
+        await gate.open()
+        await wssi.waitForIdle()
+        let afterFailure = try await executor.run(plan: .init(request: .init(trigger: .manualRefresh)))
+        #expect(afterFailure.alerts == snapshot.alerts)
+        #expect(afterFailure.weather != nil)
+        #expect(try await wssi.assessment(at: .init(latitude: 39.75, longitude: -104.44), time: .now)
+            .entries.allSatisfy { $0.result == .notLoaded })
+    }
+
+    private actor WSSIIsolationCounter {
+        var count = 0
+        func increment() { count += 1 }
+    }
+
     @Test("scene active refresh persists empty alert slices for the resolved context")
     func sceneActiveRefresh_persistsEmptyAlertSlices() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
