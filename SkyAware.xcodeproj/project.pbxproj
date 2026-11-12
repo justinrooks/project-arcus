@@ -192,6 +192,7 @@
 				UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift,
 				UnitTests/WidgetSnapshotStoreTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+				UnitTests/WSSIAssessmentTests.swift,
 				UnitTests/WSSIClientTests.swift,
 				UnitTests/WSSIDecoderTests.swift,
 			);
@@ -290,6 +291,7 @@
 				UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift,
 				UnitTests/WidgetSnapshotStoreTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+				UnitTests/WSSIAssessmentTests.swift,
 				UnitTests/WSSIClientTests.swift,
 				UnitTests/WSSIDecoderTests.swift,
 			);
