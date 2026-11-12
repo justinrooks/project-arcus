@@ -6,6 +6,7 @@ import SwiftData
 @ModelActor
 actor WSSISnapshotStore {
     static let maximumPayloadBytes = 100_000_000
+    var acceptance = WSSIAcceptanceCoordinator()
 
     func read() throws -> [WSSICachedSnapshot] { try contents().snapshots }
 
@@ -67,17 +68,24 @@ actor WSSISnapshotStore {
         next.snapshots = Array(next.snapshots.prefix(2))
         prune(&next, now: now)
         try next.validate()
-        var payload = try encode(next)
-        while payload.count > byteLimit && next.snapshots.count > 1 {
-            next.snapshots.removeLast()
-            payload = try encode(next)
-        }
-        guard payload.count <= byteLimit,
-              next.snapshots.contains(where: { $0.snapshot.scope == snapshot.scope }) else {
+        let payload = try boundedPayload(&next, byteLimit: byteLimit)
+        guard next.snapshots.contains(where: { $0.snapshot.scope == snapshot.scope }) else {
             throw WSSISnapshotError.capacityExceeded
         }
         try persist(payload, failureAfterMutation: failureAfterMutation)
         return entry
+    }
+
+    /// Selection authority is supplied by the co-isolated coordinator, never by acquisition completion.
+    func selectRetainedScope(_ scope: WSSIScope, now: Date, byteLimit: Int = WSSISnapshotStore.maximumPayloadBytes) throws {
+        guard (1...Self.maximumPayloadBytes).contains(byteLimit) else { throw WSSISnapshotError.capacityExceeded }
+        guard now.timeIntervalSince1970.isFinite else { throw WSSISnapshotError.invalidSnapshot }
+        var next = try contents()
+        guard let index = next.snapshots.firstIndex(where: { $0.snapshot.scope == scope }) else { return }
+        var entry = next.snapshots.remove(at: index)
+        entry.selectedAt = now
+        next.snapshots.insert(entry, at: 0)
+        try persist(boundedPayload(&next, byteLimit: byteLimit), failureAfterMutation: false)
     }
 
     func prune(now: Date) throws {
@@ -104,6 +112,16 @@ actor WSSISnapshotStore {
         let decoded = try JSONDecoder().decode(WSSICacheContents.self, from: row.payload)
         try decoded.validate()
         return decoded
+    }
+
+    private func boundedPayload(_ next: inout WSSICacheContents, byteLimit: Int) throws -> Data {
+        var payload = try encode(next)
+        while payload.count > byteLimit && next.snapshots.count > 1 {
+            next.snapshots.removeLast()
+            payload = try encode(next)
+        }
+        guard payload.count <= byteLimit else { throw WSSISnapshotError.capacityExceeded }
+        return payload
     }
 
     private func encode(_ contents: WSSICacheContents) throws -> Data {

@@ -8,6 +8,7 @@ struct WSSIAcquisition: Sendable {
 
     struct Layer: Sendable {
         let id: Int
+        let objectIDs: [Int]
         let collection: WSSIFeatureCollection
         let requests: [Request]
     }
@@ -30,6 +31,8 @@ enum WSSIAcquisitionError: Error, Equatable {
     case httpStatus(Int)
     case incompleteInventory
     case featureLimit
+    case requestLimit
+    case changedPublication
     case unexpectedLayer
 }
 
@@ -41,6 +44,7 @@ struct WSSIClient: Sendable {
         var maximumTotalBytes = 100_000_000
         var requestTimeout: TimeInterval = 30
         var acquisitionTimeout: Duration = .seconds(120)
+        var maximumRequests = 400
     }
 
     /// The transport must enforce the supplied byte ceiling while receiving, before decoding.
@@ -49,7 +53,7 @@ struct WSSIClient: Sendable {
     private let limits: Limits
     private let now: @Sendable () -> ContinuousClock.Instant
     private let sleepUntil: @Sendable (ContinuousClock.Instant) async throws -> Void
-    private let endpoint = URL(string: "https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer")!
+    let endpoint = URL(string: "https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer")!
 
     init(
         limits: Limits = Limits(),
@@ -60,7 +64,7 @@ struct WSSIClient: Sendable {
         transport: @escaping Transport = { try await WSSIClient.download($0, maximumBytes: $1) }
     ) throws {
         guard (1...2_000).contains(limits.pageSize), limits.maximumFeaturesPerLayer > 0,
-              limits.maximumResponseBytes > 0, limits.maximumTotalBytes > 0,
+              limits.maximumResponseBytes > 0, limits.maximumTotalBytes > 0, limits.maximumRequests > 0,
               limits.requestTimeout.isFinite, limits.requestTimeout > 0, limits.acquisitionTimeout > .zero else {
             throw WSSIAcquisitionError.invalidLimits
         }
@@ -72,13 +76,39 @@ struct WSSIClient: Sendable {
 
     /// Sequential requests bound concurrency to one. No cache fallback or automatic retries.
     func acquire(scope: WSSIScope, previous: WSSIAcquisition? = nil) async throws -> WSSIAcquisition {
+        try await acquire(scope: scope, previous: previous, deadline: now().advanced(by: limits.acquisitionTimeout),
+                          byteBudget: limits.maximumTotalBytes, requestBudget: limits.maximumRequests)
+    }
+
+    /// Both scans spend one deadline and aggregate budget. Neither scan reuses conditional bodies.
+    func acquireVerified(scope: WSSIScope, date: @Sendable () -> Date = { Date() }) async throws -> WSSISnapshot {
+        guard limits.pageSize <= 100, limits.maximumFeaturesPerLayer <= 2_000,
+              limits.maximumResponseBytes <= 25_000_000, limits.maximumTotalBytes <= 100_000_000,
+              limits.maximumRequests <= 400, limits.requestTimeout <= 30,
+              limits.acquisitionTimeout <= .seconds(120) else { throw WSSIAcquisitionError.invalidLimits }
+        let startedAt = date()
         let deadline = now().advanced(by: limits.acquisitionTimeout)
+        let first = try await acquire(scope: scope, previous: nil, deadline: deadline,
+                                      byteBudget: limits.maximumTotalBytes, requestBudget: limits.maximumRequests)
+        let requests = first.layers.flatMap(\.requests)
+        let second = try await acquire(scope: scope, previous: nil, deadline: deadline,
+                                       byteBudget: limits.maximumTotalBytes - requests.reduce(0) { $0 + $1.decodedByteCount },
+                                       requestBudget: limits.maximumRequests - requests.count)
+        let snapshot = try WSSIObservedPublication.snapshot(first: first, second: second, source: endpoint,
+                                                            startedAt: startedAt, verifiedAt: date())
+        try checkDeadline(deadline)
+        return snapshot
+    }
+
+    private func acquire(scope: WSSIScope, previous: WSSIAcquisition?, deadline: ContinuousClock.Instant,
+                         byteBudget: Int, requestBudget: Int) async throws -> WSSIAcquisition {
         try checkDeadline(deadline)
         // Only a prior complete retrieval supplies reusable bodies; validators never identify a publication.
         let reusable = previous?.scope == scope ? previous?.reusableResponses ?? [:] : [:]
         var retained: [URL: HTTPResponse] = [:]
         var layers: [WSSIAcquisition.Layer] = []
         var totalBytes = 0
+        var requestCount = 0
         for (product, firstID) in zip(WSSIProduct.allCases, [1, 6, 11, 16, 24]) {
             for (offset, period) in WSSIPeriod.allCases.enumerated() {
                 let id = firstID + offset
@@ -100,8 +130,10 @@ struct WSSIClient: Sendable {
                     if let etag = cached?.header("ETag") {
                         request.setValue(etag, forHTTPHeaderField: "If-None-Match")
                     }
-                    let ceiling = min(limits.maximumResponseBytes, limits.maximumTotalBytes - totalBytes)
+                    let ceiling = min(limits.maximumResponseBytes, byteBudget - totalBytes)
                     guard ceiling > 0 else { throw WSSIAcquisitionError.responseTooLarge }
+                    guard requestCount < requestBudget else { throw WSSIAcquisitionError.requestLimit }
+                    requestCount += 1
                     let response = try await response(for: request, maximumBytes: ceiling, deadline: deadline)
                     try checkDeadline(deadline)
                     guard response.status == 200 || response.status == 304 else {
@@ -145,6 +177,7 @@ struct WSSIClient: Sendable {
                 let expected = try await inventory()
                 var seen = Set<Int>()
                 var features: [WSSIFeature] = []
+                var featureIDs: [Int] = []
                 // Fetch even the empty page: validate source feature-set structure independently of the inventory.
                 repeat {
                     let (data, json) = try await fetch([
@@ -170,13 +203,14 @@ struct WSSIClient: Sendable {
                         throw WSSIAcquisitionError.unexpectedLayer
                     }
                     features.append(contentsOf: decoded.features)
+                    featureIDs.append(contentsOf: ids)
                     let more = json["exceededTransferLimit"] as? Bool == true
                     guard more == (seen.count < expected.count) else { throw WSSIAcquisitionError.incompleteInventory }
                 } while seen.count < expected.count
                 guard seen == expected, try await inventory() == expected else {
                     throw WSSIAcquisitionError.incompleteInventory
                 }
-                layers.append(.init(id: id, collection: .init(features: features), requests: requests))
+                layers.append(.init(id: id, objectIDs: featureIDs, collection: .init(features: features), requests: requests))
             }
         }
         try checkDeadline(deadline)
