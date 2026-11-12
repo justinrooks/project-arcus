@@ -169,25 +169,28 @@ struct WSSIClientTests {
     func streamingTransport() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [LocalProtocol.self]
+        let downloader = WSSIClient.Downloader(configuration: configuration)
         let url = try #require(URL(string: "https://wssi.test/body"))
         // Allow simulator scheduling under the full parallel regression lane.
         let request = URLRequest(url: url, timeoutInterval: 30)
-        let response = try await WSSIClient.download(request, maximumBytes: 8, configuration: configuration)
+        let response = try await downloader.download(request, maximumBytes: 8)
         #expect(response.data == Data(repeating: 65, count: 8))
+        let repeated = try await downloader.download(request, maximumBytes: 8)
+        #expect(repeated.data == response.data)
         await #expect(throws: WSSIAcquisitionError.responseTooLarge) {
-            try await WSSIClient.download(request, maximumBytes: 4, configuration: configuration)
+            try await downloader.download(request, maximumBytes: 4)
         }
         let stall = try #require(URL(string: "https://wssi.test/stall"))
         let short = URLRequest(url: stall, timeoutInterval: 0.1)
         do {
-            _ = try await WSSIClient.download(short, maximumBytes: 8, configuration: configuration)
+            _ = try await downloader.download(short, maximumBytes: 8)
             Issue.record("Expected a timeout")
         } catch {
             #expect((error as? URLError)?.code == .timedOut)
         }
         let task = Task {
-            try await WSSIClient.download(URLRequest(url: stall, timeoutInterval: 30),
-                                          maximumBytes: 8, configuration: configuration)
+            try await downloader.download(URLRequest(url: stall, timeoutInterval: 30),
+                                          maximumBytes: 8)
         }
         try await Task.sleep(for: .milliseconds(50))
         task.cancel()
@@ -197,6 +200,21 @@ struct WSSIClientTests {
         } catch {
             #expect(error is CancellationError || (error as? URLError)?.code == .cancelled)
         }
+        // A cancelled or timed-out request must leave the shared session usable.
+        let recovered = try await downloader.download(request, maximumBytes: 8)
+        #expect(recovered.data == response.data)
+    }
+
+    @Test("downloader ownership ends after its last user releases it")
+    func downloaderLifetime() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LocalProtocol.self]
+        var owner: WSSIClient.Downloader? = WSSIClient.Downloader(configuration: configuration)
+        weak var released = owner
+        let request = URLRequest(url: try #require(URL(string: "https://wssi.test/body")))
+        _ = try await owner?.download(request, maximumBytes: 8)
+        owner = nil
+        #expect(released == nil)
     }
 
     /// Per-request behavior; no mutable global fixtures or process-wide URLProtocol registration.
