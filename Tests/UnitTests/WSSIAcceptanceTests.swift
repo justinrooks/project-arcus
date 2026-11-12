@@ -17,10 +17,102 @@ struct WSSIAcceptanceTests {
         try WSSIClient(transport: { try await fixture.get($0, $1) })
     }
 
+    @Test("Centered queries reuse accepted coverage across grid jitter and stop at the interior margin")
+    func gridEdgeReuse() async throws {
+        let date = now
+        let point = Coordinate2D(latitude: 39.75, longitude: -105.01)
+        let region = try #require(WSSISourceApplicability.scope(at: point))
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-107.5,37.5,-102.5,42.5")
+        let store = try store()
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(fixture),
+            enabled: { true }, date: { date })
+        await ingestion.admit(at: point, foreground: true)
+        await ingestion.waitForIdle()
+        let count = await fixture.count
+        #expect(count > 0)
+        for longitude in [-104.99, -105.01, -104.99, -105.02, -104.98] {
+            let moved = Coordinate2D(latitude: 39.75, longitude: longitude)
+            await ingestion.admit(at: moved, foreground: true)
+            await ingestion.waitForIdle()
+            #expect(try await ingestion.assessment(at: moved, time: date).coverage == .covered)
+        }
+        #expect(await fixture.count == count)
+        #expect(try await store.acceptedCoverage(at: date).selectedScope == region)
+        #expect(WSSISourceApplicability.safelyContains(.init(latitude: 40, longitude: -103), in: region))
+        #expect(!WSSISourceApplicability.safelyContains(.init(latitude: 40, longitude: -102.99), in: region))
+        let distant = Coordinate2D(latitude: 40, longitude: -100)
+        #expect(!WSSISourceApplicability.safelyContains(distant, in: region))
+        #expect(WSSISourceApplicability.scope(at: distant) != region)
+    }
+
+    @Test("Location selection restores retained scopes, reacquires expired or evicted scopes, and shares background policy")
+    func locationRetention() async throws {
+        let clock = Mutex(now)
+        let points = [Coordinate2D(latitude: 39.75, longitude: -105.01),
+                      Coordinate2D(latitude: 39.75, longitude: -100),
+                      Coordinate2D(latitude: 39.75, longitude: -95)]
+        let geometries = ["-107.5,37.5,-102.5,42.5", "-102.5,37.5,-97.5,42.5", "-97.5,37.5,-92.5,42.5"]
+        let fixtures = geometries.map { WSSIClientTests.Fixture(mode: .empty, geometry: $0) }
+        let store = try store()
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { request, ceiling in
+                let geometry = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "geometry" }?.value
+                let index = try #require(geometries.firstIndex { $0 == geometry })
+                return try await fixtures[index].get(request, ceiling)
+            }), enabled: { true }, backgroundAcquisitionEnabled: true, date: { clock.withLock { $0 } })
+        for index in [0, 1, 0] {
+            await ingestion.admit(at: points[index], foreground: true)
+            await ingestion.waitForIdle()
+        }
+        let count = await fixtures[0].count
+        #expect(try await store.acceptedCoverage(at: now).selectedScope == WSSISourceApplicability.scope(at: points[0]))
+        let start = ContinuousClock.now
+        let context = BackgroundRefreshExecutionContext(budget: .init(start: start,
+            completionDeadline: start + .seconds(30), finalizationReserve: .seconds(5)))
+        await ingestion.refreshBackground(location: .init(coordinates: points[0].location,
+            timestamp: now, accuracy: 10), context: context)
+        #expect(await fixtures[0].count == count)
+        clock.withLock { $0 = now.addingTimeInterval(7201) }
+        await ingestion.admit(at: points[0], foreground: true)
+        await ingestion.waitForIdle()
+        #expect(await fixtures[0].count > count)
+        for index in [1, 2, 0] {
+            await ingestion.admit(at: points[index], foreground: true)
+            await ingestion.waitForIdle()
+        }
+        #expect(try await store.acceptedCoverage(at: clock.withLock { $0 }).snapshots.count == 2)
+        // A was evicted by B/C and must be acquired again on return.
+        #expect(await fixtures[0].count > count * 2)
+        #expect(try await ingestion.assessment(at: points[0], time: now).accepted != nil)
+    }
+
+    @Test("Coordinate A-to-B-to-A intent during acquisition drains only the final region")
+    func coordinateIntentReversal() async throws {
+        let date = now
+        let store = try store()
+        let a = Coordinate2D(latitude: 39.75, longitude: -105.01)
+        let b = Coordinate2D(latitude: 39.75, longitude: -100)
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-107.5,37.5,-102.5,42.5")
+        let gate = Gate()
+        let probe = Probe(fixture: fixture, gate: gate)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { try await probe.get($0, $1) }),
+            enabled: { true }, date: { date })
+        await ingestion.admit(at: a, foreground: true)
+        await gate.waitForEntry()
+        await ingestion.admit(at: b, foreground: true)
+        await ingestion.admit(at: a, foreground: true)
+        await gate.open()
+        await ingestion.waitForIdle()
+        #expect(try await store.acceptedCoverage(at: now).selectedScope == WSSISourceApplicability.scope(at: a))
+        #expect(try await store.acceptedCoverage(at: now).snapshots.count == 1)
+    }
+
     @Test("Both location entry paths reject non-CONUS points without acquisition", arguments: [false, true])
     func sourceApplicability(background: Bool) async throws {
         let date = now
-        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-105.0,35.0,-100.0,40.0")
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-107.5,37.5,-102.5,42.5")
         let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
         let ingestion = WSSIForegroundIngestion(store: try store(), client: try client(fixture),
             enabled: { true }, backgroundAcquisitionEnabled: true, date: { date },
@@ -579,7 +671,7 @@ struct WSSIAcceptanceTests {
         let store = try store(), date = now
         let point = Coordinate2D(latitude: 39.75, longitude: -104.99)
         let region = try #require(WSSISourceApplicability.scope(at: point))
-        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-105.0,35.0,-100.0,40.0")
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-107.5,37.5,-102.5,42.5")
         try await store.selectCoverage(region, at: date)
         let original = try await store.refreshCoverage(scope: region, client: client(fixture), date: { date })
         let gate = Gate(), probe = Probe(fixture: fixture, gate: gate)

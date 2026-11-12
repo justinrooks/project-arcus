@@ -11,10 +11,16 @@ import OSLog
 enum WSSISourceApplicability {
     static func scope(at point: Coordinate2D) -> WSSIScope? {
         guard contains(point) else { return nil }
-        // Stable regional cells avoid a new acquisition for every small location movement.
-        let south = floor(point.latitude / 5) * 5
-        let west = floor(point.longitude / 5) * 5
+        // Center a five-degree query away from the location; these are query bounds, not source coverage.
+        let south = point.latitude.rounded() - 2.5
+        let west = point.longitude.rounded() - 2.5
         return try? WSSIScope(south: south, west: west, north: south + 5, east: west + 5)
+    }
+
+    /// Half-degree interior hysteresis never expands authoritative query coverage.
+    static func safelyContains(_ point: Coordinate2D, in scope: WSSIScope) -> Bool {
+        point.latitude >= scope.south + 0.5 && point.latitude <= scope.north - 0.5
+            && point.longitude >= scope.west + 0.5 && point.longitude <= scope.east - 0.5
     }
 
     static func contains(_ point: Coordinate2D) -> Bool {

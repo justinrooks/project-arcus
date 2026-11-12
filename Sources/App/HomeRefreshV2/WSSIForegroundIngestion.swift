@@ -16,6 +16,7 @@ actor WSSIForegroundIngestion {
     private var pending: WSSIScope?
     private var attempts: [(WSSIScope, Date)] = []
     private var requestedScope: WSSIScope?
+    private var locationIntent = UUID()
 
     init(store: WSSISnapshotStore, client: WSSIClient,
          enabled: @escaping @Sendable () -> Bool = { false },
@@ -37,7 +38,9 @@ actor WSSIForegroundIngestion {
     func admit(at point: Coordinate2D, foreground: Bool) async {
         guard foreground else { observe(.background); return }
         guard enabled() else { observe(.disabled); return }
-        guard let scope = WSSISourceApplicability.scope(at: point) else {
+        let intent = UUID()
+        locationIntent = intent
+        guard let fallback = WSSISourceApplicability.scope(at: point) else {
             requestedScope = nil
             pending = nil
             // Fence completion authority without discarding accepted data or cancelling its retention.
@@ -46,7 +49,24 @@ actor WSSIForegroundIngestion {
             observe(.inapplicable)
             return
         }
-        await admit(scope: scope, foreground: foreground)
+        do {
+            let scope = try await reusableScope(at: point) ?? fallback
+            guard locationIntent == intent else { return }
+            await admit(scope: scope, foreground: foreground)
+        } catch { observe(.failed) }
+    }
+
+    private func reusableScope(at point: Coordinate2D) async throws -> WSSIScope? {
+        // Read retained evidence first, then inspect current actor intent after the suspension.
+        let now = date()
+        let coverage = try await store.acceptedCoverage(at: now)
+        if running, let requestedScope,
+           WSSISourceApplicability.safelyContains(point, in: requestedScope) { return requestedScope }
+        return coverage.snapshots.first {
+            now >= $0.snapshot.verifiedAt && now.timeIntervalSince($0.snapshot.verifiedAt) < 7200
+                && $0.snapshot.layers.allSatisfy { $0.validTo.map { $0 > now } ?? true }
+                && WSSISourceApplicability.safelyContains(point, in: $0.snapshot.scope)
+        }?.snapshot.scope
     }
 
     func admit(scope: WSSIScope, foreground: Bool) async {
@@ -172,7 +192,12 @@ actor WSSIForegroundIngestion {
                 .init(latitude: point.latitude, longitude: point.longitude)) else {
             observe(.inapplicable); return
         }
-        await refreshBackground(scope: scope, context: context)
+        let intent = locationIntent
+        do {
+            let selected = try await reusableScope(at: .init(latitude: point.latitude, longitude: point.longitude)) ?? scope
+            guard locationIntent == intent else { observe(.busy); return }
+            await refreshBackground(scope: selected, context: context)
+        } catch { observe(.failed) }
     }
 
     private func finish() async {
