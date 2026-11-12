@@ -65,7 +65,7 @@ struct WSSIClient: Sendable {
         sleepUntil: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
             try await ContinuousClock().sleep(until: $0)
         },
-        transport: @escaping Transport = { try await WSSIClient.download($0, maximumBytes: $1) }
+        transport: Transport? = nil
     ) throws {
         guard (1...2_000).contains(limits.pageSize), limits.maximumFeaturesPerLayer > 0,
               limits.maximumResponseBytes > 0, limits.maximumTotalBytes > 0, limits.maximumRequests > 0,
@@ -73,7 +73,12 @@ struct WSSIClient: Sendable {
             throw WSSIAcquisitionError.invalidLimits
         }
         self.limits = limits
-        self.transport = transport
+        if let transport {
+            self.transport = transport
+        } else {
+            let downloader = Downloader()
+            self.transport = { try await downloader.download($0, maximumBytes: $1) }
+        }
         self.now = now
         self.sleepUntil = sleepUntil
     }
@@ -255,27 +260,51 @@ struct WSSIClient: Sendable {
         return number.intValue
     }
 
-    static func download(_ request: URLRequest, maximumBytes: Int,
-                         configuration: URLSessionConfiguration = .ephemeral) async throws -> HTTPResponse {
-        configuration.timeoutIntervalForResource = request.timeoutInterval
-        configuration.urlCache = nil
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw WSSIAcquisitionError.invalidResponse }
-        guard http.statusCode == 200 || http.statusCode == 304 else { throw WSSIAcquisitionError.httpStatus(http.statusCode) }
-        guard response.expectedContentLength <= Int64(maximumBytes) else {
-            throw WSSIAcquisitionError.responseTooLarge
+    /// Dedicated to this client's lifetime, including both verification scans and subsequent acquisitions.
+    /// Copies of the client retain the same owner; injected transports create no session.
+    final class Downloader: Sendable {
+        private let session: URLSession
+
+        init(configuration: URLSessionConfiguration = .ephemeral) {
+            configuration.urlCache = nil
+            session = URLSession(configuration: configuration)
         }
-        var data = Data()
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            guard data.count < maximumBytes else { throw WSSIAcquisitionError.responseTooLarge }
-            data.append(byte)
+
+        deinit { session.invalidateAndCancel() }
+
+        func download(_ request: URLRequest, maximumBytes: Int) async throws -> HTTPResponse {
+            // A shared session cannot use a different resource timeout for each request.
+            // Keep the absolute request deadline separate from URLSession's inactivity timeout.
+            try await withThrowingTaskGroup(of: HTTPResponse.self) { group in
+                group.addTask { try await self.receive(request, maximumBytes: maximumBytes) }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(request.timeoutInterval))
+                    throw URLError(.timedOut)
+                }
+                defer { group.cancelAll() }
+                guard let response = try await group.next() else { throw CancellationError() }
+                return response
+            }
         }
-        let headers = http.allHeaderFields.reduce(into: [String: String]()) {
-            $0[String(describing: $1.key)] = String(describing: $1.value)
+
+        private func receive(_ request: URLRequest, maximumBytes: Int) async throws -> HTTPResponse {
+            let (bytes, response) = try await session.bytes(for: request)
+            defer { bytes.task.cancel() }
+            guard let http = response as? HTTPURLResponse else { throw WSSIAcquisitionError.invalidResponse }
+            guard http.statusCode == 200 || http.statusCode == 304 else { throw WSSIAcquisitionError.httpStatus(http.statusCode) }
+            guard response.expectedContentLength <= Int64(maximumBytes) else {
+                throw WSSIAcquisitionError.responseTooLarge
+            }
+            var data = Data()
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                guard data.count < maximumBytes else { throw WSSIAcquisitionError.responseTooLarge }
+                data.append(byte)
+            }
+            let headers = http.allHeaderFields.reduce(into: [String: String]()) {
+                $0[String(describing: $1.key)] = String(describing: $1.value)
+            }
+            return HTTPResponse(status: http.statusCode, headers: headers, data: data)
         }
-        return HTTPResponse(status: http.statusCode, headers: headers, data: data)
     }
 }
