@@ -62,6 +62,24 @@ struct WSSIDecoderTests {
         #expect(feature.polygons[0].rings[1][1] == Coordinate2D(latitude: 40.8, longitude: -99.8))
     }
 
+    @Test("rejects nested interior rings regardless of order")
+    func rejectsNestedInteriorRings() throws {
+        let exterior = "[[-100,40],[-100,44],[-96,44],[-96,40],[-100,40]]"
+        let outerHole = "[[-99,41],[-97,41],[-97,43],[-99,43],[-99,41]]"
+        let innerHole = "[[-98.5,41.5],[-97.5,41.5],[-97.5,42.5],[-98.5,42.5],[-98.5,41.5]]"
+        let touchingDiamond = "[[-98,41],[-97,42],[-98,43],[-99,42],[-98,41]]"
+        for holes in [[outerHole, innerHole], [innerHole, outerHole],
+                      [outerHole, touchingDiamond], [touchingDiamond, outerHole]] {
+            let data = response(geometry: "[\(exterior),\(holes.joined(separator: ","))]")
+            #expect(throws: WSSIDecodingError.invalidGeometry("Feature 0: nested interior rings")) {
+                try WSSIDecoder.decode(data)
+            }
+        }
+        let separateHole = "[[-96.8,40.2],[-96.2,40.2],[-96.2,40.8],[-96.8,40.8],[-96.8,40.2]]"
+        let result = try WSSIDecoder.decode(response(geometry: "[\(exterior),\(outerHole),\(separateHole)]"))
+        #expect(result.features.first?.polygons.first?.rings.count == 3)
+    }
+
     @Test("rejects unknown impact, invalid dates, malformed rings, and ArcGIS errors")
     func rejectsInvalidValues() {
         #expect(throws: WSSIDecodingError.self) { try WSSIDecoder.decode(response(impact: "UNKNOWN")) }

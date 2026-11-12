@@ -189,6 +189,14 @@ enum WSSIDecoder {
                 throw WSSIDecodingError.invalidGeometry("Feature \(index): hole outside exterior")
             }
         }
+        let holes = Array(rings.dropFirst())
+        for i in holes.indices {
+            for j in holes.indices where j > i {
+                if hasInteriorPoint(holes[i], inside: holes[j]) || hasInteriorPoint(holes[j], inside: holes[i]) {
+                    throw WSSIDecodingError.invalidGeometry("Feature \(index): nested interior rings")
+                }
+            }
+        }
         let segments = rings.enumerated().flatMap { ringIndex, ring in
             zip(ring, ring.dropFirst()).enumerated().map { offset, pair in
                 Segment(ring: ringIndex, index: offset, a: pair.0, b: pair.1)
@@ -212,11 +220,24 @@ enum WSSIDecoder {
         }
     }
 
+    private static func hasInteriorPoint(_ inner: [[Double]], inside outer: [[Double]]) -> Bool {
+        zip(inner, inner.dropFirst()).contains { a, b in
+            contains(a, ring: outer, includeBoundary: false) ||
+                segmentInteriorSamples(a, b, ring: outer).contains {
+                    contains($0, ring: outer, includeBoundary: false)
+                }
+        }
+    }
+
     private static func segmentInside(_ a: [Double], _ b: [Double], ring: [[Double]]) -> Bool {
-        guard contains(a, ring: ring), contains(b, ring: ring) else { return false }
+        contains(a, ring: ring) && contains(b, ring: ring) &&
+            segmentInteriorSamples(a, b, ring: ring).allSatisfy { contains($0, ring: ring) }
+    }
+
+    private static func segmentInteriorSamples(_ a: [Double], _ b: [Double], ring: [[Double]]) -> [[Double]] {
         let dx = b[0] - a[0], dy = b[1] - a[1]
         let lengthSquared = dx * dx + dy * dy
-        guard lengthSquared > 0 else { return true }
+        guard lengthSquared > 0 else { return [] }
         var cuts = [0.0, 1.0]
         for point in ring.dropLast() {
             let cross = (point[0] - a[0]) * dy - (point[1] - a[1]) * dx
@@ -225,9 +246,9 @@ enum WSSIDecoder {
             if t > 0 && t < 1 { cuts.append(t) }
         }
         cuts.sort()
-        return zip(cuts, cuts.dropFirst()).allSatisfy { start, end in
+        return zip(cuts, cuts.dropFirst()).map { start, end in
             let t = (start + end) / 2
-            return contains([a[0] + t * dx, a[1] + t * dy], ring: ring)
+            return [a[0] + t * dx, a[1] + t * dy]
         }
     }
 
