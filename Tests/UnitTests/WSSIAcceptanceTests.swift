@@ -17,6 +17,102 @@ struct WSSIAcceptanceTests {
         try WSSIClient(transport: { try await fixture.get($0, $1) })
     }
 
+    @Test("Foreground gate, cadence and overlap preserve independently queryable accepted coverage")
+    func foregroundIntegration() async throws {
+        let store = try store()
+        let fixture = WSSIClientTests.Fixture()
+        let gate = Gate()
+        let probe = Probe(fixture: fixture, gate: gate)
+        let enabled = Mutex(false)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let clock = Mutex(now)
+        let failing = Mutex(false)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { request, ceiling in
+                if failing.withLock({ $0 }) { throw WSSIAcquisitionError.invalidResponse }
+                return try await probe.get(request, ceiling)
+            }),
+            enabled: { enabled.withLock { $0 } }, date: { clock.withLock { $0 } },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        let region = try scope()
+        await ingestion.admit(scope: region, foreground: true)
+        enabled.withLock { $0 = true }
+        await ingestion.admit(scope: region, foreground: false)
+        #expect(await fixture.count == 0)
+        await ingestion.admit(scope: region, foreground: true)
+        await gate.waitForEntry()
+        await ingestion.admit(scope: region, foreground: true)
+        await gate.open()
+        await ingestion.waitForIdle()
+        let accepted = try await store.acceptedCoverage(at: now)
+        #expect(accepted.snapshots.count == 1)
+        let assessment = try await ingestion.assessment(at: .init(latitude: 40, longitude: -105), time: now)
+        #expect(assessment.assessment.entries.contains { $0.issuedAt != nil })
+        let requests = await fixture.count
+        await ingestion.admit(scope: region, foreground: true)
+        #expect(await fixture.count == requests)
+        #expect(outcomes.withLock { $0 } == [.disabled, .background, .busy, .accepted, .fresh])
+        clock.withLock { $0 = now.addingTimeInterval(7200) }
+        failing.withLock { $0 = true }
+        await ingestion.admit(scope: region, foreground: true)
+        await ingestion.waitForIdle()
+        #expect(outcomes.withLock { $0.last } == .failed)
+        #expect(try await store.acceptedCoverage(at: now).snapshots == accepted.snapshots)
+    }
+
+    @Test("Movement during acquisition selects latest scope and cadence follows both retained scopes")
+    func foregroundMovement() async throws {
+        let store = try store()
+        let a = try scope(), b = try scope(-111)
+        let gate = Gate()
+        let af = WSSIClientTests.Fixture(mode: .empty)
+        let bf = WSSIClientTests.Fixture(mode: .empty, geometry: "-111.0,36.0,-101.0,43.0")
+        let probe = Probe(fixture: af, gate: gate)
+        let date = now
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { request, ceiling in
+                let geometry = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "geometry" }?.value
+                if geometry == "-111.0,36.0,-101.0,43.0" { return try await bf.get(request, ceiling) }
+                return try await probe.get(request, ceiling)
+            }), enabled: { true }, date: { date })
+        await ingestion.admit(scope: a, foreground: true)
+        await gate.waitForEntry()
+        await ingestion.admit(scope: b, foreground: true)
+        #expect(try await store.acceptedCoverage(at: now).selectedScope == b)
+        await gate.open()
+        await ingestion.waitForIdle()
+        #expect(try await store.acceptedCoverage(at: now).selectedScope == b)
+        #expect(try await store.acceptedCoverage(at: now).snapshots.count == 2)
+        let ac = await af.count, bc = await bf.count
+        await ingestion.admit(scope: a, foreground: true)
+        await ingestion.admit(scope: b, foreground: true)
+        #expect(await af.count == ac)
+        #expect(await bf.count == bc)
+    }
+
+    @Test("All-empty accepted observations retain provenance and resolve coverage separately")
+    func emptyForegroundQuery() async throws {
+        let store = try store()
+        let date = now
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(.init(mode: .empty)),
+            enabled: { true }, date: { date })
+        let point = Coordinate2D(latitude: 40, longitude: -105)
+        #expect(try await ingestion.assessment(at: point, time: now).coverage == .notLoaded)
+        await ingestion.admit(scope: try scope(), foreground: true)
+        await ingestion.waitForIdle()
+        let inside = try await ingestion.assessment(at: point, time: now)
+        #expect(inside.coverage == .covered)
+        let accepted = try #require(inside.accepted)
+        #expect(accepted.snapshot.verifiedAt == now)
+        #expect(accepted.snapshot.layers.count == 20)
+        #expect(accepted.snapshot.layers.allSatisfy { $0.state == .observedEmpty && $0.issuedAt == nil })
+        #expect(inside.assessment.entries.allSatisfy { $0.result == .notLoaded })
+        let outside = try await ingestion.assessment(at: .init(latitude: 0, longitude: 0), time: now)
+        #expect(outside.coverage == .outsideCoverage)
+        #expect(outside.accepted == nil)
+    }
+
     @Test("Two unconditional matching scans preserve independent source dates and explicit empty states")
     func stable() async throws {
         let fixture = WSSIClientTests.Fixture(mode: .unchanged)
