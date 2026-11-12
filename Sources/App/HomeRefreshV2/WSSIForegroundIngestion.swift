@@ -9,7 +9,7 @@ actor WSSIForegroundIngestion {
     private let enabled: @Sendable () -> Bool
     private let backgroundAcquisitionEnabled: Bool
     private let date: @Sendable () -> Date
-    private let selectCoverage: @Sendable (WSSIScope, Date) async throws -> Void
+    private let selectCoverage: @Sendable (WSSIScope?, Date) async throws -> Void
     private let observe: @Sendable (Outcome) -> Void
     private var task: Task<Void, Never>?
     private var running = false
@@ -21,7 +21,7 @@ actor WSSIForegroundIngestion {
          enabled: @escaping @Sendable () -> Bool = { false },
          backgroundAcquisitionEnabled: Bool = false,
          date: @escaping @Sendable () -> Date = { Date() },
-         selectCoverage: (@Sendable (WSSIScope, Date) async throws -> Void)? = nil,
+         selectCoverage: (@Sendable (WSSIScope?, Date) async throws -> Void)? = nil,
          observe: @escaping @Sendable (Outcome) -> Void = {
              Logger.appHomeRefresh.info("WSSI ingestion outcome=\($0.rawValue, privacy: .public)")
          }) {
@@ -32,6 +32,21 @@ actor WSSIForegroundIngestion {
         self.date = date
         self.observe = observe
         self.selectCoverage = selectCoverage ?? { try await store.selectCoverage($0, at: $1) }
+    }
+
+    func admit(at point: Coordinate2D, foreground: Bool) async {
+        guard foreground else { observe(.background); return }
+        guard enabled() else { observe(.disabled); return }
+        guard let scope = WSSISourceApplicability.scope(at: point) else {
+            requestedScope = nil
+            pending = nil
+            // Fence completion authority without discarding accepted data or cancelling its retention.
+            do { try await selectCoverage(nil, date()) }
+            catch { observe(.failed) }
+            observe(.inapplicable)
+            return
+        }
+        await admit(scope: scope, foreground: foreground)
     }
 
     func admit(scope: WSSIScope, foreground: Bool) async {
@@ -147,16 +162,14 @@ actor WSSIForegroundIngestion {
     }
 
     func refreshBackground(location: LocationSnapshot, context: BackgroundRefreshExecutionContext) async {
+        guard enabled() else { observe(.disabled); return }
         let point = location.coordinates
         let age = date().timeIntervalSince(location.timestamp)
-        // Reuse the established scheduled-location age tolerance. This adapter covers CONUS only.
+        // Reuse the established scheduled-location age tolerance and shared CONUS applicability.
         guard age.isFinite, age >= 0, age <= BackgroundLocationContextReusePolicy.maximumReuseAge,
               location.accuracy > 0, location.accuracy <= BackgroundLocationContextReusePolicy.maximumHorizontalAccuracy,
-              point.latitude >= 24, point.latitude <= 50, point.longitude >= -125, point.longitude <= -66,
-              let scope = try? WSSIScope(south: floor(point.latitude / 5) * 5,
-                                         west: floor(point.longitude / 5) * 5,
-                                         north: floor(point.latitude / 5) * 5 + 5,
-                                         east: floor(point.longitude / 5) * 5 + 5) else {
+              let scope = WSSISourceApplicability.scope(at:
+                .init(latitude: point.latitude, longitude: point.longitude)) else {
             observe(.inapplicable); return
         }
         await refreshBackground(scope: scope, context: context)
@@ -183,6 +196,11 @@ actor WSSIForegroundIngestion {
     }
 
     func assessment(at point: Coordinate2D, time: Date) async throws -> QueryResult {
+        // An accepted regional query (even all-empty) is not evidence of provider applicability.
+        guard WSSISourceApplicability.contains(point) else {
+            return QueryResult(coverage: .outsideCoverage, accepted: nil,
+                assessment: try WSSIAssessment.evaluate(layers: [], at: point, time: time))
+        }
         let coverage = try await store.acceptedCoverage(at: date())
         let accepted = coverage.snapshots.first {
             let scope = $0.snapshot.scope

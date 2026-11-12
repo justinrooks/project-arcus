@@ -17,6 +17,96 @@ struct WSSIAcceptanceTests {
         try WSSIClient(transport: { try await fixture.get($0, $1) })
     }
 
+    @Test("Both location entry paths reject non-CONUS points without acquisition", arguments: [false, true])
+    func sourceApplicability(background: Bool) async throws {
+        let date = now
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-105.0,35.0,-100.0,40.0")
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: try store(), client: try client(fixture),
+            enabled: { true }, backgroundAcquisitionEnabled: true, date: { date },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        let start = ContinuousClock.now
+        let context = BackgroundRefreshExecutionContext(budget: .init(start: start,
+            completionDeadline: start + .seconds(30), finalizationReserve: .seconds(5)))
+        let outside: [Coordinate2D] = [
+            .init(latitude: 61.22, longitude: -149.90), // Alaska
+            .init(latitude: 21.31, longitude: -157.86), // Hawaii
+            .init(latitude: 18.47, longitude: -66.11), // Puerto Rico
+            .init(latitude: 49.28, longitude: -123.12), // Vancouver, inside the old rectangle
+            .init(latitude: 43.65, longitude: -79.38), // Toronto
+            .init(latitude: 31.69, longitude: -106.42), // Ciudad Juarez
+            .init(latitude: 25.04, longitude: -77.35), // Bahamas
+            .init(latitude: 35, longitude: -124), // Pacific
+            .init(latitude: 0, longitude: 0),
+            .init(latitude: .nan, longitude: -105)
+        ]
+        func admit(_ point: Coordinate2D) async {
+            if background {
+                await ingestion.refreshBackground(location: .init(coordinates: point.location,
+                    timestamp: date, accuracy: 10), context: context)
+            } else {
+                await ingestion.admit(at: point, foreground: true)
+                await ingestion.waitForIdle()
+            }
+        }
+        for point in outside {
+            #expect(WSSISourceApplicability.scope(at: point) == nil)
+            await admit(point)
+            let query = try await ingestion.assessment(at: point, time: date)
+            #expect(query.coverage == .outsideCoverage && query.accepted == nil)
+        }
+        #expect(await fixture.count == 0)
+        #expect(outcomes.withLock { $0 } == Array(repeating: .inapplicable, count: outside.count))
+
+        let denver = Coordinate2D(latitude: 39.75, longitude: -104.99)
+        #expect(try await ingestion.assessment(at: denver, time: date).coverage == .notLoaded)
+        await admit(denver)
+        let requestCount = await fixture.count
+        #expect(requestCount > 0)
+        let accepted = try await ingestion.assessment(at: denver, time: date)
+        #expect(accepted.coverage == .covered)
+        #expect(accepted.accepted?.snapshot.layers.allSatisfy { $0.state == .observedEmpty } == true)
+        #expect(accepted.assessment.entries.allSatisfy { $0.result == .notLoaded })
+        // Moving outside and back cannot download unsupported data or consume the retained region's cadence.
+        await admit(outside[3])
+        await admit(denver)
+        #expect(await fixture.count == requestCount)
+    }
+
+    @Test("CONUS mask includes coastal and northern extremes and its supplied exterior boundary")
+    func sourceDomainBoundaries() throws {
+        for point in [Coordinate2D(latitude: 24.555, longitude: -81.78), // Key West
+                      .init(latitude: 49.345, longitude: -95.07), // Northwest Angle
+                      .init(latitude: 44.9, longitude: -66.99), // eastern Maine
+                      .init(latitude: 47.61, longitude: -122.33)] {
+            #expect(WSSISourceApplicability.scope(at: point) != nil)
+        }
+        let url = try #require(Bundle.main.url(forResource: "WSSICONUSDomain", withExtension: "json"))
+        let data = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let polygons = try #require(data["polygons"] as? [[[[Double]]]])
+        let westernmost = try #require(polygons.compactMap(\.first).flatMap { $0 }.min { $0[0] < $1[0] })
+        let boundary = Coordinate2D(latitude: westernmost[1], longitude: westernmost[0])
+        #expect(WSSISourceApplicability.contains(boundary))
+        #expect(!WSSISourceApplicability.contains(.init(latitude: boundary.latitude,
+            longitude: boundary.longitude - 0.01)))
+    }
+
+    @Test("Accepted border query envelopes cannot cover neighboring countries")
+    func queryEnvelopeIsNotProductCoverage() async throws {
+        let store = try store(), date = now
+        // This envelope contains both Detroit and Toronto. Even an identified layer cannot cover Canada.
+        let scope = try WSSIScope(south: 40, west: -85, north: 45, east: -75)
+        _ = try await store.refreshCoverage(scope: scope,
+            client: client(.init(geometry: "-85.0,40.0,-75.0,45.0")), date: { date })
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(.init()), date: { date })
+        let detroit = try await ingestion.assessment(at: .init(latitude: 42.33, longitude: -83.05), time: date)
+        #expect(detroit.coverage == .covered)
+        #expect(detroit.assessment.entries.allSatisfy { $0.result == .noImpact })
+        let toronto = try await ingestion.assessment(at: .init(latitude: 43.65, longitude: -79.38), time: date)
+        #expect(toronto.coverage == .outsideCoverage && toronto.accepted == nil)
+        #expect(toronto.assessment.entries.allSatisfy { $0.result == .notLoaded })
+    }
+
     @Test("Foreground gate, cadence and overlap preserve independently queryable accepted coverage")
     func foregroundIntegration() async throws {
         let store = try store()
@@ -481,6 +571,70 @@ struct WSSIAcceptanceTests {
         #expect(try await store.acceptedCoverage(at: now).selectedScope == b)
         #expect(outcomes.withLock { $0 } == [.busy, .busy, .fresh])
         #expect(requests.withLock { $0 } == 0)
+    }
+
+    @Test("Leaving CONUS fences in-flight selection and drops queued work while retaining snapshots",
+          arguments: [false, true])
+    func inapplicableForegroundSelection(hasPendingScope: Bool) async throws {
+        let store = try store(), date = now
+        let point = Coordinate2D(latitude: 39.75, longitude: -104.99)
+        let region = try #require(WSSISourceApplicability.scope(at: point))
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-105.0,35.0,-100.0,40.0")
+        try await store.selectCoverage(region, at: date)
+        let original = try await store.refreshCoverage(scope: region, client: client(fixture), date: { date })
+        let gate = Gate(), probe = Probe(fixture: fixture, gate: gate)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let refreshDate = date.addingTimeInterval(7200)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { try await probe.get($0, $1) }),
+            enabled: { true }, date: { refreshDate },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.admit(at: point, foreground: true)
+        await gate.waitForEntry()
+        if hasPendingScope {
+            await ingestion.admit(at: .init(latitude: 40.5, longitude: -105.5), foreground: true)
+        }
+        await ingestion.admit(at: .init(latitude: 43.65, longitude: -79.38), foreground: true)
+        let outside = try await store.acceptedCoverage(at: refreshDate)
+        #expect(outside.selectedScope == nil)
+        // Admission can update selection metadata; accepted content and its revision must remain intact.
+        #expect(outside.snapshots.map(\.snapshot) == [original.snapshot])
+        #expect(outside.snapshots.map(\.revision) == [original.revision])
+        await gate.open()
+        await ingestion.waitForIdle()
+        let completed = try await store.acceptedCoverage(at: refreshDate)
+        #expect(completed.selectedScope == nil)
+        #expect(completed.snapshots.count == 1)
+        #expect(completed.snapshots.first?.snapshot.scope == region)
+        #expect(completed.snapshots.first?.snapshot.verifiedAt == refreshDate)
+        let requestCount = await fixture.count
+        await ingestion.admit(at: point, foreground: true)
+        #expect(try await store.acceptedCoverage(at: refreshDate).selectedScope == region)
+        #expect(await fixture.count == requestCount)
+        #expect(outcomes.withLock { $0.last } == .fresh)
+    }
+
+    @Test("Leaving CONUS during suspended admission prevents acquisition and preserves accepted snapshots")
+    func inapplicableDuringSelection() async throws {
+        let store = try store(), region = try scope(), date = now
+        let fixture = WSSIClientTests.Fixture(mode: .empty)
+        try await store.selectCoverage(region, at: date)
+        let original = try await store.refreshCoverage(scope: region, client: client(fixture), date: { date })
+        let gate = Gate(), requests = await fixture.count
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(fixture),
+            enabled: { true }, date: { date }, selectCoverage: { scope, date in
+                try await store.selectCoverage(scope, at: date)
+                if scope != nil { await gate.pause() }
+            })
+        let admission = Task { await ingestion.admit(scope: region, foreground: true) }
+        await gate.waitForEntry()
+        await ingestion.admit(at: .init(latitude: 43.65, longitude: -79.38), foreground: true)
+        await gate.open()
+        await admission.value
+        await ingestion.waitForIdle()
+        #expect(try await store.acceptedCoverage(at: date).selectedScope == nil)
+        #expect(try await store.acceptedCoverage(at: date).snapshots == [original])
+        #expect(await fixture.count == requests)
     }
 
     actor Gate {
