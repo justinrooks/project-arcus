@@ -259,6 +259,38 @@ struct WSSISnapshotStoreTests {
                                  validTo: to.addingTimeInterval(offset), features: features)
     }
 
+    @Test("Selection timestamp growth cannot persist an oversized cache, including after reopen")
+    func selectionByteLimit() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("cache.store")
+        var expected: [WSSICachedSnapshot] = []
+        do {
+            let container = try container(at: url)
+            let store = WSSISnapshotStore(modelContainer: container)
+            let original = try await store.replace(with: snapshot(), select: true, now: now)
+            let rows = try ModelContext(container).fetch(FetchDescriptor<WSSICacheRecord>())
+            let bytes = try #require(rows.first).payload.count
+            // An integer timestamp becomes fractional; one scope cannot evict itself to make room.
+            await #expect(throws: WSSISnapshotError.capacityExceeded) {
+                try await store.selectRetainedScope(original.snapshot.scope, now: now.addingTimeInterval(0.125),
+                                                     byteLimit: bytes)
+            }
+            #expect(try await store.read() == [original])
+            _ = try await store.replace(with: snapshot(west: 20), select: true, now: now)
+            let combined = try ModelContext(container).fetch(FetchDescriptor<WSSICacheRecord>())
+            let combinedBytes = try #require(combined.first).payload.count
+            try await store.selectRetainedScope(original.snapshot.scope, now: now.addingTimeInterval(0.125),
+                                                byteLimit: combinedBytes)
+            expected = try await store.read()
+            #expect(expected.map(\.snapshot.scope.west) == [0])
+            let limited = try ModelContext(container).fetch(FetchDescriptor<WSSICacheRecord>())
+            #expect(try #require(limited.first).payload.count <= combinedBytes)
+        }
+        let store = WSSISnapshotStore(modelContainer: try container(at: url))
+        #expect(try await store.read() == expected)
+    }
+
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
