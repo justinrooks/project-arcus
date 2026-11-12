@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import SkyAware
 
@@ -78,6 +79,74 @@ struct WSSIClientTests {
         #expect(ceilings.count == 2)
         #expect(ceilings[0] == 100)
         #expect(ceilings[1] > 0 && ceilings[1] < ceilings[0])
+    }
+
+    @Test("one elapsed-time budget spans completed layers and rejects partial acquisition")
+    func elapsedBudget() async throws {
+        let fixture = Fixture()
+        let clock = Mutex(ContinuousClock.now)
+        let client = try WSSIClient(
+            limits: .init(acquisitionTimeout: .seconds(45)),
+            now: { clock.withLock { $0 } },
+            sleepUntil: { _ in try await Task.sleep(for: .seconds(3_600)) },
+            transport: { request, ceiling in
+                let response = try await fixture.get(request, ceiling)
+                clock.withLock { $0 = $0.advanced(by: .seconds(10)) }
+                return response
+            }
+        )
+        await #expect(throws: WSSIAcquisitionError.deadlineExceeded) { try await client.acquire(scope: scope()) }
+        // Layer one completed in four requests; layer two cannot produce a partial result.
+        #expect(await fixture.count == 5)
+    }
+
+    @Test("expiry cancels an in-flight request and parent cancellation retires its deadline",
+          arguments: [false, true])
+    func inFlightDeadline(parentCancellation: Bool) async throws {
+        let fixture = Fixture(mode: .suspend)
+        let deadline = DeadlineSignal()
+        let client = try WSSIClient(sleepUntil: { try await deadline.wait(until: $0) },
+                                    transport: { try await fixture.get($0, $1) })
+        let region = try scope()
+        let task = Task { try await client.acquire(scope: region) }
+        await fixture.waitForStart()
+        if parentCancellation {
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
+            #expect(await deadline.cancelled)
+        } else {
+            await deadline.expire()
+            await #expect(throws: WSSIAcquisitionError.deadlineExceeded) { try await task.value }
+        }
+        #expect(await fixture.count == 1)
+        #expect(await fixture.cancelled)
+    }
+
+    @Test("requires a positive acquisition budget")
+    func invalidAcquisitionBudget() {
+        for budget in [Duration.zero, .seconds(-1)] {
+            #expect(throws: WSSIAcquisitionError.invalidLimits) {
+                try WSSIClient(limits: .init(acquisitionTimeout: budget))
+            }
+        }
+    }
+
+    actor DeadlineSignal {
+        private var expired = false
+        private(set) var cancelled = false
+        func expire() { expired = true }
+        func wait(until: ContinuousClock.Instant) async throws {
+            do {
+                while !expired {
+                    try Task.checkCancellation()
+                    await Task.yield()
+                }
+                try Task.checkCancellation()
+            } catch {
+                cancelled = true
+                throw error
+            }
+        }
     }
 
     @Test("production downloader bounds unknown-length bodies and propagates timeout and cancellation")
@@ -168,6 +237,7 @@ struct WSSIClientTests {
     actor Fixture {
         let mode: Mode
         var count = 0
+        var cancelled = false
         var ceilings: [Int] = []
         private var started = false
         let geometry: String
@@ -184,7 +254,10 @@ struct WSSIClientTests {
             count += 1
             ceilings.append(ceiling)
             started = true
-            if mode == .suspend { try await Task.sleep(for: .seconds(60)) }
+            if mode == .suspend {
+                do { try await Task.sleep(for: .seconds(60)) }
+                catch { cancelled = true; throw error }
+            }
             if mode == .timeout && count == 2 { throw URLError(.timedOut) }
             let url = try #require(request.url)
             let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)

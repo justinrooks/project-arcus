@@ -23,6 +23,7 @@ struct WSSIAcquisition: Sendable {
 }
 
 enum WSSIAcquisitionError: Error, Equatable {
+    case deadlineExceeded
     case invalidLimits
     case responseTooLarge
     case invalidResponse
@@ -39,26 +40,40 @@ struct WSSIClient: Sendable {
         var maximumResponseBytes = 25_000_000
         var maximumTotalBytes = 100_000_000
         var requestTimeout: TimeInterval = 30
+        var acquisitionTimeout: Duration = .seconds(120)
     }
 
     /// The transport must enforce the supplied byte ceiling while receiving, before decoding.
     typealias Transport = @Sendable (URLRequest, Int) async throws -> HTTPResponse
     private let transport: Transport
     private let limits: Limits
+    private let now: @Sendable () -> ContinuousClock.Instant
+    private let sleepUntil: @Sendable (ContinuousClock.Instant) async throws -> Void
     private let endpoint = URL(string: "https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer")!
 
-    init(limits: Limits = Limits(), transport: @escaping Transport = { try await WSSIClient.download($0, maximumBytes: $1) }) throws {
+    init(
+        limits: Limits = Limits(),
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
+        sleepUntil: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        },
+        transport: @escaping Transport = { try await WSSIClient.download($0, maximumBytes: $1) }
+    ) throws {
         guard (1...2_000).contains(limits.pageSize), limits.maximumFeaturesPerLayer > 0,
               limits.maximumResponseBytes > 0, limits.maximumTotalBytes > 0,
-              limits.requestTimeout.isFinite, limits.requestTimeout > 0 else {
+              limits.requestTimeout.isFinite, limits.requestTimeout > 0, limits.acquisitionTimeout > .zero else {
             throw WSSIAcquisitionError.invalidLimits
         }
         self.limits = limits
         self.transport = transport
+        self.now = now
+        self.sleepUntil = sleepUntil
     }
 
     /// Sequential requests bound concurrency to one. No cache fallback or automatic retries.
     func acquire(scope: WSSIScope, previous: WSSIAcquisition? = nil) async throws -> WSSIAcquisition {
+        let deadline = now().advanced(by: limits.acquisitionTimeout)
+        try checkDeadline(deadline)
         // Only a prior complete retrieval supplies reusable bodies; validators never identify a publication.
         let reusable = previous?.scope == scope ? previous?.reusableResponses ?? [:] : [:]
         var retained: [URL: HTTPResponse] = [:]
@@ -69,7 +84,7 @@ struct WSSIClient: Sendable {
                 let id = firstID + offset
                 var requests: [WSSIAcquisition.Request] = []
                 func fetch(_ parameters: [String: String]) async throws -> (Data, [String: Any]) {
-                    try Task.checkCancellation()
+                    try checkDeadline(deadline)
                     var components = URLComponents(url: endpoint.appendingPathComponent("\(id)/query"),
                                                    resolvingAgainstBaseURL: false)!
                     let common = ["f": "json", "where": "1=1", "inSR": "4326", "outSR": "4326",
@@ -87,8 +102,8 @@ struct WSSIClient: Sendable {
                     }
                     let ceiling = min(limits.maximumResponseBytes, limits.maximumTotalBytes - totalBytes)
                     guard ceiling > 0 else { throw WSSIAcquisitionError.responseTooLarge }
-                    let response = try await transport(request, ceiling)
-                    try Task.checkCancellation()
+                    let response = try await response(for: request, maximumBytes: ceiling, deadline: deadline)
+                    try checkDeadline(deadline)
                     guard response.status == 200 || response.status == 304 else {
                         throw WSSIAcquisitionError.httpStatus(response.status)
                     }
@@ -150,6 +165,7 @@ struct WSSIClient: Sendable {
                     }
                     seen.formUnion(ids)
                     let decoded = try WSSIDecoder.decode(data)
+                    try checkDeadline(deadline)
                     guard decoded.features.allSatisfy({ $0.product == product && $0.period == period }) else {
                         throw WSSIAcquisitionError.unexpectedLayer
                     }
@@ -163,8 +179,31 @@ struct WSSIClient: Sendable {
                 layers.append(.init(id: id, collection: .init(features: features), requests: requests))
             }
         }
-        try Task.checkCancellation()
+        try checkDeadline(deadline)
         return WSSIAcquisition(scope: scope, layers: layers, reusableResponses: retained)
+    }
+
+    private func checkDeadline(_ deadline: ContinuousClock.Instant) throws {
+        try Task.checkCancellation()
+        guard now() < deadline else { throw WSSIAcquisitionError.deadlineExceeded }
+    }
+
+    private func response(for request: URLRequest, maximumBytes: Int,
+                          deadline: ContinuousClock.Instant) async throws -> HTTPResponse {
+        try await withThrowingTaskGroup(of: HTTPResponse.self) { group in
+            group.addTask {
+                try checkDeadline(deadline)
+                return try await transport(request, maximumBytes)
+            }
+            group.addTask {
+                try await sleepUntil(deadline)
+                try Task.checkCancellation()
+                throw WSSIAcquisitionError.deadlineExceeded
+            }
+            defer { group.cancelAll() }
+            guard let response = try await group.next() else { throw CancellationError() }
+            return response
+        }
     }
 
     private static func objectID(_ value: Any) throws -> Int {
