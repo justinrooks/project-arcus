@@ -27,15 +27,16 @@ struct SummaryViewLocalAlertsTests {
             window.rootViewController = nil
         }
         window.makeKeyAndVisible()
-        try await waitForLocalAlertsLifecycle { !state.appearances.isEmpty }
+        try await waitForLocalAlertsLifecycle("initial appearance") { !state.appearances.isEmpty }
         let identity = try #require(state.appearances.first)
 
         for content in [ActiveAlertSummaryView.ContentState.empty, .loading] {
             state.content = .alerts
-            try await waitForLocalAlertsLifecycle { state.renderedContent == .alerts }
+            try await waitForLocalAlertsLifecycle("render alerts before \(content)") { state.renderedContent == .alerts }
             let disappearanceCount = state.disappearances
             var interrupted = false
             state.onContentChange = {
+                state.onContentChange = nil
                 // Schedule immediately after SwiftUI commits this update, avoiding a UIKit
                 // navigation mutation during SwiftUI's lifecycle callback.
                 Task { @MainActor in
@@ -44,11 +45,16 @@ struct SummaryViewLocalAlertsTests {
                 }
             }
             state.content = content
-            try await waitForLocalAlertsLifecycle { interrupted && state.disappearances > disappearanceCount }
+            try await waitForLocalAlertsLifecycle("disappear after \(content)") {
+                interrupted && state.disappearances > disappearanceCount
+            }
             state.onContentChange = nil
             await Task.yield()
+            let appearanceCount = state.appearances.count
             navigation.popViewController(animated: false)
-            try await waitForLocalAlertsLifecycle { host.view.window != nil }
+            try await waitForLocalAlertsLifecycle("reappear after \(content)") {
+                state.appearances.count > appearanceCount && host.view.window != nil
+            }
             host.view.layoutIfNeeded()
             // Loading's intrinsic height is below 72, so this catches a stranded flexible phase.
             #expect(host.sizeThatFits(in: CGSize(width: 390, height: 1_000)).height >= 72)
@@ -57,13 +63,13 @@ struct SummaryViewLocalAlertsTests {
         }
     }
 
-    private func waitForLocalAlertsLifecycle(_ predicate: () -> Bool) async throws {
+    private func waitForLocalAlertsLifecycle(_ phase: String, _ predicate: () -> Bool) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(2))
         while !predicate(), clock.now < deadline {
             try await Task.sleep(for: .milliseconds(1))
         }
-        try #require(predicate(), "Hosted Local Alerts lifecycle did not reach the expected state")
+        try #require(predicate(), "Hosted Local Alerts lifecycle did not reach the expected state: \(phase)")
     }
 
     @Test("display states map to presentation states")
@@ -686,7 +692,6 @@ private struct LocalAlertsHeightLifecycleHost: View {
         .onAppear { state.appearances.append(identity) }
         .onDisappear { state.disappearances += 1 }
         .onChange(of: state.content, initial: true) { _, content in
-            state.appearances.append(identity)
             state.renderedContent = content
             state.onContentChange?()
         }
