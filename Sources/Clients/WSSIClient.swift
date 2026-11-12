@@ -6,6 +6,10 @@ struct WSSIAcquisition: Sendable {
     let layers: [Layer]
     fileprivate let reusableResponses: [URL: HTTPResponse]
 
+    var retainedResponseByteCount: Int {
+        reusableResponses.values.reduce(0) { $0 + ($1.data?.count ?? 0) }
+    }
+
     struct Layer: Sendable {
         let id: Int
         let objectIDs: [Int]
@@ -89,19 +93,19 @@ struct WSSIClient: Sendable {
         let startedAt = date()
         let deadline = now().advanced(by: limits.acquisitionTimeout)
         let first = try await acquire(scope: scope, previous: nil, deadline: deadline,
-                                      byteBudget: limits.maximumTotalBytes, requestBudget: limits.maximumRequests)
+                                      byteBudget: limits.maximumTotalBytes, requestBudget: limits.maximumRequests, retainResponses: false)
         let requests = first.layers.flatMap(\.requests)
         let second = try await acquire(scope: scope, previous: nil, deadline: deadline,
                                        byteBudget: limits.maximumTotalBytes - requests.reduce(0) { $0 + $1.decodedByteCount },
-                                       requestBudget: limits.maximumRequests - requests.count)
+                                       requestBudget: limits.maximumRequests - requests.count, retainResponses: false)
         let snapshot = try WSSIObservedPublication.snapshot(first: first, second: second, source: endpoint,
                                                             startedAt: startedAt, verifiedAt: date())
         try checkDeadline(deadline)
         return snapshot
     }
 
-    private func acquire(scope: WSSIScope, previous: WSSIAcquisition?, deadline: ContinuousClock.Instant,
-                         byteBudget: Int, requestBudget: Int) async throws -> WSSIAcquisition {
+    func acquire(scope: WSSIScope, previous: WSSIAcquisition?, deadline: ContinuousClock.Instant,
+                         byteBudget: Int, requestBudget: Int, retainResponses: Bool = true) async throws -> WSSIAcquisition {
         try checkDeadline(deadline)
         // Only a prior complete retrieval supplies reusable bodies; validators never identify a publication.
         let reusable = previous?.scope == scope ? previous?.reusableResponses ?? [:] : [:]
@@ -158,8 +162,10 @@ struct WSSIClient: Sendable {
                     requests.append(.init(url: url, receivedAt: Date(), status: response.status,
                                           headers: response.headers, byteCount: response.data?.count ?? 0,
                                           decodedByteCount: data.count))
-                    retained[url] = HTTPResponse(status: 200, headers: response.status == 304
+                    if retainResponses {
+                        retained[url] = HTTPResponse(status: 200, headers: response.status == 304
                         ? ["ETag": response.header("ETag") ?? cached?.header("ETag") ?? ""] : response.headers, data: data)
+                    }
                     return (data, json)
                 }
                 func inventory() async throws -> Set<Int> {
