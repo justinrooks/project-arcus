@@ -17,6 +17,38 @@ struct WSSIAcceptanceTests {
         try WSSIClient(transport: { try await fixture.get($0, $1) })
     }
 
+    @Test("Deferred background location admission never reads canonical storage",
+          arguments: ["feasibility", "deadline", "cancelled"])
+    func backgroundLocationSkipsStorage(reason: String) async throws {
+        let container = try TestStore.container(for: SkyAwarePersistenceSchema.models)
+        let modelContext = ModelContext(container)
+        modelContext.insert(WSSICacheRecord(payload: Data("invalid canonical cache".utf8)))
+        try modelContext.save()
+        let store = WSSISnapshotStore(modelContainer: container)
+        let fixture = WSSIClientTests.Fixture(mode: .empty)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let date = now
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(fixture),
+            enabled: { true }, backgroundAcquisitionEnabled: reason != "feasibility", date: { date },
+            observe: { outcome in outcomes.withLock { $0.append(outcome) } })
+        let start = ContinuousClock.now - (reason == "deadline" ? .seconds(60) : .zero)
+        let context = BackgroundRefreshExecutionContext(budget: .init(start: start,
+            completionDeadline: start + .seconds(30), finalizationReserve: .seconds(5)))
+        let location = LocationSnapshot(coordinates: Coordinate2D(latitude: 39.75, longitude: -105).location,
+            timestamp: date, accuracy: 10)
+        let invocation = Task {
+            if reason == "cancelled" { withUnsafeCurrentTask { $0?.cancel() } }
+            await ingestion.refreshBackground(location: location, context: context)
+        }
+        await invocation.value
+        let expected: WSSIForegroundIngestion.Outcome = reason == "feasibility" ? .deferredFeasibility
+            : reason == "deadline" ? .deadline : .cancelled
+        #expect(outcomes.withLock { $0 } == [expected])
+        #expect(await fixture.count == 0)
+        // A lookup really would fail; the early outcome cannot come from swallowing a read error.
+        await #expect(throws: (any Error).self) { try await store.acceptedCoverage(at: date) }
+    }
+
     @Test("Centered queries reuse accepted coverage across grid jitter and stop at the interior margin")
     func gridEdgeReuse() async throws {
         let date = now

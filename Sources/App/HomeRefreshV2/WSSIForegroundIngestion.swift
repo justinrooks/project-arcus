@@ -192,6 +192,12 @@ actor WSSIForegroundIngestion {
                 .init(latitude: point.latitude, longitude: point.longitude)) else {
             observe(.inapplicable); return
         }
+        // Avoid canonical storage work when this best-effort run cannot acquire anything.
+        // The scope entry point rechecks these gates after the lookup suspension.
+        guard !Task.isCancelled else { observe(.cancelled); return }
+        guard backgroundAcquisitionEnabled else { observe(.deferredFeasibility); return }
+        guard context.budget.admission(for: .seconds(6), at: .now, isCancelled: false) == .admitted,
+              await !context.deadlineState.exceeded() else { observe(.deadline); return }
         let intent = locationIntent
         do {
             let selected = try await reusableScope(at: .init(latitude: point.latitude, longitude: point.longitude)) ?? scope
