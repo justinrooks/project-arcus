@@ -23,9 +23,14 @@ enum SkyAwarePersistenceSchemaV5: VersionedSchema {
     static let models: [any PersistentModel.Type] = SkyAwarePersistenceSchemaV4.models + [SPCCategoricalForecast.self]
 }
 
-enum SkyAwarePersistenceSchema: VersionedSchema {
+enum SkyAwarePersistenceSchemaV6: VersionedSchema {
     static let versionIdentifier = Schema.Version(6, 0, 0)
     static let models: [any PersistentModel.Type] = SkyAwarePersistenceSchemaV5.models + [SPCHazardForecast.self]
+}
+
+enum SkyAwarePersistenceSchema: VersionedSchema {
+    static let versionIdentifier = Schema.Version(7, 0, 0)
+    static let models: [any PersistentModel.Type] = SkyAwarePersistenceSchemaV6.models + [WSSIForecastLayer.self]
 }
 
 enum SkyAwarePersistenceMigrationPlan: SchemaMigrationPlan {
@@ -33,12 +38,14 @@ enum SkyAwarePersistenceMigrationPlan: SchemaMigrationPlan {
         SkyAwarePersistenceSchemaV3.self,
         SkyAwarePersistenceSchemaV4.self,
         SkyAwarePersistenceSchemaV5.self,
+        SkyAwarePersistenceSchemaV6.self,
         SkyAwarePersistenceSchema.self
     ]
     static let stages: [MigrationStage] = [
         .lightweight(fromVersion: SkyAwarePersistenceSchemaV3.self, toVersion: SkyAwarePersistenceSchemaV4.self),
         .lightweight(fromVersion: SkyAwarePersistenceSchemaV4.self, toVersion: SkyAwarePersistenceSchemaV5.self),
-        .lightweight(fromVersion: SkyAwarePersistenceSchemaV5.self, toVersion: SkyAwarePersistenceSchema.self)
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV5.self, toVersion: SkyAwarePersistenceSchemaV6.self),
+        .lightweight(fromVersion: SkyAwarePersistenceSchemaV6.self, toVersion: SkyAwarePersistenceSchema.self)
     ]
 }
 
