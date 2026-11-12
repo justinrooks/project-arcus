@@ -1,6 +1,6 @@
 import Foundation
 
-enum WSSIProduct: String, CaseIterable, Sendable {
+enum WSSIProduct: String, CaseIterable, Sendable, Codable {
     case overall = "WSSI_OVERALL"
     case snowAmount = "SNOW_AMOUNT"
     case snowLoad = "SNOW_LOAD"
@@ -8,14 +8,14 @@ enum WSSIProduct: String, CaseIterable, Sendable {
     case blowingSnow = "BLOWING_SNOW"
 }
 
-enum WSSIPeriod: String, CaseIterable, Sendable {
+enum WSSIPeriod: String, CaseIterable, Sendable, Codable {
     case day1 = "Day_1"
     case day2 = "Day_2"
     case day3 = "Day_3"
     case days1To3 = "Days_1_3"
 }
 
-enum WSSIImpact: String, CaseIterable, Sendable {
+enum WSSIImpact: String, CaseIterable, Sendable, Codable {
     case winterWeatherArea = "WINTER WEATHER AREA"
     case minor = "MINOR"
     case moderate = "MODERATE"
@@ -23,7 +23,7 @@ enum WSSIImpact: String, CaseIterable, Sendable {
     case extreme = "EXTREME"
 }
 
-struct WSSIScope: Sendable, Equatable {
+struct WSSIScope: Sendable, Equatable, Codable {
     let south: Double
     let west: Double
     let north: Double
@@ -41,11 +41,11 @@ struct WSSIScope: Sendable, Equatable {
     }
 }
 
-struct WSSIPolygon: Sendable, Equatable {
+struct WSSIPolygon: Sendable, Equatable, Codable {
     let rings: [[Coordinate2D]]
 }
 
-struct WSSIFeature: Sendable, Equatable {
+struct WSSIFeature: Sendable, Equatable, Codable {
     let product: WSSIProduct
     let period: WSSIPeriod
     let impact: WSSIImpact
