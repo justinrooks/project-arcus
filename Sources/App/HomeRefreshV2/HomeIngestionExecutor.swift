@@ -423,17 +423,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
         if plan.executionClass == .foreground, let context, let wssi = environment.wssiIngestion {
             let point = context.snapshot.coordinates
-            // Stable regional cells avoid a new acquisition for every small location movement.
-            let south = floor(point.latitude / 5) * 5
-            let west = floor(point.longitude / 5) * 5
-            if let scope = try? WSSIScope(south: south, west: west,
-                                           north: min(90, south + 5), east: min(180, west + 5)) {
-                // Serialize selection intent without placing WSSI storage on Home's critical path.
-                let previous = wssiAdmissionTask
-                wssiAdmissionTask = Task {
-                    await previous?.value
-                    await wssi.admit(scope: scope, foreground: true)
-                }
+            // Serialize selection intent without placing WSSI storage on Home's critical path.
+            let previous = wssiAdmissionTask
+            wssiAdmissionTask = Task {
+                await previous?.value
+                await wssi.admit(at: .init(latitude: point.latitude, longitude: point.longitude), foreground: true)
             }
         }
         let now = Date()
