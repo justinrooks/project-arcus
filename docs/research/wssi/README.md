@@ -30,6 +30,8 @@ A legitimate empty query returns schema/feature-set structure without feature at
 
 ## Conservative acceptance contract for WSSI-06
 
+Follow-up: [WSSI canonical acceptance contract](acceptance-contract.md) defines the user-accepted observed-consistency policy from additional live ArcGIS and WPC ZIP investigation. It explicitly changes the original strict all-layer requirement and distinguishes unidentified empty observations from forecast no-impact. The original gate and evidence below remain historical context; the contract records the initial V8 storage implementation and the remaining coordinator work. GitHub acceptance criteria remain to be reconciled before that coordinator slice.
+
 **Decision gate for [#839](https://github.com/justinrooks/project-arcus/issues/839): this service has not established strict all-layer publication coherence or authoritative empty-generation identity. Do not implement canonical acceptance using invented identity.** This research completes the fallback requested by #834; enabling canonical acceptance requires resolving this gate with source-backed evidence or an explicitly approved change to the epic's consistency contract.
 
 1. Stage the entire required layer set; validate expected layer identity, field schema, impact values, geometry, coverage, UTC timestamps, and actual period bounds. Reject unknown/missing generation fields, malformed/error bodies, incomplete pages, and conflicting attributes. Keep prior accepted state during failure.
