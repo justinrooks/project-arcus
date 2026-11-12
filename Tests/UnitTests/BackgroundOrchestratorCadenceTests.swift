@@ -2721,7 +2721,7 @@ struct WSSIBackgroundIngestionTests {
         await gate.open()
         await foreground.value
         await ingestion.waitForIdle()
-        #expect(outcomes.withLock { $0 } == [.deferredFeasibility, .accepted])
+        #expect(outcomes.withLock { $0 } == [.deferredFeasibility, .attempted, .accepted])
         #expect(try await store.acceptedCoverage(at: date).snapshots.count == 1)
     }
 

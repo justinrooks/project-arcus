@@ -3,7 +3,7 @@ import OSLog
 
 /// Independent WSSI ownership. Foreground work stays off Home; scheduled work uses only leftover budget.
 actor WSSIForegroundIngestion {
-    enum Outcome: String, Sendable { case disabled, background, busy, fresh, accepted, rejected, failed, backoff, deferredFeasibility, deadline, cancelled, inapplicable }
+    enum Outcome: String, Sendable { case disabled, background, busy, fresh, attempted, accepted, rejected, failed, backoff, deferredFeasibility, deadline, cancelled, inapplicable }
     private let store: WSSISnapshotStore
     private let client: WSSIClient
     private let enabled: @Sendable () -> Bool
@@ -52,17 +52,30 @@ actor WSSIForegroundIngestion {
         let now = date()
         do {
             if changesSelection { try await selectCoverage(scope, now) }
+            let coverage = try await store.acceptedCoverage(at: now)
+            // A newer location intent may arrive during either store suspension.
+            guard requestedScope == scope else { await finish(); return }
+            if coverage.selectedScope == scope,
+               let cached = coverage.snapshots.first(where: { $0.snapshot.scope == scope }),
+               now >= cached.snapshot.verifiedAt,
+               now.timeIntervalSince(cached.snapshot.verifiedAt) < 2 * 3600,
+               cached.snapshot.layers.allSatisfy({ $0.validTo.map { $0 > now } ?? true }) {
+                observe(.fresh)
+                await finish()
+                return
+            }
         } catch { observe(.failed); await finish(); return }
         // Attempt cadence bounds failed-source traffic without asserting forecast validity.
         if let timestamp = attempts.first(where: { $0.0 == scope })?.1,
            now >= timestamp, now.timeIntervalSince(timestamp) < 2 * 3600 {
-            observe(.fresh)
+            observe(.backoff)
             await finish()
             return
         }
         attempts.removeAll { $0.0 == scope }
         attempts.append((scope, now))
         if attempts.count > 2 { attempts.removeFirst() }
+        observe(.attempted)
         task = Task {
             do {
                 _ = try await store.refreshCoverage(scope: scope, client: client, date: date)
