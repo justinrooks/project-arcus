@@ -3040,18 +3040,22 @@ struct HomeRefreshPipelineTests {
         #expect(repairedProjection.activeMesos == [refreshedMeso])
     }
 
-    @Test("Foreground WSSI never blocks Home ingestion and background plans never admit it")
-    func wssiForegroundIsolation() async throws {
+    @Test("Foreground WSSI never blocks Home ingestion and background plans never admit it", arguments: [false, true])
+    func wssiForegroundIsolation(pauseSelection: Bool) async throws {
         let context = makeContext()
         let container = try TestStore.container(for: SkyAwarePersistenceSchema.models)
         let gate = WSSIAcceptanceTests.Gate()
         let requests = WSSIIsolationCounter()
-        let wssi = WSSIForegroundIngestion(store: WSSISnapshotStore(modelContainer: container),
+        let wssiStore = WSSISnapshotStore(modelContainer: container)
+        let wssi = WSSIForegroundIngestion(store: wssiStore,
             client: try WSSIClient(transport: { _, _ in
                 await requests.increment()
-                await gate.pause()
+                if !pauseSelection { await gate.pause() }
                 throw WSSIAcquisitionError.invalidResponse
-            }), enabled: { true })
+            }), enabled: { true }, selectCoverage: { scope, date in
+                if pauseSelection { await gate.pause() }
+                try await wssiStore.selectCoverage(scope, at: date)
+            })
         let spc = FakeSpcProvider(activeMesos: [], outlooks: sampleOutlooks())
         let expectedAlert = Watch.sampleWatchRows[1]
         let alerts = FakeAlertProvider(activeAlerts: [expectedAlert])
@@ -3080,7 +3084,7 @@ struct HomeRefreshPipelineTests {
         #expect(afterFailure.alerts == snapshot.alerts)
         #expect(afterFailure.weather != nil)
         #expect(try await wssi.assessment(at: .init(latitude: 39.75, longitude: -104.44), time: .now)
-            .entries.allSatisfy { $0.result == .notLoaded })
+            .assessment.entries.allSatisfy { $0.result == .notLoaded })
     }
 
     private actor WSSIIsolationCounter {

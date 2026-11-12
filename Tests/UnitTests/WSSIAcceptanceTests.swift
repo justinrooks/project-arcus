@@ -47,7 +47,7 @@ struct WSSIAcceptanceTests {
         let accepted = try await store.acceptedCoverage(at: now)
         #expect(accepted.snapshots.count == 1)
         let assessment = try await ingestion.assessment(at: .init(latitude: 40, longitude: -105), time: now)
-        #expect(assessment.entries.contains { $0.issuedAt != nil })
+        #expect(assessment.assessment.entries.contains { $0.issuedAt != nil })
         let requests = await fixture.count
         await ingestion.admit(scope: region, foreground: true)
         #expect(await fixture.count == requests)
@@ -89,6 +89,28 @@ struct WSSIAcceptanceTests {
         await ingestion.admit(scope: b, foreground: true)
         #expect(await af.count == ac)
         #expect(await bf.count == bc)
+    }
+
+    @Test("All-empty accepted observations retain provenance and resolve coverage separately")
+    func emptyForegroundQuery() async throws {
+        let store = try store()
+        let date = now
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(.init(mode: .empty)),
+            enabled: { true }, date: { date })
+        let point = Coordinate2D(latitude: 40, longitude: -105)
+        #expect(try await ingestion.assessment(at: point, time: now).coverage == .notLoaded)
+        await ingestion.admit(scope: try scope(), foreground: true)
+        await ingestion.waitForIdle()
+        let inside = try await ingestion.assessment(at: point, time: now)
+        #expect(inside.coverage == .covered)
+        let accepted = try #require(inside.accepted)
+        #expect(accepted.snapshot.verifiedAt == now)
+        #expect(accepted.snapshot.layers.count == 20)
+        #expect(accepted.snapshot.layers.allSatisfy { $0.state == .observedEmpty && $0.issuedAt == nil })
+        #expect(inside.assessment.entries.allSatisfy { $0.result == .notLoaded })
+        let outside = try await ingestion.assessment(at: .init(latitude: 0, longitude: 0), time: now)
+        #expect(outside.coverage == .outsideCoverage)
+        #expect(outside.accepted == nil)
     }
 
     @Test("Two unconditional matching scans preserve independent source dates and explicit empty states")

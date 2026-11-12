@@ -355,6 +355,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
     private let weatherKitRefreshPolicy: WeatherKitRefreshPolicy
     private let stormSetupIngestion: HomeStormSetupIngestion
 
+    private var wssiAdmissionTask: Task<Void, Never>?
     private var freshness = HomeFreshnessState()
 
     init(
@@ -427,7 +428,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             let west = floor(point.longitude / 5) * 5
             if let scope = try? WSSIScope(south: south, west: west,
                                            north: min(90, south + 5), east: min(180, west + 5)) {
-                await wssi.admit(scope: scope, foreground: true)
+                // Serialize selection intent without placing WSSI storage on Home's critical path.
+                let previous = wssiAdmissionTask
+                wssiAdmissionTask = Task {
+                    await previous?.value
+                    await wssi.admit(scope: scope, foreground: true)
+                }
             }
         }
         let now = Date()

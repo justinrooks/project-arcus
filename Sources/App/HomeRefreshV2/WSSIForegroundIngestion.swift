@@ -8,6 +8,7 @@ actor WSSIForegroundIngestion {
     private let client: WSSIClient
     private let enabled: @Sendable () -> Bool
     private let date: @Sendable () -> Date
+    private let selectCoverage: @Sendable (WSSIScope, Date) async throws -> Void
     private let observe: @Sendable (Outcome) -> Void
     private var task: Task<Void, Never>?
     private var running = false
@@ -18,6 +19,7 @@ actor WSSIForegroundIngestion {
     init(store: WSSISnapshotStore, client: WSSIClient,
          enabled: @escaping @Sendable () -> Bool = { false },
          date: @escaping @Sendable () -> Date = { Date() },
+         selectCoverage: (@Sendable (WSSIScope, Date) async throws -> Void)? = nil,
          observe: @escaping @Sendable (Outcome) -> Void = {
              Logger.appHomeRefresh.info("WSSI foreground outcome=\($0.rawValue, privacy: .public)")
          }) {
@@ -26,6 +28,7 @@ actor WSSIForegroundIngestion {
         self.enabled = enabled
         self.date = date
         self.observe = observe
+        self.selectCoverage = selectCoverage ?? { try await store.selectCoverage($0, at: $1) }
     }
 
     func admit(scope: WSSIScope, foreground: Bool) async {
@@ -36,7 +39,7 @@ actor WSSIForegroundIngestion {
         if running {
             if changesSelection {
                 pending = scope
-                do { try await store.selectCoverage(scope, at: date()) }
+                do { try await selectCoverage(scope, date()) }
                 catch { observe(.failed) }
             }
             observe(.busy)
@@ -45,7 +48,7 @@ actor WSSIForegroundIngestion {
         running = true
         let now = date()
         do {
-            if changesSelection { try await store.selectCoverage(scope, at: now) }
+            if changesSelection { try await selectCoverage(scope, now) }
         } catch { observe(.failed); await finish(); return }
         // Attempt cadence bounds failed-source traffic without asserting forecast validity.
         if let timestamp = attempts.first(where: { $0.0 == scope })?.1,
@@ -79,16 +82,27 @@ actor WSSIForegroundIngestion {
 
     func waitForIdle() async { while let current = task { await current.value } }
 
-    func assessment(at point: Coordinate2D, time: Date) async throws -> WSSIAssessment {
+    struct QueryResult: Sendable {
+        enum Coverage: Sendable { case notLoaded, outsideCoverage, covered }
+        let coverage: Coverage
+        /// Preserves every accepted layer state, source dates, verification and commit provenance.
+        /// Nil outside coverage: a noncontaining snapshot is never used as evidence for the point.
+        let accepted: WSSICachedSnapshot?
+        let assessment: WSSIAssessment
+    }
+
+    func assessment(at point: Coordinate2D, time: Date) async throws -> QueryResult {
         let coverage = try await store.acceptedCoverage(at: date())
-        let snapshot = (coverage.snapshots.first {
+        let accepted = coverage.snapshots.first {
             let scope = $0.snapshot.scope
             return point.latitude >= scope.south && point.latitude <= scope.north
                 && point.longitude >= scope.west && point.longitude <= scope.east
-        } ?? coverage.snapshots.first)?.snapshot
-        let layers = try snapshot.map { snapshot in
-            try snapshot.layers.compactMap { try $0.assessmentLayer(in: snapshot.scope) }
+        }
+        let layers = try accepted.map { cached in
+            try cached.snapshot.layers.compactMap { try $0.assessmentLayer(in: cached.snapshot.scope) }
         } ?? []
-        return try WSSIAssessment.evaluate(layers: layers, at: point, time: time)
+        return QueryResult(coverage: accepted != nil ? .covered
+            : coverage.snapshots.isEmpty ? .notLoaded : .outsideCoverage,
+            accepted: accepted, assessment: try WSSIAssessment.evaluate(layers: layers, at: point, time: time))
     }
 }
