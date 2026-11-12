@@ -1,9 +1,9 @@
 import Foundation
 import OSLog
 
-/// Independent foreground work: never awaited by the Home ingestion result or admitted by background plans.
+/// Independent WSSI ownership. Foreground work stays off Home; scheduled work uses only leftover budget.
 actor WSSIForegroundIngestion {
-    enum Outcome: String, Sendable { case disabled, background, busy, fresh, accepted, rejected, failed }
+    enum Outcome: String, Sendable { case disabled, background, busy, fresh, accepted, rejected, failed, backoff, deadline, cancelled, inapplicable }
     private let store: WSSISnapshotStore
     private let client: WSSIClient
     private let enabled: @Sendable () -> Bool
@@ -21,7 +21,7 @@ actor WSSIForegroundIngestion {
          date: @escaping @Sendable () -> Date = { Date() },
          selectCoverage: (@Sendable (WSSIScope, Date) async throws -> Void)? = nil,
          observe: @escaping @Sendable (Outcome) -> Void = {
-             Logger.appHomeRefresh.info("WSSI foreground outcome=\($0.rawValue, privacy: .public)")
+             Logger.appHomeRefresh.info("WSSI ingestion outcome=\($0.rawValue, privacy: .public)")
          }) {
         self.store = store
         self.client = client
@@ -69,6 +69,78 @@ actor WSSIForegroundIngestion {
             } catch { observe(.failed) }
             await finish()
         }
+    }
+
+    /// Awaited only after higher-priority background responsibilities finish. No task escapes this run.
+    func refreshBackground(scope: WSSIScope, context: BackgroundRefreshExecutionContext,
+                           waitUntil: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+                               try await ContinuousClock().sleep(until: $0)
+                           }) async {
+        guard enabled() else { observe(.disabled); return }
+        guard !Task.isCancelled else { observe(.cancelled); return }
+        guard context.budget.admission(for: .seconds(6), at: .now, isCancelled: false) == .admitted,
+              await !context.deadlineState.exceeded() else { observe(.deadline); return }
+        guard !running else { observe(.busy); return }
+        running = true // Reserve before the first store suspension; foreground shares this owner.
+        let now = date()
+        do {
+            let coverage = try await store.acceptedCoverage(at: now)
+            if let cached = coverage.snapshots.first(where: { $0.snapshot.scope == scope }),
+               now >= cached.snapshot.verifiedAt,
+               now.timeIntervalSince(cached.snapshot.verifiedAt) < 2 * 3600,
+               cached.snapshot.layers.allSatisfy({ $0.validTo.map { $0 > now } ?? true }) {
+                observe(.fresh)
+            } else if let attempted = attempts.first(where: { $0.0 == scope })?.1,
+                      now >= attempted, now.timeIntervalSince(attempted) < 2 * 3600 {
+                observe(.backoff) // Source-failure backoff, independent of accepted forecast validity.
+            } else {
+                guard context.budget.admission(for: .seconds(6), at: .now, isCancelled: Task.isCancelled) == .admitted else {
+                    observe(Task.isCancelled ? .cancelled : .deadline)
+                    await finish()
+                    return
+                }
+                attempts.removeAll { $0.0 == scope }
+                attempts.append((scope, now))
+                if attempts.count > 2 { attempts.removeFirst() }
+                // Keep the existing unconditional two-scan stability proof; never synthesize a 304 proof.
+                let store = store, client = client, date = date
+                let deadline = min(context.budget.workDeadline - .seconds(1), ContinuousClock.now + .seconds(5))
+                let outcome = try await withThrowingTaskGroup(of: Outcome.self) { group in
+                    group.addTask {
+                        _ = try await store.refreshCoverage(scope: scope, client: client, date: date)
+                        return .accepted
+                    }
+                    group.addTask {
+                        try await waitUntil(deadline)
+                        try Task.checkCancellation()
+                        return .deadline
+                    }
+                    defer { group.cancelAll() }
+                    return try await group.next() ?? .cancelled
+                }
+                observe(outcome)
+            }
+        } catch is CancellationError { observe(.cancelled)
+        } catch is WSSISnapshotError { observe(.rejected)
+        } catch is WSSIAcceptanceError { observe(.rejected)
+        } catch { observe(.failed) }
+        await finish()
+    }
+
+    func refreshBackground(location: LocationSnapshot, context: BackgroundRefreshExecutionContext) async {
+        let point = location.coordinates
+        let age = date().timeIntervalSince(location.timestamp)
+        // Reuse the established scheduled-location age tolerance. This adapter covers CONUS only.
+        guard age.isFinite, age >= 0, age <= BackgroundLocationContextReusePolicy.maximumReuseAge,
+              location.accuracy > 0, location.accuracy <= BackgroundLocationContextReusePolicy.maximumHorizontalAccuracy,
+              point.latitude >= 24, point.latitude <= 50, point.longitude >= -125, point.longitude <= -66,
+              let scope = try? WSSIScope(south: floor(point.latitude / 5) * 5,
+                                         west: floor(point.longitude / 5) * 5,
+                                         north: floor(point.latitude / 5) * 5 + 5,
+                                         east: floor(point.longitude / 5) * 5 + 5) else {
+            observe(.inapplicable); return
+        }
+        await refreshBackground(scope: scope, context: context)
     }
 
     private func finish() async {

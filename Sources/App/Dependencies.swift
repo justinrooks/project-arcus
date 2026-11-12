@@ -601,7 +601,8 @@ final class Dependencies: Sendable {
             health: healthStore,
             cadence: cadencePolicy,
             notificationSettingsProvider: notificationSettingsProvider,
-            pendingUploadDrainer: locationUploadCoordinator
+            pendingUploadDrainer: locationUploadCoordinator,
+            wssiIngestion: wssiIngestion
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)

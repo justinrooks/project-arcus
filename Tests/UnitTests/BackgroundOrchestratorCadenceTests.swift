@@ -1,4 +1,5 @@
 import CryptoKit
+import Synchronization
 import Foundation
 import Testing
 import SwiftData
@@ -194,6 +195,33 @@ struct BackgroundSchedulerReplacementPolicyTests {
 
 @Suite("BackgroundOrchestrator Cadence", .serialized)
 struct BackgroundOrchestratorCadenceTests {
+    @Test("Optional WSSI outage runs after morning delivery and preserves successful background outcome")
+    func wssiFailureDoesNotInterfereWithNotifications() async throws {
+        let sender = RecordingRiskSender()
+        let wssiOutcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let container = try await MainActor.run { try TestStore.container(for: SkyAwarePersistenceSchema.models) }
+        let store = WSSISnapshotStore(modelContainer: container)
+        let wssi = try WSSIForegroundIngestion(store: store, client: WSSIClient(transport: { _, _ in
+            #expect(await sender.sent().count == 1)
+            throw WSSIAcquisitionError.invalidResponse
+        }), enabled: { true }, observe: { value in wssiOutcomes.withLock { $0.append(value) } })
+        let snapshot = Self.makeRiskSnapshot(change: nil)
+        let system = try await makeRiskSystem(
+            coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot),
+            morningEngine: makeMorningEngine(sender: sender),
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+            ), wssiIngestion: wssi
+        )
+        let outcome = await system.orchestrator.run()
+        #expect(outcome.result == .success)
+        #expect(wssiOutcomes.withLock { $0 } == [.failed])
+        #expect(outcome.didNotify)
+        #expect(await sender.sent().count == 1)
+        #expect(try await system.latestHealthRecord()?.didNotify == true)
+    }
+
     @Test("Every storm risk level maps to the evaluated cadence band")
     func everyStormRiskLevel_mapsToExpectedCadenceBand() {
         let policy = CadencePolicy()
@@ -2183,7 +2211,8 @@ private extension BackgroundOrchestratorCadenceTests {
         coordinator: any HomeIngestionCoordinating,
         morningEngine: MorningEngine? = nil,
         riskChangeEngine: RiskChangeEngine,
-        settingsProvider: Settings
+        settingsProvider: Settings,
+        wssiIngestion: WSSIForegroundIngestion? = nil
     ) async throws -> RiskSystem {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
@@ -2209,7 +2238,8 @@ private extension BackgroundOrchestratorCadenceTests {
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: settingsProvider,
-            pendingUploadDrainer: NoOpLocationUploadCoordinator()
+            pendingUploadDrainer: NoOpLocationUploadCoordinator(),
+            wssiIngestion: wssiIngestion
         )
 
         return .init(orchestrator: orchestrator, modelContainer: container)
@@ -2634,4 +2664,223 @@ private func waitUntil(
         try? await Task.sleep(for: interval)
     }
     return await condition()
+}
+
+@MainActor
+struct WSSIBackgroundIngestionTests {
+    private let now = Date(timeIntervalSince1970: 1_794_440_000)
+    private typealias Gate = WSSIAcceptanceTests.Gate
+    private typealias Probe = WSSIAcceptanceTests.Probe
+    private func scope(_ west: Double = -112) throws -> WSSIScope {
+        try WSSIScope(south: 36, west: west, north: 43, east: west + 10)
+    }
+    private func store() throws -> WSSISnapshotStore {
+        WSSISnapshotStore(modelContainer: try TestStore.container(for: SkyAwarePersistenceSchema.models))
+    }
+    private func client(_ fixture: WSSIClientTests.Fixture) throws -> WSSIClient {
+        try WSSIClient(transport: { try await fixture.get($0, $1) })
+    }
+
+    @Test("Third background scope replaces secondary cache without changing foreground selection")
+    func backgroundRetention() async throws {
+        let store = try store(), date = now
+        for west in [-112.0, -111.0] {
+            let region = try scope(west)
+            try await store.selectCoverage(region, at: date)
+            _ = try await store.refreshCoverage(scope: region,
+                client: client(.init(mode: .empty, geometry: "\(west),36.0,\(west + 10),43.0")), date: { date })
+        }
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let c = try scope(-110)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try client(.init(mode: .empty, geometry: "-110.0,36.0,-100.0,43.0")),
+            enabled: { true }, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.refreshBackground(scope: c, context: backgroundContext())
+        let coverage = try await store.acceptedCoverage(at: date)
+        #expect(outcomes.withLock { $0 } == [.accepted])
+        #expect(coverage.selectedScope == (try scope(-111)))
+        #expect(coverage.snapshots.map(\.snapshot.scope) == [try scope(-111), c])
+    }
+
+    @Test("Expired validity requires acquisition despite recent accepted verification")
+    func backgroundExpiredValidity() async throws {
+        let store = try store(), region = try scope(), date = now
+        let layers = WSSIProduct.allCases.flatMap { product in
+            WSSIPeriod.allCases.map { period in
+                WSSISnapshotLayer(product: product, period: period, state: .identifiedEmpty,
+                    issuedAt: date.addingTimeInterval(-100), validFrom: date.addingTimeInterval(-90),
+                    validTo: date.addingTimeInterval(-1), features: [])
+            }
+        }
+        let snapshot = WSSISnapshot(scope: region, source: URL(string: "https://example.test/wssi")!,
+            acquisitionStartedAt: date, verifiedAt: date, provenance: "fixture", layers: layers)
+        let original = try await store.replace(with: snapshot, select: true, now: date)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { _, _ in throw WSSIAcquisitionError.invalidResponse }),
+            enabled: { true }, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(outcomes.withLock { $0 } == [.failed])
+        #expect(try await store.acceptedCoverage(at: date).snapshots == [original])
+    }
+
+    @Test("Parent cancellation drains active background acquisition and releases shared ownership")
+    func backgroundParentCancellation() async throws {
+        let store = try store(), region = try scope(), date = now
+        let original = try await store.refreshCoverage(scope: region,
+            client: client(.init(mode: .empty)), date: { date })
+        let first = Mutex(true), gate = Gate()
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { _, _ in
+                if first.withLock({ value in defer { value = false }; return value }) {
+                    await gate.pause()
+                    try Task.checkCancellation()
+                }
+                throw WSSIAcquisitionError.invalidResponse
+            }), enabled: { true }, date: { date.addingTimeInterval(7200) },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        let context = backgroundContext()
+        let task = Task { await ingestion.refreshBackground(scope: region, context: context) }
+        await gate.waitForEntry()
+        task.cancel()
+        await gate.open()
+        await task.value
+        #expect(outcomes.withLock { $0 } == [.cancelled])
+        #expect(try await store.acceptedCoverage(at: date).snapshots == [original])
+        await ingestion.refreshBackground(scope: try scope(-111), context: backgroundContext())
+        #expect(outcomes.withLock { $0 } == [.cancelled, .failed])
+    }
+
+    private func backgroundContext(seconds: Int = 30) -> BackgroundRefreshExecutionContext {
+        let start = ContinuousClock.now
+        return .init(budget: .init(start: start, completionDeadline: start + .seconds(seconds),
+                                  finalizationReserve: .seconds(5)))
+    }
+
+    @Test("Background reuses durable provenance across owner restart, then accepts due coverage")
+    func backgroundCadence() async throws {
+        let store = try store(), region = try scope()
+        let fixture = WSSIClientTests.Fixture(mode: .empty)
+        let date = now
+        let accepted = try await store.refreshCoverage(scope: region, client: client(fixture), date: { date })
+        let clock = Mutex(now)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let failing = Mutex(false)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { request, ceiling in
+                if failing.withLock({ $0 }) { throw WSSIAcquisitionError.invalidResponse }
+                return try await fixture.get(request, ceiling)
+            }), enabled: { true }, date: { clock.withLock { $0 } },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        let count = await fixture.count
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(await fixture.count == count)
+        #expect(outcomes.withLock { $0.last } == .fresh)
+        clock.withLock { $0 = now.addingTimeInterval(7200) }
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(outcomes.withLock { $0.last } == .accepted)
+        let updated = try #require(try await store.acceptedCoverage(at: now).snapshots.first)
+        #expect(updated.snapshot.verifiedAt == now.addingTimeInterval(7200))
+        #expect(updated.revision == accepted.revision) // Identical source content retains its canonical revision.
+        #expect(await fixture.count > count)
+        clock.withLock { $0 = now.addingTimeInterval(14400) }
+        failing.withLock { $0 = true }
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(outcomes.withLock { $0.last } == .failed)
+        #expect(try await store.acceptedCoverage(at: now).snapshots == [updated])
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(outcomes.withLock { $0.last } == .backoff)
+    }
+
+    @Test("Background admission skips disabled, insufficient-budget and cancelled runs without requests")
+    func backgroundAdmission() async throws {
+        let fixture = WSSIClientTests.Fixture(mode: .empty)
+        let enabled = Mutex(false)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let date = now, region = try scope()
+        let ingestion = WSSIForegroundIngestion(store: try store(), client: try client(fixture),
+            enabled: { enabled.withLock { $0 } }, date: { date },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        enabled.withLock { $0 = true }
+        await ingestion.refreshBackground(scope: region, context: backgroundContext(seconds: 9))
+        let context = backgroundContext()
+        await context.deadlineState.markExceeded()
+        await ingestion.refreshBackground(scope: region, context: context)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await ingestion.refreshBackground(scope: region, context: self.backgroundContext())
+        }
+        await task.value
+        #expect(outcomes.withLock { $0 } == [.disabled, .deadline, .deadline, .cancelled])
+        #expect(await fixture.count == 0)
+    }
+
+    @Test("Background deadline cancels acquisition; overlapping runs skip and prior coverage survives")
+    func backgroundDeadlineAndOverlap() async throws {
+        let store = try store(), region = try scope(), date = now
+        let original = try await store.refreshCoverage(scope: region, client: client(.init(mode: .empty)), date: { date })
+        let gate = Gate()
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { _, _ in
+                await gate.pause()
+                try await Task.sleep(for: .seconds(3600))
+                throw CancellationError()
+            }), enabled: { true }, date: { date.addingTimeInterval(7200) },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        let context = backgroundContext()
+        let task = Task {
+            await ingestion.refreshBackground(scope: region, context: context, waitUntil: { _ in
+                await gate.waitForEntry()
+                await ingestion.refreshBackground(scope: region, context: context)
+                await gate.open()
+            })
+        }
+        await task.value
+        #expect(outcomes.withLock { $0 } == [.busy, .deadline])
+        #expect(try await store.acceptedCoverage(at: now).snapshots == [original])
+        #expect(await !context.deadlineState.exceeded()) // Optional timeout cannot fail the alert run.
+    }
+
+    @Test("Background location admission rejects stale, inaccurate and unsupported coverage", arguments: [0, 1, 2])
+    func backgroundLocationAdmission(kind: Int) async throws {
+        let fixture = WSSIClientTests.Fixture(mode: .empty), date = now
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: try store(), client: try client(fixture),
+            enabled: { true }, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
+        let location = LocationSnapshot(coordinates: .init(latitude: kind == 2 ? 60 : 40, longitude: -105),
+            timestamp: kind == 0 ? date.addingTimeInterval(-5401) : date, accuracy: kind == 1 ? 500 : 10)
+        await ingestion.refreshBackground(location: location, context: backgroundContext())
+        #expect(outcomes.withLock { $0 } == [.inapplicable])
+        #expect(await fixture.count == 0)
+    }
+
+    @Test("Background fills missing coverage without overriding newer foreground selection")
+    func backgroundMovement() async throws {
+        let store = try store(), a = try scope(), b = try scope(-111), date = now
+        let gate = Gate(), af = WSSIClientTests.Fixture(mode: .empty)
+        let bf = WSSIClientTests.Fixture(mode: .empty, geometry: "-111.0,36.0,-101.0,43.0")
+        let probe = Probe(fixture: af, gate: gate)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { request, ceiling in
+                let geometry = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "geometry" }?.value
+                if geometry == "-111.0,36.0,-101.0,43.0" { return try await bf.get(request, ceiling) }
+                return try await probe.get(request, ceiling)
+            }), enabled: { true }, date: { date })
+        let context = backgroundContext()
+        let task = Task { await ingestion.refreshBackground(scope: a, context: context) }
+        await gate.waitForEntry()
+        await ingestion.admit(scope: b, foreground: true)
+        await gate.open()
+        await task.value
+        await ingestion.waitForIdle()
+        let accepted = try await store.acceptedCoverage(at: date)
+        #expect(accepted.selectedScope == b)
+        #expect(accepted.snapshots.count == 2)
+        #expect(accepted.snapshots.contains { $0.snapshot.scope == a })
+    }
+
 }

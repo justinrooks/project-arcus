@@ -44,6 +44,7 @@ protocol NotificationSettingsProviding: Sendable {
 actor BackgroundOrchestrator {
     private let logger = Logger.backgroundOrchestrator
     private let signposter:OSSignposter
+    private let wssiIngestion: WSSIForegroundIngestion?
     private let coordinator: any HomeIngestionCoordinating
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
@@ -70,6 +71,7 @@ actor BackgroundOrchestrator {
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding,
         pendingUploadDrainer: any PendingLocationUploadDraining,
+        wssiIngestion: WSSIForegroundIngestion? = nil,
         executionContextFactory: @escaping @Sendable (ContinuousClock.Instant) -> BackgroundRefreshExecutionContext = {
             BackgroundRefreshExecutionContext(budget: .standard(start: $0))
         },
@@ -77,6 +79,7 @@ actor BackgroundOrchestrator {
             try await ContinuousClock().sleep(until: $0)
         }
     ) {
+        self.wssiIngestion = wssiIngestion
         self.coordinator = coordinator
         morningEngine = engine
         refreshPolicy = policy
@@ -276,6 +279,7 @@ actor BackgroundOrchestrator {
             throw CancellationError()
         }
 
+        let wssiIngestion = wssiIngestion
         let coordinator = coordinator
         let workDeadlineWaiter = workDeadlineWaiter
         let notificationSettingsProvider = notificationSettingsProvider
@@ -439,6 +443,9 @@ actor BackgroundOrchestrator {
                     } else {
                         noNotifyReasons.append("Risk change notifications disabled")
                     }
+
+                    // Optional source work starts only after upload, ingestion and notification evaluation.
+                    await wssiIngestion?.refreshBackground(location: locationSnapshot, context: executionContext)
 
                     let cadenceResult = cadence.decide(
                         for: .init(categorical: stormRisk, inMeso: inMeso, inAlert: inAlert)
