@@ -9,7 +9,7 @@ actor WSSIForegroundIngestion {
     private let enabled: @Sendable () -> Bool
     private let backgroundAcquisitionEnabled: Bool
     private let date: @Sendable () -> Date
-    private let selectCoverage: @Sendable (WSSIScope, Date) async throws -> Void
+    private let selectCoverage: @Sendable (WSSIScope?, Date) async throws -> Void
     private let observe: @Sendable (Outcome) -> Void
     private var task: Task<Void, Never>?
     private var running = false
@@ -21,7 +21,7 @@ actor WSSIForegroundIngestion {
          enabled: @escaping @Sendable () -> Bool = { false },
          backgroundAcquisitionEnabled: Bool = false,
          date: @escaping @Sendable () -> Date = { Date() },
-         selectCoverage: (@Sendable (WSSIScope, Date) async throws -> Void)? = nil,
+         selectCoverage: (@Sendable (WSSIScope?, Date) async throws -> Void)? = nil,
          observe: @escaping @Sendable (Outcome) -> Void = {
              Logger.appHomeRefresh.info("WSSI ingestion outcome=\($0.rawValue, privacy: .public)")
          }) {
@@ -37,7 +37,15 @@ actor WSSIForegroundIngestion {
     func admit(at point: Coordinate2D, foreground: Bool) async {
         guard foreground else { observe(.background); return }
         guard enabled() else { observe(.disabled); return }
-        guard let scope = WSSISourceApplicability.scope(at: point) else { observe(.inapplicable); return }
+        guard let scope = WSSISourceApplicability.scope(at: point) else {
+            requestedScope = nil
+            pending = nil
+            // Fence completion authority without discarding accepted data or cancelling its retention.
+            do { try await selectCoverage(nil, date()) }
+            catch { observe(.failed) }
+            observe(.inapplicable)
+            return
+        }
         await admit(scope: scope, foreground: foreground)
     }
 

@@ -573,6 +573,70 @@ struct WSSIAcceptanceTests {
         #expect(requests.withLock { $0 } == 0)
     }
 
+    @Test("Leaving CONUS fences in-flight selection and drops queued work while retaining snapshots",
+          arguments: [false, true])
+    func inapplicableForegroundSelection(hasPendingScope: Bool) async throws {
+        let store = try store(), date = now
+        let point = Coordinate2D(latitude: 39.75, longitude: -104.99)
+        let region = try #require(WSSISourceApplicability.scope(at: point))
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-105.0,35.0,-100.0,40.0")
+        try await store.selectCoverage(region, at: date)
+        let original = try await store.refreshCoverage(scope: region, client: client(fixture), date: { date })
+        let gate = Gate(), probe = Probe(fixture: fixture, gate: gate)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let refreshDate = date.addingTimeInterval(7200)
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { try await probe.get($0, $1) }),
+            enabled: { true }, date: { refreshDate },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.admit(at: point, foreground: true)
+        await gate.waitForEntry()
+        if hasPendingScope {
+            await ingestion.admit(at: .init(latitude: 40.5, longitude: -105.5), foreground: true)
+        }
+        await ingestion.admit(at: .init(latitude: 43.65, longitude: -79.38), foreground: true)
+        let outside = try await store.acceptedCoverage(at: refreshDate)
+        #expect(outside.selectedScope == nil)
+        // Admission can update selection metadata; accepted content and its revision must remain intact.
+        #expect(outside.snapshots.map(\.snapshot) == [original.snapshot])
+        #expect(outside.snapshots.map(\.revision) == [original.revision])
+        await gate.open()
+        await ingestion.waitForIdle()
+        let completed = try await store.acceptedCoverage(at: refreshDate)
+        #expect(completed.selectedScope == nil)
+        #expect(completed.snapshots.count == 1)
+        #expect(completed.snapshots.first?.snapshot.scope == region)
+        #expect(completed.snapshots.first?.snapshot.verifiedAt == refreshDate)
+        let requestCount = await fixture.count
+        await ingestion.admit(at: point, foreground: true)
+        #expect(try await store.acceptedCoverage(at: refreshDate).selectedScope == region)
+        #expect(await fixture.count == requestCount)
+        #expect(outcomes.withLock { $0.last } == .fresh)
+    }
+
+    @Test("Leaving CONUS during suspended admission prevents acquisition and preserves accepted snapshots")
+    func inapplicableDuringSelection() async throws {
+        let store = try store(), region = try scope(), date = now
+        let fixture = WSSIClientTests.Fixture(mode: .empty)
+        try await store.selectCoverage(region, at: date)
+        let original = try await store.refreshCoverage(scope: region, client: client(fixture), date: { date })
+        let gate = Gate(), requests = await fixture.count
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(fixture),
+            enabled: { true }, date: { date }, selectCoverage: { scope, date in
+                try await store.selectCoverage(scope, at: date)
+                if scope != nil { await gate.pause() }
+            })
+        let admission = Task { await ingestion.admit(scope: region, foreground: true) }
+        await gate.waitForEntry()
+        await ingestion.admit(at: .init(latitude: 43.65, longitude: -79.38), foreground: true)
+        await gate.open()
+        await admission.value
+        await ingestion.waitForIdle()
+        #expect(try await store.acceptedCoverage(at: date).selectedScope == nil)
+        #expect(try await store.acceptedCoverage(at: date).snapshots == [original])
+        #expect(await fixture.count == requests)
+    }
+
     actor Gate {
         var entered = false
         var entryWaiters: [CheckedContinuation<Void, Never>] = []
