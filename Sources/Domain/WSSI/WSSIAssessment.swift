@@ -14,7 +14,7 @@ struct WSSIAssessmentLayer: Sendable {
          validTo: Date, scope: WSSIScope, features: [WSSIFeature]) throws {
         guard issuedAt.timeIntervalSince1970.isFinite,
               validFrom.timeIntervalSince1970.isFinite, validTo.timeIntervalSince1970.isFinite,
-              validFrom < validTo,
+              validFrom < validTo, issuedAt < validTo,
               features.allSatisfy({
                   $0.product == product && $0.period == period && $0.issuedAt == issuedAt &&
                   $0.validFrom == validFrom && $0.validTo == validTo

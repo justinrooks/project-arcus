@@ -67,4 +67,20 @@ struct WSSIAssessmentTests {
         #expect(try result([layer(impacts: [])]) == .noImpact)
         #expect(throws: WSSIAssessmentError.self) { try result([layer(), layer()]) }
     }
+
+    @Test(arguments: [0.0, 1.0])
+    func rejectsEmptyLayerIssuedAtOrAfterValidityEnd(offset: TimeInterval) throws {
+        let end = start.addingTimeInterval(21 * 3600)
+        let scope = try WSSIScope(south: -10, west: -10, north: 10, east: 10)
+        #expect(throws: WSSIAssessmentError.self) {
+            try WSSIAssessmentLayer(product: .overall, period: .day1,
+                issuedAt: end.addingTimeInterval(offset), validFrom: start, validTo: end,
+                scope: scope, features: [])
+        }
+        let valid = try WSSIAssessmentLayer(product: .overall, period: .day1,
+            issuedAt: end.addingTimeInterval(-1), validFrom: start, validTo: end,
+            scope: scope, features: [])
+        #expect(try result([valid], time: end.addingTimeInterval(-1)) == .noImpact)
+    }
+
 }
