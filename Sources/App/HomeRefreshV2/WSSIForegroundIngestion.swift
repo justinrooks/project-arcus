@@ -3,10 +3,11 @@ import OSLog
 
 /// Independent WSSI ownership. Foreground work stays off Home; scheduled work uses only leftover budget.
 actor WSSIForegroundIngestion {
-    enum Outcome: String, Sendable { case disabled, background, busy, fresh, accepted, rejected, failed, backoff, deadline, cancelled, inapplicable }
+    enum Outcome: String, Sendable { case disabled, background, busy, fresh, accepted, rejected, failed, backoff, deferredFeasibility, deadline, cancelled, inapplicable }
     private let store: WSSISnapshotStore
     private let client: WSSIClient
     private let enabled: @Sendable () -> Bool
+    private let backgroundAcquisitionEnabled: Bool
     private let date: @Sendable () -> Date
     private let selectCoverage: @Sendable (WSSIScope, Date) async throws -> Void
     private let observe: @Sendable (Outcome) -> Void
@@ -18,6 +19,7 @@ actor WSSIForegroundIngestion {
 
     init(store: WSSISnapshotStore, client: WSSIClient,
          enabled: @escaping @Sendable () -> Bool = { false },
+         backgroundAcquisitionEnabled: Bool = false,
          date: @escaping @Sendable () -> Date = { Date() },
          selectCoverage: (@Sendable (WSSIScope, Date) async throws -> Void)? = nil,
          observe: @escaping @Sendable (Outcome) -> Void = {
@@ -26,6 +28,7 @@ actor WSSIForegroundIngestion {
         self.store = store
         self.client = client
         self.enabled = enabled
+        self.backgroundAcquisitionEnabled = backgroundAcquisitionEnabled
         self.date = date
         self.observe = observe
         self.selectCoverage = selectCoverage ?? { try await store.selectCoverage($0, at: $1) }
@@ -78,6 +81,9 @@ actor WSSIForegroundIngestion {
                            }) async {
         guard enabled() else { observe(.disabled); return }
         guard !Task.isCancelled else { observe(.cancelled); return }
+        // WSSI-01 measured 10.102s of pages for one scan; acceptance needs two plus inventories.
+        // Defer before taking shared ownership so a background skip cannot consume foreground admission.
+        guard backgroundAcquisitionEnabled else { observe(.deferredFeasibility); return }
         guard context.budget.admission(for: .seconds(6), at: .now, isCancelled: false) == .admitted,
               await !context.deadlineState.exceeded() else { observe(.deadline); return }
         guard !running else { observe(.busy); return }

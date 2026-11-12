@@ -195,8 +195,8 @@ struct BackgroundSchedulerReplacementPolicyTests {
 
 @Suite("BackgroundOrchestrator Cadence", .serialized)
 struct BackgroundOrchestratorCadenceTests {
-    @Test("Optional WSSI outage runs after morning delivery and preserves successful background outcome")
-    func wssiFailureDoesNotInterfereWithNotifications() async throws {
+    @Test("WSSI deferral and permitted source failure preserve prior morning delivery", arguments: [false, true])
+    func wssiFailureDoesNotInterfereWithNotifications(backgroundAcquisitionEnabled: Bool) async throws {
         let sender = RecordingRiskSender()
         let wssiOutcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
         let container = try await MainActor.run { try TestStore.container(for: SkyAwarePersistenceSchema.models) }
@@ -204,7 +204,7 @@ struct BackgroundOrchestratorCadenceTests {
         let wssi = try WSSIForegroundIngestion(store: store, client: WSSIClient(transport: { _, _ in
             #expect(await sender.sent().count == 1)
             throw WSSIAcquisitionError.invalidResponse
-        }), enabled: { true }, observe: { value in wssiOutcomes.withLock { $0.append(value) } })
+        }), enabled: { true }, backgroundAcquisitionEnabled: backgroundAcquisitionEnabled, observe: { value in wssiOutcomes.withLock { $0.append(value) } })
         let snapshot = Self.makeRiskSnapshot(change: nil)
         let system = try await makeRiskSystem(
             coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot),
@@ -216,7 +216,7 @@ struct BackgroundOrchestratorCadenceTests {
         )
         let outcome = await system.orchestrator.run()
         #expect(outcome.result == .success)
-        #expect(wssiOutcomes.withLock { $0 } == [.failed])
+        #expect(wssiOutcomes.withLock { $0 } == [backgroundAcquisitionEnabled ? .failed : .deferredFeasibility])
         #expect(outcome.didNotify)
         #expect(await sender.sent().count == 1)
         #expect(try await system.latestHealthRecord()?.didNotify == true)
@@ -2681,6 +2681,50 @@ struct WSSIBackgroundIngestionTests {
         try WSSIClient(transport: { try await fixture.get($0, $1) })
     }
 
+    @Test("App-default background feasibility gate defers due acquisition without requests or foreground backoff")
+    func backgroundFeasibilityDeferral() async throws {
+        let store = try store(), region = try scope(), date = now
+        let original = try await store.refreshCoverage(scope: region,
+            client: client(.init(mode: .empty)), date: { date })
+        let fixture = WSSIClientTests.Fixture(mode: .empty)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        // Foreground's internal gate is enabled; background's separate gate uses the app default.
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(fixture),
+            enabled: { true }, date: { date.addingTimeInterval(7200) },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(outcomes.withLock { $0 } == [.deferredFeasibility, .deferredFeasibility])
+        #expect(await fixture.count == 0)
+        #expect(try await store.acceptedCoverage(at: date).snapshots == [original])
+        await ingestion.admit(scope: region, foreground: true)
+        await ingestion.waitForIdle()
+        #expect(outcomes.withLock { $0.last } == .accepted)
+        #expect(await fixture.count > 0)
+    }
+
+    @Test("Default background deferral bypasses ownership while foreground selection is suspended")
+    func backgroundDeferralDoesNotOwnForegroundWork() async throws {
+        let store = try store(), region = try scope(), date = now
+        let gate = Gate(), fixture = WSSIClientTests.Fixture(mode: .empty)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store, client: try client(fixture),
+            enabled: { true }, date: { date }, selectCoverage: { region, date in
+                await gate.pause()
+                try await store.selectCoverage(region, at: date)
+            }, observe: { value in outcomes.withLock { $0.append(value) } })
+        let foreground = Task { await ingestion.admit(scope: region, foreground: true) }
+        await gate.waitForEntry()
+        await ingestion.refreshBackground(scope: region, context: backgroundContext())
+        #expect(outcomes.withLock { $0 } == [.deferredFeasibility])
+        #expect(await fixture.count == 0)
+        await gate.open()
+        await foreground.value
+        await ingestion.waitForIdle()
+        #expect(outcomes.withLock { $0 } == [.deferredFeasibility, .accepted])
+        #expect(try await store.acceptedCoverage(at: date).snapshots.count == 1)
+    }
+
     @Test("Third background scope replaces secondary cache without changing foreground selection")
     func backgroundRetention() async throws {
         let store = try store(), date = now
@@ -2694,7 +2738,7 @@ struct WSSIBackgroundIngestionTests {
         let c = try scope(-110)
         let ingestion = WSSIForegroundIngestion(store: store,
             client: try client(.init(mode: .empty, geometry: "-110.0,36.0,-100.0,43.0")),
-            enabled: { true }, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
+            enabled: { true }, backgroundAcquisitionEnabled: true, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
         await ingestion.refreshBackground(scope: c, context: backgroundContext())
         let coverage = try await store.acceptedCoverage(at: date)
         #expect(outcomes.withLock { $0 } == [.accepted])
@@ -2718,7 +2762,7 @@ struct WSSIBackgroundIngestionTests {
         let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
         let ingestion = WSSIForegroundIngestion(store: store,
             client: try WSSIClient(transport: { _, _ in throw WSSIAcquisitionError.invalidResponse }),
-            enabled: { true }, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
+            enabled: { true }, backgroundAcquisitionEnabled: true, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
         await ingestion.refreshBackground(scope: region, context: backgroundContext())
         #expect(outcomes.withLock { $0 } == [.failed])
         #expect(try await store.acceptedCoverage(at: date).snapshots == [original])
@@ -2738,7 +2782,7 @@ struct WSSIBackgroundIngestionTests {
                     try Task.checkCancellation()
                 }
                 throw WSSIAcquisitionError.invalidResponse
-            }), enabled: { true }, date: { date.addingTimeInterval(7200) },
+            }), enabled: { true }, backgroundAcquisitionEnabled: true, date: { date.addingTimeInterval(7200) },
             observe: { value in outcomes.withLock { $0.append(value) } })
         let context = backgroundContext()
         let task = Task { await ingestion.refreshBackground(scope: region, context: context) }
@@ -2771,7 +2815,7 @@ struct WSSIBackgroundIngestionTests {
             client: try WSSIClient(transport: { request, ceiling in
                 if failing.withLock({ $0 }) { throw WSSIAcquisitionError.invalidResponse }
                 return try await fixture.get(request, ceiling)
-            }), enabled: { true }, date: { clock.withLock { $0 } },
+            }), enabled: { true }, backgroundAcquisitionEnabled: true, date: { clock.withLock { $0 } },
             observe: { value in outcomes.withLock { $0.append(value) } })
         let count = await fixture.count
         await ingestion.refreshBackground(scope: region, context: backgroundContext())
@@ -2800,7 +2844,7 @@ struct WSSIBackgroundIngestionTests {
         let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
         let date = now, region = try scope()
         let ingestion = WSSIForegroundIngestion(store: try store(), client: try client(fixture),
-            enabled: { enabled.withLock { $0 } }, date: { date },
+            enabled: { enabled.withLock { $0 } }, backgroundAcquisitionEnabled: true, date: { date },
             observe: { value in outcomes.withLock { $0.append(value) } })
         await ingestion.refreshBackground(scope: region, context: backgroundContext())
         enabled.withLock { $0 = true }
@@ -2828,7 +2872,7 @@ struct WSSIBackgroundIngestionTests {
                 await gate.pause()
                 try await Task.sleep(for: .seconds(3600))
                 throw CancellationError()
-            }), enabled: { true }, date: { date.addingTimeInterval(7200) },
+            }), enabled: { true }, backgroundAcquisitionEnabled: true, date: { date.addingTimeInterval(7200) },
             observe: { value in outcomes.withLock { $0.append(value) } })
         let context = backgroundContext()
         let task = Task {
@@ -2849,7 +2893,7 @@ struct WSSIBackgroundIngestionTests {
         let fixture = WSSIClientTests.Fixture(mode: .empty), date = now
         let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
         let ingestion = WSSIForegroundIngestion(store: try store(), client: try client(fixture),
-            enabled: { true }, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
+            enabled: { true }, backgroundAcquisitionEnabled: true, date: { date }, observe: { value in outcomes.withLock { $0.append(value) } })
         let location = LocationSnapshot(coordinates: .init(latitude: kind == 2 ? 60 : 40, longitude: -105),
             timestamp: kind == 0 ? date.addingTimeInterval(-5401) : date, accuracy: kind == 1 ? 500 : 10)
         await ingestion.refreshBackground(location: location, context: backgroundContext())
@@ -2869,7 +2913,7 @@ struct WSSIBackgroundIngestionTests {
                     .queryItems?.first { $0.name == "geometry" }?.value
                 if geometry == "-111.0,36.0,-101.0,43.0" { return try await bf.get(request, ceiling) }
                 return try await probe.get(request, ceiling)
-            }), enabled: { true }, date: { date })
+            }), enabled: { true }, backgroundAcquisitionEnabled: true, date: { date })
         let context = backgroundContext()
         let task = Task { await ingestion.refreshBackground(scope: a, context: context) }
         await gate.waitForEntry()
