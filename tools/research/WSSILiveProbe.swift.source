@@ -1,0 +1,130 @@
+// Research executable, copied to .swift only outside the repo to avoid automatic Xcode membership.
+import Darwin
+import Foundation
+import SwiftData
+
+actor WSSIProbeTransport {
+    let directory: URL
+    let downloader = WSSIClient.Downloader()
+    var records: [[String: String]] = []
+
+    init(directory: URL) { self.directory = directory }
+
+    func download(_ request: URLRequest, maximumBytes: Int) async throws -> HTTPResponse {
+        let started = Date()
+        let clock = ContinuousClock.now
+        var record = ["url": request.url!.absoluteString, "started": started.ISO8601Format(),
+                      "requestHeaders": String(describing: request.allHTTPHeaderFields ?? [:])]
+        do {
+            let response = try await downloader.download(request, maximumBytes: maximumBytes)
+            let name = String(format: "response-%03d.json", records.count + 1)
+            try (response.data ?? Data()).write(to: directory.appendingPathComponent(name), options: .atomic)
+            record.merge(["body": name, "status": String(response.status),
+                          "decodedBodyBytes": String(response.data?.count ?? 0),
+                          "headers": String(describing: response.headers)]) { _, new in new }
+            try finish(record, clock: clock)
+            return response
+        } catch {
+            record["error"] = String(describing: error)
+            try finish(record, clock: clock)
+            throw error
+        }
+    }
+
+    private func finish(_ record: [String: String], clock: ContinuousClock.Instant) throws {
+        var record = record
+        record["elapsed"] = String(describing: clock.duration(to: .now))
+        records.append(record)
+        try JSONSerialization.data(withJSONObject: records, options: [.prettyPrinted, .sortedKeys])
+            .write(to: directory.appendingPathComponent("requests.json"), options: .atomic)
+    }
+}
+
+@main
+struct WSSILiveProbe {
+    static func main() async throws {
+        guard CommandLine.arguments.count == 3 else { fatalError("Expected directory and acquire/readback") }
+        let directory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+        let storeURL = directory.appendingPathComponent("wssi.store")
+        let container = try ModelContainer(for: WSSICacheRecord.self,
+            configurations: ModelConfiguration(url: storeURL, cloudKitDatabase: .none))
+        let store = WSSISnapshotStore(modelContainer: container)
+        if CommandLine.arguments[2] == "readback" {
+            let values = try await store.acceptedCoverage().snapshots
+            let expected = directory.appendingPathComponent("accepted.json")
+            if FileManager.default.fileExists(atPath: expected.path) {
+                let value = try JSONDecoder().decode(WSSICachedSnapshot.self, from: Data(contentsOf: expected))
+                guard values == [value] else { fatalError("Restart readback differs") }
+                try assess(value, directory: directory)
+            } else {
+                guard values.isEmpty else { fatalError("Failed acquisition persisted data") }
+            }
+            try Data("Restart verified; snapshots=\(values.count)\n".utf8)
+                .write(to: directory.appendingPathComponent("readback.txt"))
+            return
+        }
+        guard CommandLine.arguments[2] == "acquire" else { fatalError("Unknown mode") }
+        // Fixed public benchmark envelope, never a person's device location.
+        let scope = try WSSIScope(south: 36, west: -112, north: 43, east: -102)
+        let transport = WSSIProbeTransport(directory: directory)
+        let client = try WSSIClient(transport: { try await transport.download($0, maximumBytes: $1) })
+        let started = Date()
+        let clock = ContinuousClock.now
+        var report = ["started": started.ISO8601Format(), "environment": ProcessInfo.processInfo.operatingSystemVersionString,
+                      "scope": "-112,36,-102,43", "deviceEvidence": "unavailable",
+                      "wireBytes": "unmeasured; decoded body bytes only", "energy": "unmeasured"]
+        do {
+            try await store.selectCoverage(scope)
+            let accepted = try await store.refreshCoverage(scope: scope, client: client)
+            try JSONEncoder().encode(accepted).write(to: directory.appendingPathComponent("accepted.json"))
+            report["outcome"] = "accepted"
+            report["revision"] = String(accepted.revision)
+            report["provenance"] = accepted.snapshot.provenance
+            let layers = try accepted.snapshot.layers.compactMap { try $0.assessmentLayer(in: scope) }
+            // Explicit public sample points; results can be unavailable/expired, never forced positive.
+            for (name, point) in [("sample", Coordinate2D(latitude: 40, longitude: -105)),
+                                  ("outsideCoverage", Coordinate2D(latitude: 0, longitude: 0))] {
+                let assessment = try WSSIAssessment.evaluate(layers: layers, at: point, time: Date())
+                report[name] = assessment.entries.map { "\($0.product.rawValue)/\($0.period.rawValue)=\($0.result)" }
+                    .joined(separator: "; ")
+            }
+        } catch {
+            if report["outcome"] == nil { report["outcome"] = "failed" }
+            report["error"] = String(describing: error)
+        }
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        report["processPeakResidentBytes"] = String(usage.ru_maxrss)
+        report["elapsed"] = String(describing: clock.duration(to: .now))
+        report["finished"] = Date().ISO8601Format()
+        try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            .write(to: directory.appendingPathComponent("outcome.json"), options: .atomic)
+        print(report["outcome"]!, report["error"] ?? "")
+    }
+
+    static func assess(_ value: WSSICachedSnapshot, directory: URL) throws {
+        let scope = value.snapshot.scope
+        var results: [[String: String]] = []
+        // Assess real accepted polygons at their actual window; no fixture geometry or invented validity.
+        for layer in value.snapshot.layers where layer.product == .overall {
+            guard let accepted = try layer.assessmentLayer(in: scope) else { continue }
+            let time = max(value.snapshot.verifiedAt, accepted.validFrom)
+            guard time < accepted.validTo else { continue }
+            let vertices = layer.features.flatMap(\.polygons).compactMap { $0.rings.first }.flatMap { $0 }
+            let inside = vertices.first {
+                (scope.south...scope.north).contains($0.latitude) && (scope.west...scope.east).contains($0.longitude)
+            }
+            for (name, point) in [("polygonBoundary", inside),
+                                   ("comparison", Coordinate2D(latitude: 40, longitude: -105))] {
+                guard let point else { continue }
+                let entries = try WSSIAssessment.evaluate(layers: [accepted], at: point, time: time).entries
+                let result = entries.first { $0.product == layer.product && $0.period == layer.period }!.result
+                results.append(["case": name, "period": layer.period.rawValue,
+                    "point": "\(point.longitude),\(point.latitude)", "time": time.ISO8601Format(),
+                    "result": String(describing: result), "retrieved": value.snapshot.verifiedAt.ISO8601Format()])
+            }
+        }
+        try JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys])
+            .write(to: directory.appendingPathComponent("polygon-assessment.json"), options: .atomic)
+    }
+}
