@@ -22,6 +22,22 @@ struct WSSIClientTests {
         #expect(await fixture.count == 80)
     }
 
+    @Test("verification scans retain no reusable bodies while single scans retain conditional evidence")
+    func retainedBodies() async throws {
+        let fixture = Fixture()
+        let client = try WSSIClient(limits: .init(pageSize: 1), transport: { try await fixture.get($0, $1) })
+        let reusable = try await client.acquire(scope: scope())
+        #expect(reusable.retainedResponseByteCount > 0)
+        for _ in 0..<2 {
+            let scan = try await client.acquire(scope: scope(), previous: nil,
+                deadline: ContinuousClock.now.advanced(by: .seconds(120)),
+                byteBudget: 100_000_000, requestBudget: 400, retainResponses: false)
+            #expect(scan.layers.count == 20)
+            #expect(scan.retainedResponseByteCount == 0)
+            #expect(scan.layers.flatMap(\.requests).reduce(0) { $0 + $1.decodedByteCount } > 0)
+        }
+    }
+
     @Test("empty complete data remains retrieval evidence without publication identity")
     func empty() async throws {
         let fixture = Fixture(mode: .empty)
