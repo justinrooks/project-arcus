@@ -51,7 +51,7 @@ struct WSSIAcceptanceTests {
         let requests = await fixture.count
         await ingestion.admit(scope: region, foreground: true)
         #expect(await fixture.count == requests)
-        #expect(outcomes.withLock { $0 } == [.disabled, .background, .busy, .accepted, .fresh])
+        #expect(outcomes.withLock { $0 } == [.disabled, .background, .attempted, .busy, .accepted, .fresh])
         clock.withLock { $0 = now.addingTimeInterval(7200) }
         failing.withLock { $0 = true }
         await ingestion.admit(scope: region, foreground: true)
@@ -62,7 +62,13 @@ struct WSSIAcceptanceTests {
 
     @Test("Movement during acquisition selects latest scope and cadence follows both retained scopes")
     func foregroundMovement() async throws {
-        let store = try store()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        let container = try ModelContainer(for: schema, configurations:
+            ModelConfiguration(schema: schema, url: root.appendingPathComponent("cache.store")))
+        let store = WSSISnapshotStore(modelContainer: container)
         let a = try scope(), b = try scope(-111)
         let gate = Gate()
         let af = WSSIClientTests.Fixture(mode: .empty)
@@ -345,6 +351,136 @@ struct WSSIAcceptanceTests {
         let store = WSSISnapshotStore(modelContainer: try container())
         #expect(try await store.acceptedCoverage(at: now.addingTimeInterval(3 * 86400)).snapshots.isEmpty)
         #expect(try await store.issuanceWatermarks().count == 20)
+    }
+
+    @Test("Disk reopen uses scope verification and source validity independently",
+          arguments: ["fresh", "expired", "old", "future", "missing", "outside"])
+    func foregroundReopen(state: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        let url = root.appendingPathComponent("cache.store")
+        func container() throws -> ModelContainer {
+            try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                               configurations: ModelConfiguration(schema: schema, url: url))
+        }
+        let region = try scope()
+        let acquisitionDate = now
+        var admissionDate = now
+        do {
+            let store = WSSISnapshotStore(modelContainer: try container())
+            if state != "missing" {
+                let snapshot = try await client(.init()).acquireVerified(scope: region, date: { acquisitionDate })
+                if state == "expired" { admissionDate = try #require(snapshot.layers.compactMap(\.validTo).min()) }
+                let verified = state == "old" ? now.addingTimeInterval(-7200)
+                    : state == "future" ? now.addingTimeInterval(60)
+                    : state == "expired" ? admissionDate.addingTimeInterval(-60) : now
+                _ = try await store.replace(with: WSSISnapshot(scope: region, source: snapshot.source,
+                    acquisitionStartedAt: verified, verifiedAt: verified,
+                    provenance: snapshot.provenance, layers: snapshot.layers), select: true, now: max(now, verified))
+            }
+        }
+        let date = admissionDate
+        let store = WSSISnapshotStore(modelContainer: try container())
+        let requests = Mutex(0)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { _, _ in
+                requests.withLock { $0 += 1 }
+                throw WSSIAcquisitionError.invalidResponse
+            }), enabled: { true }, date: { date },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        let selected = state == "outside" ? try scope(-100) : region
+        await ingestion.admit(scope: selected, foreground: true)
+        await ingestion.waitForIdle()
+        #expect(try await store.acceptedCoverage(at: now).selectedScope == selected)
+        #expect(requests.withLock { $0 } == (state == "fresh" ? 0 : 1))
+        #expect(outcomes.withLock { $0 } == (state == "fresh" ? [.fresh] : [.attempted, .failed]))
+        if state != "fresh" {
+            await ingestion.admit(scope: selected, foreground: true)
+            #expect(outcomes.withLock { $0.last } == .backoff)
+            #expect(requests.withLock { $0 } == 1)
+        }
+    }
+
+    @Test("Disk-backed failed and rejected attempts back off then retry without refreshing last-known-good",
+          arguments: [false, true])
+    func foregroundFailureRetry(rejected: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        let container = try ModelContainer(for: schema, configurations:
+            ModelConfiguration(schema: schema, url: root.appendingPathComponent("cache.store")))
+        let store = WSSISnapshotStore(modelContainer: container)
+        let region = try scope(), date = now
+        try await store.selectCoverage(region, at: now)
+        let original = try await store.refreshCoverage(scope: region, client: client(.init()), date: { date })
+        let clock = Mutex(now.addingTimeInterval(7200))
+        let failing = Mutex(true)
+        let requests = Mutex(0)
+        let fixture = WSSIClientTests.Fixture()
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { request, ceiling in
+                requests.withLock { $0 += 1 }
+                if failing.withLock({ $0 }) {
+                    if rejected { throw WSSISnapshotError.invalidSnapshot }
+                    throw WSSIAcquisitionError.invalidResponse
+                }
+                return try await fixture.get(request, ceiling)
+            }), enabled: { true }, date: { clock.withLock { $0 } },
+            observe: { value in outcomes.withLock { $0.append(value) } })
+        await ingestion.admit(scope: region, foreground: true)
+        await ingestion.waitForIdle()
+        #expect(outcomes.withLock { $0.last } == (rejected ? .rejected : .failed))
+        await ingestion.admit(scope: region, foreground: true)
+        #expect(outcomes.withLock { $0.last } == .backoff)
+        #expect(requests.withLock { $0 } == 1)
+        #expect(try await store.acceptedCoverage(at: now).snapshots.first?.snapshot == original.snapshot)
+        clock.withLock { $0 = now.addingTimeInterval(14400) }
+        failing.withLock { $0 = false }
+        await ingestion.admit(scope: region, foreground: true)
+        await ingestion.waitForIdle()
+        #expect(outcomes.withLock { $0.last } == .accepted)
+        #expect(try await store.acceptedCoverage(at: now).snapshots.first?.snapshot.verifiedAt == now.addingTimeInterval(14400))
+    }
+
+    @Test("Movement during suspended disk admission drains only the latest scope")
+    func foregroundAdmissionOverlap() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        let container = try ModelContainer(for: schema, configurations:
+            ModelConfiguration(schema: schema, url: root.appendingPathComponent("cache.store")))
+        let store = WSSISnapshotStore(modelContainer: container)
+        let a = try scope(), b = try scope(-111), date = now
+        try await store.selectCoverage(b, at: now)
+        let fixture = WSSIClientTests.Fixture(mode: .empty, geometry: "-111.0,36.0,-101.0,43.0")
+        _ = try await store.refreshCoverage(scope: b, client: client(fixture), date: { date })
+        let gate = Gate()
+        let requests = Mutex(0)
+        let outcomes = Mutex<[WSSIForegroundIngestion.Outcome]>([])
+        let ingestion = WSSIForegroundIngestion(store: store,
+            client: try WSSIClient(transport: { _, _ in
+                requests.withLock { $0 += 1 }
+                throw WSSIAcquisitionError.invalidResponse
+            }), enabled: { true }, date: { date }, selectCoverage: { scope, now in
+                try await store.selectCoverage(scope, at: now)
+                if scope == a { await gate.pause() }
+            }, observe: { value in outcomes.withLock { $0.append(value) } })
+        let first = Task { await ingestion.admit(scope: a, foreground: true) }
+        await gate.waitForEntry()
+        await ingestion.admit(scope: b, foreground: true)
+        await ingestion.admit(scope: b, foreground: true)
+        await gate.open()
+        await first.value
+        await ingestion.waitForIdle()
+        #expect(try await store.acceptedCoverage(at: now).selectedScope == b)
+        #expect(outcomes.withLock { $0 } == [.busy, .busy, .fresh])
+        #expect(requests.withLock { $0 } == 0)
     }
 
     actor Gate {
