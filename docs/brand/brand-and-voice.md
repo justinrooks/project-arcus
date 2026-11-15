@@ -125,6 +125,10 @@ The goal is not to display everything.
 
 The goal is to communicate what matters.
 
+SkyAware should earn attention rather than compete for it: quiet when it can be, gently proactive when a
+meaningful local forecast warrants closer attention, and direct and appropriately urgent when official watches
+or warnings matter.
+
 ## Core Messaging
 
 Preferred positioning concepts:
@@ -630,6 +634,23 @@ Their job is to tell the user:
 - What happened.
 - Why it matters to them.
 - What relevant threat information is available.
+
+## Awareness Nudges Versus Official Alerts
+
+An awareness nudge invites the user to check the weather and consider preparedness. It should sound approachable,
+reflect the available forecast and its uncertainty, and explain *why today may deserve attention*. It is not an
+official warning or a prediction that a specific event will occur.
+
+Watches and warnings serve a different purpose. Name the actual official product, preserve its importance, and
+communicate relevant urgency and instructions accurately. Do not dilute an official warning with the casual
+language of a forecast nudge, or present a SkyAware nudge as if it came from NWS.
+
+Illustrative nudge language, only when supported by current local evidence:
+
+- "Severe storms are possible in your area this afternoon. Worth checking the latest forecast."
+- "Today could be an active weather day. Keep an eye on changing conditions."
+
+These are tone examples, not implemented notification types or approved delivery triggers.
 
 ## Field Responsibilities
 
