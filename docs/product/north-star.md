@@ -56,6 +56,20 @@ The user should not need to understand meteorological models, probabilities, out
 
 SkyAware performs that interpretation and presentation work for them.
 
+## Why SkyAware Exists
+
+Weather information can be publicly available without creating meaningful awareness. Broad regional forecasts may
+not feel relevant to someone's actual location; specialized outlooks may be hard to find or interpret; and an
+ordinary-looking day may not prompt closer attention until conditions are already changing.
+
+SkyAware exists to narrow that gap between **available information and personally relevant awareness**. It
+connects established weather guidance to the user's location, explains its significance, and helps people recognize
+when weather warrants more attention without requiring them to become meteorologists.
+
+The desired outcome is better-informed judgment and preparation, not constant weather checking. A well-calibrated
+nudge on a potentially consequential day can be useful even if no damaging storm ultimately develops. Forecast
+uncertainty is part of the message, not a reason to withhold every early awareness cue.
+
 ## What SkyAware Is Not
 
 SkyAware is not:
@@ -840,6 +854,24 @@ SkyAware notifications are interruptions intended to communicate meaningful weat
 
 They require particular care because users may act on their content immediately.
 
+## Attention and Interruption Philosophy
+
+SkyAware has two complementary notification responsibilities:
+
+- **Proactive awareness:** When supported local forecasts suggest a day deserves closer attention, a gentle nudge
+  can encourage the user to check current information and consider preparation. It communicates *potential*, not a
+  prediction that a particular storm will occur.
+- **Timely official alerts:** Relevant watches and warnings must retain their importance, source distinction, and
+  warranted urgency. A calm product should not soften actionable official guidance into casual advice.
+
+Being proactive does not mean notifying for every outlook, minor revision, or quiet day. The reason to interrupt is
+a meaningful change in the user's need for awareness, not merely new data arriving. Consider local relevance,
+significance, source freshness, user preferences, and alert fatigue. Otherwise, the on-demand assessment should
+provide the information without demanding attention.
+
+This principle does not establish a new notification policy, cadence, delivery guarantee, or implementation scope.
+Specific triggers and delivery behavior require separate product decisions and validation.
+
 ## Notification Responsibilities
 
 **Title**
@@ -983,6 +1015,7 @@ A visual implementation issue, cleanup task, or generated design concept does no
 
 SkyAware succeeds when users can quickly understand:
 
+- Whether today's forecast deserves more attention, even before a watch or warning.
 - Their current local weather situation.
 - Whether meaningful severe-weather threats exist.
 - Which hazard deserves attention.
@@ -1004,6 +1037,9 @@ Correctness, clarity, resilience, and craftsmanship must reinforce one another.
 The ideal experience does not draw attention to how much meteorological complexity SkyAware manages.
 
 It simply makes the local weather picture easier to understand.
+
+An appropriate early nudge or an uneventful day spent better prepared can be a successful outcome. Notification
+volume, app opens, and whether a forecast hazard ultimately occurs are not, by themselves, measures of awareness.
 
 ---
 
@@ -1038,7 +1074,7 @@ If a change improves appearance while weakening trust, clarity, or weather meani
 
 # Final Principle
 
-**SkyAware exists to make severe-weather awareness understandable, timely, and trustworthy.**
+**SkyAware exists to help people recognize when weather deserves their attention, so they can be better informed and prepared.**
 
 Everything else serves that purpose.
 
