@@ -48,6 +48,7 @@
         "SkyAwareUITests\/testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses()",
         "SkyAwareUITests\/testSummaryReliabilityRailPrimaryAndDismissActionsAreIndependentButtons()",
         "SkyAwareUITests\/testSummaryShowsTwoLocationRequiredBlocksWhenLocationIsRestricted()",
+        "SkyAwareUITests\/testWSSIProbeNavigationAndExport()",
         "SkyAwareUITests\/testTabNavigationLoadsEachPrimaryView()",
         "SkyAwareUITests\/testUnavailableStorageShowsExplicitRetryInsteadOfConditionsLoading()",
         "SkyAwareUITests\/testTodayLocalAlertsRefreshAndScrollingRemainUsableAtAccessibilityTextSize()"

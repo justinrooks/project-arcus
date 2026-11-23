@@ -120,6 +120,15 @@ struct SettingsDiagnosticsView: View {
                 .contentShape(Rectangle())
 
                 NavigationLink {
+                    WSSIGeometryProbeView()
+                } label: {
+                    settingsNavRow("WSSI Geometry Probe", systemImage: "map")
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+
+                NavigationLink {
                     BarometricPressureTrendView()
                         .navigationTitle("Pressure Trend")
                         .navigationBarTitleDisplayMode(.inline)

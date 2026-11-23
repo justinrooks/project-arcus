@@ -118,17 +118,14 @@ actor WSSIAcquisitionProbe {
         self.transport = transport ?? Self.makeTransport()
     }
 
-    func run(slot: Slot = .overallDayOne, environment: Environment) async throws -> Result {
+    func run(slot: Slot = .overallDayOne, environment: Environment,
+             progress: @Sendable (Report) async -> Void = { _ in }) async throws -> Result {
         var report = Report(startedAt: .now, environment: environment, requestedSlot: slot)
         guard !running else {
             report.stop = .busy
             return Result(report: report, geometry: nil)
         }
-        guard let origin = URLComponents(url: origin, resolvingAgainstBaseURL: false),
-              origin.scheme == "https" || origin.scheme == "http",
-              origin.host?.isEmpty == false, origin.user == nil, origin.password == nil,
-              origin.query == nil, origin.fragment == nil,
-              origin.path.isEmpty || origin.path == "/" else {
+        guard let origin = Self.validatedOrigin(origin) else {
             report.stop = .rejectedOrigin
             return Result(report: report, geometry: nil)
         }
@@ -138,6 +135,7 @@ actor WSSIAcquisitionProbe {
         let manifestRequest = request(path: "/v1/wssi/manifest", origin: origin)
         let manifest = try await fetch(manifestRequest, stage: .manifest)
         report.requests.append(manifest.record)
+        await progress(report)
         guard let manifestBody = manifest.body else {
             report.stop = .manifestUnavailable
             return Result(report: report, geometry: nil)
@@ -148,6 +146,7 @@ actor WSSIAcquisitionProbe {
             return Result(report: report, geometry: nil)
         }
         report.datasets = datasets
+        await progress(report)
         guard let accepted = datasets.first(where: { $0.slot == slot })?.accepted else {
             report.stop = .noAcceptedRevision
             return Result(report: report, geometry: nil)
@@ -162,6 +161,7 @@ actor WSSIAcquisitionProbe {
         let identity = GeometryHeader.Identity(product: slot.product, day: slot.day, revision: accepted.revision)
         let cold = try await fetch(geometryRequest, stage: .coldGeometry, identity: identity)
         report.requests.append(cold.record)
+        await progress(report)
         guard let body = cold.body, let etag = cold.record.etag, !etag.isEmpty else {
             return Result(report: report, geometry: cold.body)
         }
@@ -173,7 +173,17 @@ actor WSSIAcquisitionProbe {
             geometryRequest, stage: .conditionalGeometry, identity: identity, cacheKey: cacheKey
         )
         report.requests.append(conditional.record)
+        await progress(report)
         return Result(report: report, geometry: conditional.body ?? body)
+    }
+
+    static func validatedOrigin(_ url: URL) -> URLComponents? {
+        guard let origin = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              origin.scheme == "https" || origin.scheme == "http",
+              origin.host?.isEmpty == false, origin.user == nil, origin.password == nil,
+              origin.query == nil, origin.fragment == nil,
+              origin.path.isEmpty || origin.path == "/" else { return nil }
+        return origin
     }
 
     private static let expectedSlots: Set<Slot> = Set(

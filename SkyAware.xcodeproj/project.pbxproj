@@ -198,6 +198,7 @@
 				UnitTests/WSSIAcquisitionProbeTests.swift,
 				UnitTests/WSSIGeometryExperimentTests.swift,
 				UnitTests/WSSIPersistenceExperimentTests.swift,
+				UnitTests/WSSIProbeModelTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -297,6 +298,7 @@
 				UnitTests/WSSIAcquisitionProbeTests.swift,
 				UnitTests/WSSIGeometryExperimentTests.swift,
 				UnitTests/WSSIPersistenceExperimentTests.swift,
+				UnitTests/WSSIProbeModelTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};
@@ -968,6 +970,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "The WSSI diagnostic connects to your development server on the local network.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to help keep severe-weather awareness and notifications more current, even when the app is not open.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "SkyAware uses the iPhone barometer to measure short-term local pressure changes in the developer diagnostics screen.";

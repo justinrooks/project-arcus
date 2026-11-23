@@ -89,6 +89,37 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testWSSIProbeNavigationAndExport() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+        let settings = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.tap()
+        let diagnostics = app.buttons["Diagnostics"]
+        for _ in 0..<5 where !diagnostics.isHittable { app.swipeUp() }
+        XCTAssertTrue(diagnostics.waitForExistence(timeout: 5))
+        diagnostics.tap()
+        let probe = app.buttons["WSSI Geometry Probe"]
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
+        probe.tap()
+        XCTAssertTrue(app.navigationBars["WSSI Geometry Probe"].waitForExistence(timeout: 5))
+        let reset = app.buttons["Reset"]
+        if reset.isEnabled { reset.tap() }
+        XCTAssertTrue(app.staticTexts["No measurements yet"].exists)
+        app.buttons["Run Test"].tap()
+        XCTAssertTrue(app.staticTexts["failed: enter a valid HTTP(S) Forge origin"].waitForExistence(timeout: 5))
+        let export = app.buttons["Export CSV"]
+        for _ in 0..<4 where !export.isHittable { app.swipeUp() }
+        XCTAssertTrue(export.waitForExistence(timeout: 5))
+        export.tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5) || app.buttons["Close"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testOutlookDiscussionMapRoundTripRendersLatestDiscussionForEachDay() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
