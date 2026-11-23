@@ -105,6 +105,7 @@ actor WSSIProbeWorker {
         var rows = report.requests.flatMap { request in
             [WSSIProbeRow(stage: request.stage.rawValue, metric: "http_status", value: request.status.map(String.init) ?? "not measured"),
              WSSIProbeRow(stage: request.stage.rawValue, metric: "disposition", value: "\(request.outcome.rawValue) / \(request.source.rawValue)"),
+             WSSIProbeRow(stage: request.stage.rawValue, metric: "transport_error_code", value: request.transportErrorCode.map(String.init) ?? "not measured"),
              WSSIProbeRow(stage: request.stage.rawValue, metric: "elapsed_seconds", value: String(request.elapsedSeconds)),
              WSSIProbeRow(stage: request.stage.rawValue, metric: "network_body_bytes", value: request.networkBodyBytes.map(String.init) ?? "not measured"),
              WSSIProbeRow(stage: request.stage.rawValue, metric: "response_body_bytes", value: request.responseBodyBytes.map(String.init) ?? "not measured"),

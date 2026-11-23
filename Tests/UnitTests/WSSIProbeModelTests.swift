@@ -119,6 +119,7 @@ struct WSSIProbeModelTests {
         let values = await rows.rows
         #expect(values.contains { $0.metric == "revision" && $0.value.lowercased() == metadata.revision.uuidString.lowercased() })
         #expect(values.contains { $0.stage == "coldGeometry" && $0.metric == "http_status" && $0.value == "200" })
+        #expect(values.contains { $0.stage == "coldGeometry" && $0.metric == "transport_error_code" && $0.value == "not measured" })
         #expect(values.contains { $0.stage == "decode" && $0.metric == "seconds" } == (mode != .download))
         #expect(values.contains { $0.stage == "assessment" && $0.metric == "matching_severities" } == (mode != .download))
         if mode != .download {
@@ -148,6 +149,21 @@ struct WSSIProbeModelTests {
             #expect(restored.record?.rows.filter { $0.metric == "revision" }.count == 1)
             #expect(restored.record?.rows.contains { $0.stage == "coldGeometry" || $0.stage == "decode" } == false)
         }
+    }
+
+    @Test func networkFailureExportsTransportErrorCode() async throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "wssi-test-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let worker = WSSIProbeWorker(transport: { _ in throw URLError(.notConnectedToInternet) })
+        let model = WSSIProbeModel(recordURL: file) { origin, slot, mode, environment, update in
+            try await worker.run(origin: origin, slot: slot, mode: mode, environment: environment, update: update)
+        }
+        model.origin = "https://forge.example"
+        model.start()
+        while model.running { await Task.yield() }
+        let record = try #require(model.record)
+        #expect(record.status == "failed: manifestUnavailable")
+        #expect(WSSIProbeExport(record: record).csv.contains("\"manifest\",\"transport_error_code\",\"-1009\""))
     }
 
     @Test func exportEscapesFieldsAndKeepsMissingValuesExplicit() {
