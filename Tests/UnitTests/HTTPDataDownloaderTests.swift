@@ -158,6 +158,56 @@ private actor HTTPTestDeadlineGate {
 struct HTTPDataDownloaderTests {
     private static let forgeOrigin = URL(string: "https://example.test")!
 
+    @Test(arguments: [
+        "https://wssi.example.test",
+        " https://wssi.example.test:8443/\n"
+    ])
+    func forgeConfigurationResolvesHTTPSOrigins(rawValue: String) {
+        let expected = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(ArcusForgeConfiguration.configuredBaseURL(rawValue: rawValue) == URL(string: expected))
+    }
+
+    @Test(arguments: [
+        nil, "", "  ", "$(ARCUS_FORGE_URL)", "not a URL", "https:///missing-host",
+        "https://$(ARCUS_FORGE_URL)", "https://%20", "https://%2f", "https://wssi.example.test:99999",
+        "http://wssi.example.test", "https://wssi.example.test/v1", "https://wssi.example.test/%2F",
+        "https://wssi.example.test?x=1", "https://wssi.example.test#fragment", "https://user@wssi.example.test"
+    ] as [String?])
+    func forgeConfigurationRejectsMissingAndInvalidOrigins(rawValue: String?) {
+        #expect(ArcusForgeConfiguration.configuredBaseURL(rawValue: rawValue) == nil)
+    }
+
+    @Test
+    func forgeConfigurationResolvesFromAppBundle() {
+        #expect(ArcusForgeConfiguration.configuredBaseURL()?.host == "wssi.skyaware.app")
+    }
+
+    @Test(arguments: [
+        (#""strong""#, #""strong""#), (#"W/"weak""#, #"W/"weak""#),
+        (nil, nil), ("bare", nil), ("*", nil), (#""one", "two""#, nil)
+    ] as [(String?, String?)])
+    func forgeOnlyExposesReusable200Validators(eTag: String?, expected: String?) async throws {
+        let url = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")
+        let body = Data("manifest".utf8)
+        let headers = eTag.map { ["ETag": $0] } ?? [:]
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 0)
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [
+            .response(status: 200, headers: headers, body: body),
+            .response(status: 200, headers: ["ETag": #""new""#], body: body)
+        ]])
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: makeDownloader(cache: cache))
+
+        let first = try await client.fetchManifest()
+        #expect(first.outcome == .body(body))
+        #expect(first.eTag == expected)
+
+        let next = try await client.fetchManifest(ifNoneMatch: first.eTag)
+        #expect(next.eTag == #""new""#)
+        #expect(HTTPTestURLProtocol.requests(for: url).count == 2)
+        #expect(HTTPTestURLProtocol.requests(for: url).last?.value(forHTTPHeaderField: "If-None-Match") == expected)
+    }
+
     @Test(arguments: [nil, #""revision""#, #""stale""#] as [String?])
     func forgeRevalidatesAndLeavesUnconditionalRecoveryToCaller(cachedETag: String?) async throws {
         let manifestURL = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")

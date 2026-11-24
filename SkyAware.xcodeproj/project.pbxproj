@@ -949,6 +949,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APS_ENVIRONMENT = development;
+				ARCUS_FORGE_URL = "https://wssi.skyaware.app";
 				ARCUS_SIGNAL_URL = "https://api.skyaware.app";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -993,6 +994,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APS_ENVIRONMENT = production;
+				ARCUS_FORGE_URL = "https://wssi.skyaware.app";
 				ARCUS_SIGNAL_URL = "https://api.skyaware.app";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

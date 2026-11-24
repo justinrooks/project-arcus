@@ -23,12 +23,10 @@ struct ForgeWSSIClient: Sendable {
         case httpStatus(Int, retryAfterSeconds: Int?)
     }
 
-    static let productionOrigin = URL(string: "https://wssi.skyaware.app")!
-
     private let origin: URL
     private let http: any HTTPClient
 
-    init(origin: URL = Self.productionOrigin, http: any HTTPClient = URLSessionHTTPClient()) {
+    init(origin: URL, http: any HTTPClient = URLSessionHTTPClient()) {
         self.origin = origin
         self.http = http
     }
@@ -52,9 +50,7 @@ struct ForgeWSSIClient: Sendable {
 
     private func fetch(path: String, ifNoneMatch: String?, headers: [String: String]) async throws -> Response {
         try Task.checkCancellation()
-        guard var url = URLComponents(url: origin, resolvingAgainstBaseURL: false),
-              url.scheme == "https", url.host?.isEmpty == false, url.user == nil, url.password == nil,
-              url.query == nil, url.fragment == nil, url.path.isEmpty || url.path == "/" else {
+        guard var url = ArcusForgeConfiguration.originComponents(for: origin) else {
             throw Error.invalidOrigin
         }
         url.path = path
@@ -77,7 +73,8 @@ struct ForgeWSSIClient: Sendable {
         case 200:
             guard response.source == .live else { throw Error.unexpectedResponseSource }
             guard let body = response.data, !body.isEmpty else { throw Error.missingBody }
-            return Response(path: path, eTag: eTag, outcome: .body(body))
+            let validatedETag = eTag.flatMap { HTTPETag.opaqueValue($0) == nil ? nil : $0 }
+            return Response(path: path, eTag: validatedETag, outcome: .body(body))
         case 304:
             guard let tag,
                   eTag.map({ HTTPETag.opaqueValue($0) == tag }) ?? true else {
