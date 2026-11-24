@@ -7,6 +7,106 @@ struct WSSIAcceptedStoreTests {
     private enum SaveFailure: Error { case injected }
 
     @Test
+    func repeatedIssuancesRetainOnlyCurrentGeometry() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("production.store")
+        let fixtures = try Fixtures()
+        let legacyID = try seedVersion7(at: url)
+        var previous: [WSSIAcceptedStore.Slot] = []
+        var telemetry: [String] = []
+
+        for cycle in 0..<5 {
+            let date = "2026-11-2\(4 + cycle)"
+            let entries = try fixtures.entries.map {
+                var entry = try Fixtures.revised($0, retrievedAt: "\(date)T20:00:00Z",
+                                                 issuedAt: "\(date)T17:00:00Z")
+                var accepted = try #require(entry["accepted"] as? [String: Any])
+                accepted["validFrom"] = "\(date)T18:00:00Z"
+                accepted["validTo"] = "2026-11-2\(5 + cycle)T18:00:00Z"
+                accepted["gisFileDate"] = "\(date)T17:15:00Z"
+                accepted["gisIngestDate"] = "\(date)T17:16:00Z"
+                entry["accepted"] = accepted
+                return entry
+            }
+            let container = try reopen(url)
+            let store = WSSIAcceptedStore(modelContainer: container)
+            if cycle > 0 {
+                // Exercise the same typed purge owners used by SPC activation cleanup.
+                try await ConvectiveOutlookRepo(modelContainer: container).purge(asOf: .distantFuture)
+                try await MesoRepo(modelContainer: container).purge(asOf: .distantFuture)
+                try await StormRiskRepo(modelContainer: container).purge(asOf: .distantFuture)
+                try await SevereRiskRepo(modelContainer: container).purge(asOf: .distantFuture)
+            }
+            for old in previous {
+                let reopened = try #require(try await store.slot(product: old.product, day: old.day))
+                #expect(reopened.revision == old.revision)
+                #expect(reopened.geometry == old.geometry)
+                #expect(reopened.validity(at: .distantFuture) == .expired)
+            }
+            let generation = try await store.manifest()?.generation
+            let manifest = try await store.saveManifest(Fixtures.manifest(entries), eTag: nil, replacing: generation)
+            var current: [WSSIAcceptedStore.Slot] = []
+            for (index, entry) in manifest.document.datasets.enumerated() {
+                let geometry = try fixtures.geometry(entries[index])
+                if cycle > 0 {
+                    let old = previous[index]
+                    let interrupted = Task {
+                        withUnsafeCurrentTask { $0?.cancel() }
+                        try await store.acceptGeometry(geometry, eTag: nil, product: entry.product,
+                                                       day: entry.day, manifestGeneration: manifest.generation)
+                    }
+                    await #expect(throws: CancellationError.self) { try await interrupted.value }
+                    await #expect(throws: (any Error).self) {
+                        try await store.acceptGeometry(Data(), eTag: nil, product: entry.product,
+                                                       day: entry.day, manifestGeneration: manifest.generation)
+                    }
+                    let retained = try #require(try await store.slot(product: entry.product, day: entry.day))
+                    #expect(retained.revision == old.revision)
+                    #expect(retained.geometry == old.geometry)
+
+                    async let reading = store.slot(product: entry.product, day: entry.day)
+                    try await store.acceptGeometry(geometry, eTag: nil, product: entry.product,
+                                                   day: entry.day, manifestGeneration: manifest.generation)
+                    let snapshot = try await reading
+                    let observed = try #require(snapshot)
+                    if observed.revision == old.revision {
+                        #expect(observed.geometry == old.geometry)
+                    } else {
+                        #expect(observed.revision == entry.accepted)
+                        #expect(observed.geometry == geometry)
+                    }
+                } else {
+                    try await store.acceptGeometry(geometry, eTag: nil, product: entry.product,
+                                                   day: entry.day, manifestGeneration: manifest.generation)
+                }
+                let accepted = try #require(try await store.slot(product: entry.product, day: entry.day))
+                #expect(accepted.revision == entry.accepted)
+                #expect(accepted.geometry == geometry)
+                current.append(accepted)
+            }
+
+            let context = ModelContext(container)
+            let rows = try context.fetch(FetchDescriptor<WSSIAcceptedSlot>())
+            #expect(rows.count == 15)
+            #expect(try context.fetchCount(FetchDescriptor<WSSIStoredManifest>()) == 1)
+            #expect(try context.fetch(FetchDescriptor<SPCAcceptedDay1Convective>()).map(\.id) == [legacyID])
+            let logicalBytes = rows.compactMap(\.snapshot).reduce(0) { $0 + $1.geometry.count }
+            #expect(logicalBytes == current.reduce(0) { $0 + $1.geometry.count })
+            telemetry.append("Issuance \(cycle + 1): \(rows.count) slots, \(logicalBytes) geometry bytes, \(try sizes(at: url))")
+            previous = current
+        }
+
+        let store = WSSIAcceptedStore(modelContainer: try reopen(url))
+        for expected in previous {
+            let actual = try #require(try await store.slot(product: expected.product, day: expected.day))
+            #expect(actual.revision == expected.revision)
+            #expect(actual.geometry == expected.geometry)
+        }
+        Attachment.record(telemetry.joined(separator: "\n"), named: "WSSIRetentionSizes.txt")
+    }
+
+    @Test
     func fifteenSlotsSurviveMigrationReplacementAndReopen() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
