@@ -16,6 +16,7 @@ final class Dependencies: Sendable {
 
     let appRefreshID: String
     let logger: Logger
+    let wssi: WSSIForeground?
     let persistenceMode: SkyAwarePersistentStoreBootstrap.Mode
     let allowsBackgroundPersistence: @Sendable () async -> Bool
     
@@ -291,10 +292,12 @@ final class Dependencies: Sendable {
         cadencePolicy: CadencePolicy?,
         orchestrator: BackgroundOrchestrator?,
         scheduler: BackgroundScheduler?,
-        weatherClient: WeatherClient?
+        weatherClient: WeatherClient?,
+        wssi: WSSIForeground? = nil
     ) {
         self.appRefreshID = appRefreshID
         self.logger = logger
+        self.wssi = wssi
         self.persistenceMode = persistenceMode
         self.allowsBackgroundPersistence = allowsBackgroundPersistence
         self._modelContainer = modelContainer
@@ -554,6 +557,15 @@ final class Dependencies: Sendable {
             logger.error("Widget snapshot store unavailable; widget refresh writes are disabled")
             widgetSnapshotRefresher = nil
         }
+        let wssi = ArcusForgeConfiguration.configuredBaseURL().map { origin in
+            WSSIForeground(
+                client: ForgeWSSIClient(origin: origin),
+                container: container,
+                currentLocation: {
+                    await locationSession.acceptedPointObservation().flatMap(WSSIAcceptedAssessment.Location.init)
+                }
+            )
+        }
         let homeIngestionExecutor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger.appHomeRefresh,
@@ -567,7 +579,8 @@ final class Dependencies: Sendable {
                 widgetSnapshotRefresher: widgetSnapshotRefresher,
                 stormSetupQuerying: stormSetupClient,
                 airQualityQuerying: airQualityClient,
-                stormSetupPreferencesReader: stormSetupPreferencesReader
+                stormSetupPreferencesReader: stormSetupPreferencesReader,
+                wssi: wssi
             )
         )
         let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)
@@ -627,7 +640,8 @@ final class Dependencies: Sendable {
             cadencePolicy: cadencePolicy,
             orchestrator: orchestrator,
             scheduler: scheduler,
-            weatherClient: weatherClient
+            weatherClient: weatherClient,
+            wssi: wssi
         )
     }
     

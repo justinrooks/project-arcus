@@ -288,6 +288,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
     struct Environment: Sendable {
         let logger: Logger
+        let wssi: WSSIForeground?
         let spcSync: any SpcSyncing
         let arcusAlertSync: any ArcusAlertSyncing
         let weatherClient: any HomeWeatherQuerying
@@ -324,9 +325,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             stormSetupDeadlineNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
             stormSetupDeadlineSleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
                 try await Task.sleep(for: .seconds($0))
-            }
+            },
+            wssi: WSSIForeground? = nil
         ) {
             self.logger = logger
+            self.wssi = wssi
             self.spcSync = spcSync
             self.arcusAlertSync = arcusAlertSync
             self.weatherClient = weatherClient
@@ -382,6 +385,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress = .none) async throws -> HomeSnapshot {
         let executionMode = httpExecutionMode(for: plan)
+        if executionMode == .foreground, !Task.isCancelled,
+           plan.lanes.contains(.slowProducts) || plan.provenance.contains(.foregroundActivate) {
+            await environment.wssi?.offerRefresh()
+        }
         return try await HTTPExecutionMode.$current.withValue(executionMode) {
             try await runScoped(plan: plan, progress: progress, executionMode: executionMode)
         }
