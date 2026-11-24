@@ -37,15 +37,8 @@ struct ForgeWSSIClient: Sendable {
     }
 
     func fetchGeometry(for entry: WSSIManifestEntry, ifNoneMatch: String? = nil) async throws -> Response {
-        guard let accepted = entry.accepted, (1...3).contains(entry.day) else {
-            throw Error.invalidGeometryPath
-        }
-        let revision = accepted.revision.uuidString.lowercased()
-        let prefix = "/v1/wssi/\(entry.product.rawValue)/days/\(entry.day)"
-        guard accepted.geometryPath == "\(prefix)/revisions/\(revision)/geometry" else {
-            throw Error.invalidGeometryPath
-        }
-        return try await fetch(path: accepted.geometryPath, ifNoneMatch: ifNoneMatch, headers: HTTPRequestHeaders.nws())
+        guard let path = entry.canonicalGeometryPath else { throw Error.invalidGeometryPath }
+        return try await fetch(path: path, ifNoneMatch: ifNoneMatch, headers: HTTPRequestHeaders.nws())
     }
 
     private func fetch(path: String, ifNoneMatch: String?, headers: [String: String]) async throws -> Response {
@@ -86,5 +79,15 @@ struct ForgeWSSIClient: Sendable {
         default:
             throw Error.httpStatus(response.status, retryAfterSeconds: HTTPRetryAfterParser.seconds(from: response.header("Retry-After")))
         }
+    }
+}
+
+extension WSSIManifestEntry {
+    /// A usable manifest can address every advertised immutable revision.
+    var canonicalGeometryPath: String? {
+        guard let accepted, (1...3).contains(day) else { return nil }
+        let revision = accepted.revision.uuidString.lowercased()
+        let path = "/v1/wssi/\(product.rawValue)/days/\(day)/revisions/\(revision)/geometry"
+        return accepted.geometryPath == path ? path : nil
     }
 }
