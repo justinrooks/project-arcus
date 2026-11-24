@@ -23,6 +23,8 @@ enum LocationStartupState: Equatable {
 @MainActor
 @Observable
 final class LocationSession: Sendable {
+    private static let foregroundMaximumAcceptedLocationAge: TimeInterval = 5 * 60
+
     private var isUITestStaticHome: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
     }
@@ -144,7 +146,9 @@ final class LocationSession: Sendable {
     func acceptedPointObservation() async -> LocationSnapshot? {
         guard let snapshot = await locationClient.snapshot(),
               authorizationStatus.isLocationAuthorized, acceptsPrecisionEvidence(snapshot),
-              snapshot.h3Cell != nil else { return nil }
+              snapshot.h3Cell != nil,
+              max(0, presenceNow().timeIntervalSince(snapshot.timestamp)) <= Self.foregroundMaximumAcceptedLocationAge
+        else { return nil }
         return snapshot
     }
 
@@ -171,7 +175,7 @@ final class LocationSession: Sendable {
         uploadReason: LocationUploadReason? = nil,
         authorizationTimeout: Double = 30,
         locationTimeout: Double = 12,
-        maximumAcceptedLocationAge: TimeInterval = 5 * 60,
+        maximumAcceptedLocationAge: TimeInterval = LocationSession.foregroundMaximumAcceptedLocationAge,
         placemarkTimeout: Double = 8
     ) async -> LocationContext? {
         syncAuthorizationStatus()
@@ -574,7 +578,7 @@ final class LocationSession: Sendable {
             do {
                 let context = try await self.locationContextResolver.resolveContext(
                     from: snapshot,
-                    maximumAcceptedLocationAge: 5 * 60,
+                    maximumAcceptedLocationAge: Self.foregroundMaximumAcceptedLocationAge,
                     placemarkTimeout: 8
                 )
                 guard Task.isCancelled == false,

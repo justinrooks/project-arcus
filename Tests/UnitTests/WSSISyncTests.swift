@@ -19,7 +19,7 @@ struct WSSISyncTests {
             throw URLError(.notConnectedToInternet)
         }
         let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
-        var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1)
+        var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: .distantPast)
         let foreground = WSSIForeground(
             client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
             container: container,
@@ -52,7 +52,7 @@ struct WSSISyncTests {
         await gate.waitUntilSuspended()
         await foreground.offerRefresh()
         #expect(await http.requests.count == 1)
-        location = .init(point: .init(latitude: 10, longitude: 10), h3Cell: 2)
+        location = .init(point: .init(latitude: 10, longitude: 10), h3Cell: 2, observedAt: .distantPast)
         let moved = try #require(try await reader.assessment(at: time))
         #expect(moved.location == location)
         #expect(moved.periods[3].assessment.impact == .noMatchUnknownCoverage)
@@ -76,7 +76,7 @@ struct WSSISyncTests {
         let hold = SyncGate()
         let ready = AsyncStream<Void>.makeStream()
         let store = try container(nil)
-        var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1)
+        var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: .distantPast)
         var checks = 0
         let foreground = WSSIForeground(
             client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!,
@@ -103,7 +103,7 @@ struct WSSISyncTests {
             await foreground.setEnabled(false)
             await foreground.setEnabled(true)
         } else {
-            location = .init(point: .init(latitude: 10, longitude: 10), h3Cell: 2)
+            location = .init(point: .init(latitude: 10, longitude: 10), h3Cell: 2, observedAt: .distantPast)
         }
         await hold.release()
         #expect(try await read.value == nil)

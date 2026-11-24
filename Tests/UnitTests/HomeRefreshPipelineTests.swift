@@ -134,17 +134,20 @@ struct HomeRefreshPipelineTests {
         }
     }
 
-    @Test func wssiUsesNewlyAcceptedPointWithoutNWSContext() async throws {
+    @Test func wssiRequiresFreshAcceptedPointWithoutNWSContext() async throws {
         let fixture = SyncFixture()
         let old = makeContext(latitude: 0.25, longitude: 0.75)
-        let new = makeContext(latitude: 10, longitude: 10, h3Cell: 2, timestamp: 200)
+        let new = makeContext(latitude: 10, longitude: 10, h3Cell: 2, timestamp: 401)
+        let clock = PresenceScenario()
+        clock.now = old.snapshot.timestamp.addingTimeInterval(300)
         var observation = old.snapshot
         let session = LocationSession(
             locationClient: LocationClient(snapshot: { await MainActor.run { observation } },
                                            updates: { AsyncStream { $0.finish() } }),
             locationManager: LocationManager(manager: PresenceAuthorization(), onUpdate: { _ in .accepted }),
             locationContextResolver: PresenceContextResolver(context: old, offline: true),
-            locationUploadCoordinator: NoOpLocationUploadCoordinator()
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            presenceNow: { clock.now }
         )
         session.currentContext = old
         let container = try TestStore.container(for: [WSSIAcceptedSlot.self, WSSIStoredManifest.self])
@@ -162,15 +165,21 @@ struct HomeRefreshPipelineTests {
         )
         let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
         await wssi.setEnabled(true)
-        #expect(try await wssi.assessment(at: time)?.periods[0].assessment.impact == .match(.minor))
+        let atAgeLimit = try #require(try await wssi.assessment(at: time))
+        #expect(atAgeLimit.periods[0].assessment.impact == .match(.minor))
+        #expect(atAgeLimit.location.observedAt == old.snapshot.timestamp)
 
-        observation = new.snapshot
+        clock.now = new.snapshot.timestamp
         _ = await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false)
         #expect(session.currentContext == nil)
+        #expect(try await wssi.assessment(at: time) == nil)
+
+        observation = new.snapshot
         await wssi.offerRefresh()
         await wssi.waitForRefresh()
         let moved = try #require(try await wssi.assessment(at: time))
-        #expect(moved.location == .init(point: .init(new.snapshot.coordinates), h3Cell: new.h3Cell))
+        #expect(moved.location == .init(point: .init(new.snapshot.coordinates), h3Cell: new.h3Cell,
+                                       observedAt: new.snapshot.timestamp))
         #expect(moved.periods[0].assessment.impact == .noMatchUnknownCoverage)
 
         session.accuracyAuthorization = .reducedAccuracy

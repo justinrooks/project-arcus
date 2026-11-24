@@ -5,15 +5,17 @@ struct WSSIAcceptedAssessment: Sendable {
     struct Location: Equatable, Sendable {
         let point: Coordinate2D
         let h3Cell: Int64
+        let observedAt: Date
 
-        init(point: Coordinate2D, h3Cell: Int64) {
+        init(point: Coordinate2D, h3Cell: Int64, observedAt: Date) {
             self.point = point
             self.h3Cell = h3Cell
+            self.observedAt = observedAt
         }
 
         init?(_ observation: LocationSnapshot) {
             guard let h3Cell = observation.h3Cell else { return nil }
-            self.init(point: .init(observation.coordinates), h3Cell: h3Cell)
+            self.init(point: .init(observation.coordinates), h3Cell: h3Cell, observedAt: observation.timestamp)
         }
     }
 
