@@ -136,3 +136,112 @@ struct WSSISourceDecoderTests {
     }
 }
 private final class WSSIFixtureLocator: NSObject {}
+
+extension WSSISourceDecoderTests {
+    @Test(arguments: WSSISeverity.allCases)
+    func pointAssessmentSelectsStrongestContainingSeverity(_ strongest: WSSISeverity) throws {
+        let entry = try manifest(allEntries()).datasets[0]
+        let accepted = try #require(entry.accepted)
+        var object = payload()
+        let features = try #require(object["features"] as? [[String: Any]])
+        let strongestIndex = try #require(WSSISeverity.allCases.firstIndex(of: strongest))
+        object["features"] = Array(features.prefix(strongestIndex + 1))
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let result = try WSSIPointAssessment.evaluate(
+            entry: entry, point: .init(latitude: 2, longitude: 8), at: accepted.validFrom
+        ) { data }
+        #expect(result.impact == .match(strongest))
+        #expect(result.validity == .valid)
+        #expect(result.revision == accepted)
+    }
+
+    @Test func pointAssessmentHandlesHolesEdgesAndOfflineMovement() throws {
+        var entries = allEntries()
+        entries[0]["sourceStatus"] = "Unavailable"
+        entries[0]["pollHealth"] = "Failed"
+        let entry = try manifest(entries).datasets[0]
+        let accepted = try #require(entry.accepted)
+        var object = payload()
+        var feature = try #require((object["features"] as? [[String: Any]])?.first)
+        let exterior = [[0, 0], [10, 0], [10, 10], [0, 0]]
+        let hole = [[2, 1], [4, 1], [4, 2], [2, 1]]
+        feature["geometry"] = ["type": "MultiPolygon", "coordinates": [[exterior, hole]]]
+        object["features"] = [feature]
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        for (latitude, longitude, expected) in [
+            (0.0, 5.0, WSSIPointAssessment.Impact.match(.winterWeatherArea)),
+            (1.0, 3.0, .noMatchUnknownCoverage),
+            (1.25, 3.5, .noMatchUnknownCoverage),
+            (9.0, 2.0, .noMatchUnknownCoverage),
+            (20.0, 20.0, .noMatchUnknownCoverage)
+        ] {
+            let point = Coordinate2D(latitude: latitude, longitude: longitude)
+            let result = try WSSIPointAssessment.evaluate(entry: entry, point: point, at: accepted.validFrom) { data }
+            #expect(result.point == point)
+            #expect(result.impact == expected)
+            #expect(result.sourceStatus == .unavailable)
+            #expect(result.pollHealth == .failed)
+        }
+    }
+
+    @Test func pointAssessmentKeepsProductsAndSourceWindowsIndependent() throws {
+        let entries = try manifest(allEntries()).datasets
+        let overall = entries[0]
+        let snow = entries[4]
+        let accepted = try #require(snow.accepted)
+        let point = Coordinate2D(latitude: 2, longitude: 8)
+        let data = try JSONSerialization.data(withJSONObject: payload("Snow_Amount", 2))
+        let future = try WSSIPointAssessment.evaluate(
+            entry: snow, point: point, at: accepted.validFrom.addingTimeInterval(-1)
+        ) { data }
+        #expect(future.validity == .notYetValid)
+        #expect(future.product == .snowAmount)
+        #expect(future.day == 2)
+        #expect(future.impact == .match(.extreme))
+        let missing = try WSSIPointAssessment.evaluate(entry: overall, point: point, at: accepted.validFrom) { nil }
+        #expect(missing.product == .overallImpact)
+        #expect(missing.impact == .unavailable)
+
+        var overallObject = payload()
+        let overallFeatures = try #require(overallObject["features"] as? [[String: Any]])
+        overallObject["features"] = Array(overallFeatures.prefix(2))
+        let overallData = try JSONSerialization.data(withJSONObject: overallObject)
+        let overallResult = try WSSIPointAssessment.evaluate(entry: overall, point: point, at: accepted.validFrom) {
+            overallData
+        }
+        #expect(overallResult.impact == .match(.minor))
+
+        var unacceptedEntries = allEntries()
+        unacceptedEntries[0].removeValue(forKey: "accepted")
+        unacceptedEntries[0]["validity"] = "NeverAccepted"
+        let unaccepted = try manifest(unacceptedEntries).datasets[0]
+        let neverAccepted = try WSSIPointAssessment.evaluate(entry: unaccepted, point: point, at: accepted.validFrom) {
+            Issue.record("Geometry should not be loaded before acceptance")
+            return overallData
+        }
+        #expect(neverAccepted.validity == .neverAccepted)
+        #expect(neverAccepted.revision == nil)
+        #expect(neverAccepted.impact == .unavailable)
+
+        let expired = try WSSIPointAssessment.evaluate(entry: snow, point: point, at: accepted.validTo) {
+            Issue.record("Expired geometry should not be loaded")
+            return data
+        }
+        #expect(expired.validity == .expired)
+        #expect(expired.impact == .unavailable)
+
+        let disabled = try WSSIPointAssessment.evaluate(
+            entry: snow, point: point, at: accepted.validFrom, enabled: false
+        ) {
+            Issue.record("Disabled geometry should not be loaded")
+            return data
+        }
+        #expect(disabled.impact == .disabled)
+
+        let covered = try WSSIPointAssessment.evaluate(
+            entry: snow, point: .init(latitude: 20, longitude: 20), at: accepted.validFrom, verifiedCoverage: true
+        ) { data }
+        #expect(covered.impact == .confirmedNoImpact)
+    }
+}
