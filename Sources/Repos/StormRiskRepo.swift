@@ -30,10 +30,11 @@ actor StormRiskRepo {
     func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> StormRiskLevel {
         let pred = #Predicate<StormRisk> { date >= $0.valid && date <= $0.expires }
         let risks = try modelContext.fetch(FetchDescriptor<StormRisk>(predicate: pred))
-        let latestRisks = latestIssuanceSlice(from: risks)
-        
-        // Sort by descending risk so we can early-exit on first hit.
-        let bySeverity = latestRisks.sorted { $0.riskLevel > $1.riskLevel }
+        return Self.strongestLocalRisk(in: latestIssuanceSlice(from: risks), for: point)
+    }
+
+    static func strongestLocalRisk(in risks: [StormRisk], for point: CLLocationCoordinate2D) -> StormRiskLevel {
+        let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
     
         for risk in bySeverity {
             for poly in risk.polygons {

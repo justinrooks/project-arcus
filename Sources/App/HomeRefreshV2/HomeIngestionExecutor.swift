@@ -247,15 +247,16 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
     }
 
     private struct SlowProductPersistenceDecision: Sendable {
-        let updatesConvective: Bool
+        var updatesConvective: Bool
         let updatesFire: Bool
         let convectiveSource: SpcMapSourceIdentity?
         let fireSource: SpcMapSourceIdentity?
-        let reconcilesRejectedDomains: Bool
-        let shouldRefreshRiskWidgets: Bool
+        var reconcilesRejectedDomains: Bool
+        var shouldRefreshRiskWidgets: Bool
+        var readsConvectiveRisk = true
 
-        var convectiveFreshnessTimestamp: Date? {
-            switch convectiveSource {
+        func convectiveFreshnessTimestamp(acceptedDay1Risk: SPCDay1LocalRisk?) -> Date? {
+            switch acceptedDay1Risk?.source ?? (readsConvectiveRisk ? convectiveSource : nil) {
             case .forecast(let issued, _, _):
                 issued
             case .acceptedAllClear(let date):
@@ -513,13 +514,37 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             progress: progress
         )
         let weatherRefresh = weatherAttempt.result
+        var slowProductDecision = slowProductPersistenceDecision(plan: plan, mapSyncOutcome: slowFeedSyncOutcome?.map)
+        let day1Query: HomeDay1RiskQuery
+        if let context, plan.lanes.contains(.slowProducts), let store = environment.projectionStore {
+            day1Query = await store.day1Risk(for: context, newlyAcceptedSource: slowProductDecision.convectiveSource)
+        } else {
+            day1Query = .unsupported
+        }
+        let day1Risk: SPCDay1LocalRisk?
+        switch day1Query {
+        case .unsupported:
+            day1Risk = nil
+        case .available(let risk):
+            slowProductDecision.readsConvectiveRisk = false
+            slowProductDecision.shouldRefreshRiskWidgets = slowProductDecision.updatesFire
+            day1Risk = risk
+        case .unavailable:
+            slowProductDecision.readsConvectiveRisk = false
+            day1Risk = nil
+            slowProductDecision.updatesConvective = false
+            slowProductDecision.reconcilesRejectedDomains = true
+            slowProductDecision.shouldRefreshRiskWidgets = slowProductDecision.updatesFire
+        }
+        let readsConvectiveRisk = slowProductDecision.readsConvectiveRisk
 
         var snapshot = try await HTTPExecutionMode.$current.withValue(executionMode) {
             try await environment.snapshotStore.loadSnapshot(
                 for: context,
                 weather: weatherRefresh.weather,
                 freshness: freshness,
-                refreshMesos: hotFeedSyncOutcome == .completeLocationScopedAcceptance
+                refreshMesos: hotFeedSyncOutcome == .completeLocationScopedAcceptance,
+                readsConvectiveRisk: readsConvectiveRisk
             )
         }
         if hotFeedSyncOutcome == .completeLocationScopedAcceptance, snapshot.hasAcceptedMesoCollection == false {
@@ -530,10 +555,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         snapshot.weatherRefreshResult = weatherRefresh
         if let context {
             snapshot.riskComparisonLocationKey = HomeProjection.riskComparisonLocationKey(for: context)
-            let slowProductDecision = slowProductPersistenceDecision(
-                plan: plan,
-                mapSyncOutcome: slowFeedSyncOutcome?.map
-            )
             snapshot = await reconcilingRejectedRiskDomains(
                 in: snapshot,
                 for: context,
@@ -546,6 +567,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                 weatherRefreshResult: weatherRefresh,
                 loadedAt: now,
                 slowProductDecision: slowProductDecision,
+                day1Risk: day1Risk,
                 acceptsHotFeedSnapshot: hotFeedSyncOutcome?.advancesFreshness == true
             )
             await recordHotFeedAttempt(
@@ -569,11 +591,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                     snapshot.mesos = retainedProjection.activeMesos
                 }
             case .committed(let acknowledgement):
+                if !readsConvectiveRisk {
+                    snapshot.stormRisk = acknowledgement.record.stormRisk
+                    snapshot.severeRisk = acknowledgement.record.severeRisk
+                    snapshot.fireRisk = acknowledgement.record.fireRisk
+                }
                 if snapshot.hasAcceptedMesoCollection == false {
                     snapshot.mesos = acknowledgement.record.activeMesos
                 }
                 snapshot.riskProfileChange = acknowledgement.riskProfileChange
             case .failed(let retainedProjection):
+                if !readsConvectiveRisk {
+                    snapshot.stormRisk = retainedProjection?.stormRisk
+                    snapshot.severeRisk = retainedProjection?.severeRisk
+                    snapshot.fireRisk = retainedProjection?.fireRisk
+                }
                 if snapshot.hasAcceptedMesoCollection == false {
                     snapshot.mesos = retainedProjection?.activeMesos ?? []
                 }
@@ -615,7 +647,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                             .init(
                                 snapshot: snapshot,
                                 acknowledgedProjection: acknowledgement.record,
-                                hasAcceptedCoreSnapshot: acceptedWeather || slowProductDecision.advancesCoreAcceptance
+                                hasAcceptedCoreSnapshot: acceptedWeather || (readsConvectiveRisk
+                                    ? slowProductDecision.advancesCoreAcceptance
+                                    : acknowledgement.acceptedDay1Risk != nil)
                             )
                         )
                     )
@@ -1153,6 +1187,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         weatherRefreshResult: HomeWeatherRefreshResult,
         loadedAt: Date,
         slowProductDecision: SlowProductPersistenceDecision,
+        day1Risk: SPCDay1LocalRisk?,
         acceptsHotFeedSnapshot: Bool
     ) async -> ProjectionPersistenceResult {
         guard let projectionStore = environment.projectionStore else { return .unavailable }
@@ -1163,7 +1198,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         } else {
             weather = nil
         }
-        let slowProducts = slowProductDecision.shouldUpdateProjection
+        let slowProducts = slowProductDecision.shouldUpdateProjection || day1Risk != nil
             ? (
                 stormRisk: snapshot.stormRisk,
                 severeRisk: snapshot.severeRisk,
@@ -1212,6 +1247,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                     updatesConvectiveRisk: slowProductDecision.updatesConvective,
                     updatesFireRisk: slowProductDecision.updatesFire,
                     convectiveSource: slowProductDecision.convectiveSource,
+                    day1Risk: day1Risk,
                     fireSource: slowProductDecision.fireSource,
                     riskComparisonMode: plan.executionClass == .background ? .evaluate : .observeOnly,
                     hotAlerts: hotAlerts
@@ -1233,6 +1269,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                 publication: acknowledgement.widgetPublication,
                 loadedAt: loadedAt,
                 slowProductDecision: slowProductDecision,
+                acceptedDay1Risk: acknowledgement.acceptedDay1Risk,
                 acceptsHotFeedSnapshot: acceptsHotFeedSnapshot
             )
         } catch {
@@ -1248,6 +1285,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         publication: WidgetSnapshotPublication?,
         loadedAt: Date,
         slowProductDecision: SlowProductPersistenceDecision,
+        acceptedDay1Risk: SPCDay1LocalRisk? = nil,
         acceptsHotFeedSnapshot: Bool
     ) throws {
         guard shouldRefreshHomeWidgetsForEnvironment(ProcessInfo.processInfo.environment) else {
@@ -1257,7 +1295,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
               let scope = homeWidgetRefreshScope(for: plan) else {
             return
         }
-        if case .riskOrLocationProjection = scope, slowProductDecision.shouldRefreshRiskWidgets == false {
+        if case .riskOrLocationProjection = scope,
+           slowProductDecision.shouldRefreshRiskWidgets == false && acceptedDay1Risk == nil {
             return
         }
         if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
@@ -1271,7 +1310,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             input: .init(
                 publication: publication,
                 generatedAt: loadedAt,
-                riskSnapshotTimestamp: slowProductDecision.convectiveFreshnessTimestamp
+                riskSnapshotTimestamp: slowProductDecision.convectiveFreshnessTimestamp(acceptedDay1Risk: acceptedDay1Risk)
             )
         )
     }
