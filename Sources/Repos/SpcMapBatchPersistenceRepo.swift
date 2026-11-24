@@ -15,6 +15,11 @@ enum SpcMapBatchPersistenceFailureInjection: Sendable {
     case afterHailMutation
 }
 
+enum SpcDay1SourceRejection: String, Error {
+    case olderForecast = "older_day1_forecast"
+    case futureIssuance = "future_day1_issuance"
+}
+
 @Model
 final class SPCAcceptedDay1Convective {
     var id: UUID
@@ -216,7 +221,11 @@ actor SpcMapBatchPersistenceRepo {
         let wind = try parseSevereRisks(from: windData, threat: .wind)
         let tornado = try parseSevereRisks(from: tornadoData, threat: .tornado)
 
-        try commitDay1 {
+        let revision = SPCAcceptedDay1Convective(
+            issued: anchorIssued, valid: anchorValid, expires: anchorExpires, acceptedAt: acceptedAt,
+            stormCount: categorical.count, severeCount: hail.count + wind.count + tornado.count
+        )
+        try commitDay1(revision) {
             try replaceStormRows(
                 inWindowIssued: anchorIssued, valid: anchorValid, expires: anchorExpires, with: categorical
             )
@@ -225,18 +234,23 @@ actor SpcMapBatchPersistenceRepo {
             if failureInjection == .afterHailMutation { throw CancellationError() }
             try replaceSevereRows(for: .wind, valid: anchorValid, expires: anchorExpires, with: wind)
             try replaceSevereRows(for: .tornado, valid: anchorValid, expires: anchorExpires, with: tornado)
-            return SPCAcceptedDay1Convective(
-                issued: anchorIssued, valid: anchorValid, expires: anchorExpires, acceptedAt: acceptedAt,
-                stormCount: categorical.count, severeCount: hail.count + wind.count + tornado.count
-            )
         }
     }
 
-    private func commitDay1(_ update: () throws -> SPCAcceptedDay1Convective) throws {
+    private func commitDay1(_ revision: SPCAcceptedDay1Convective, updateGeometry: () throws -> Void) throws {
         try Self.day1CommitLock.withLock {
             do {
                 try Task.checkCancellation()
-                let revision = try update()
+                if let issued = revision.issued, issued > revision.acceptedAt {
+                    throw SpcDay1SourceRejection.futureIssuance
+                }
+                if let issued = revision.issued, let valid = revision.valid,
+                   let accepted = try Self.acceptedDay1Revision(in: modelContext),
+                   let acceptedIssued = accepted.issued, let acceptedValid = accepted.valid,
+                   issued < acceptedIssued || valid < acceptedValid {
+                    throw SpcDay1SourceRejection.olderForecast
+                }
+                try updateGeometry()
                 try Task.checkCancellation()
                 try replaceAcceptedDay1Revision(revision)
                 try modelContext.save()
@@ -278,17 +292,17 @@ actor SpcMapBatchPersistenceRepo {
         window: (issued: Date, valid: Date, expires: Date)? = nil,
         failureInjection: SpcMapBatchPersistenceFailureInjection = .none
     ) throws {
-        try commitDay1 {
+        let revision = SPCAcceptedDay1Convective(
+            issued: window?.issued, valid: window?.valid, expires: window?.expires, acceptedAt: syncTime,
+            stormCount: 0, severeCount: 0
+        )
+        try commitDay1(revision) {
             try clearActiveStormRows(asOf: syncTime)
             if failureInjection == .afterCategoricalMutation { throw SpcError.missingData }
             try clearActiveSevereRows(asOf: syncTime, type: .hail)
             if failureInjection == .afterHailMutation { throw CancellationError() }
             try clearActiveSevereRows(asOf: syncTime, type: .wind)
             try clearActiveSevereRows(asOf: syncTime, type: .tornado)
-            return SPCAcceptedDay1Convective(
-                issued: window?.issued, valid: window?.valid, expires: window?.expires, acceptedAt: syncTime,
-                stormCount: 0, severeCount: 0
-            )
         }
     }
 

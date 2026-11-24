@@ -453,16 +453,19 @@ extension SpcProvider: SpcSyncing {
         named name: String,
         logger: Logger,
         operation: @Sendable () async throws -> Void
-    ) async -> Bool {
+    ) async -> SpcMapSyncDomainOutcome {
         do {
             try await operation()
-            return true
+            return .accepted
+        } catch let rejection as SpcDay1SourceRejection {
+            logger.notice("SPC map product sync rejected for \(name, privacy: .public) reason=\(rejection.rawValue, privacy: .public)")
+            return .rejected
         } catch is CancellationError {
             logger.notice("SPC map product sync cancelled for \(name, privacy: .public)")
-            return false
+            return .failed
         } catch {
             logger.error("Error loading SPC map feed product=\(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return false
+            return .failed
         }
     }
 
@@ -574,7 +577,7 @@ extension SpcProvider: SpcSyncing {
             switch batch.validation.convective {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
-            let succeeded = await Self.runMapProductSync(
+            convectiveOutcome = await Self.runMapProductSync(
                 named: "accepted_convective_batch_transaction",
                 logger: logger,
                 operation: { [spcMapBatchPersistenceRepo] in
@@ -587,10 +590,10 @@ extension SpcProvider: SpcSyncing {
                     )
                 }
             )
+            let succeeded = convectiveOutcome == .accepted
             logger.info(
-                "spc_map_convective_persistence result=\(succeeded ? "committed" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
+                "spc_map_convective_persistence result=\(succeeded ? "committed" : Self.mapSyncDomainOutcomeLogName(convectiveOutcome), privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
             )
-            convectiveOutcome = succeeded ? .accepted : .failed
             convectiveSource = succeeded
                 ? .forecast(issued: anchorIssued, valid: anchorValid, expires: anchorExpires)
                 : nil
@@ -600,7 +603,7 @@ extension SpcProvider: SpcSyncing {
             }
             let window = batch.products[.categorical]?.windowMetadata
                 .flatMap { anchor in windows.allSatisfy { $0 == anchor } ? anchor : nil }
-            let succeeded = await Self.runMapProductSync(
+            convectiveOutcome = await Self.runMapProductSync(
                 named: "accepted_all_clear_convective_batch_transaction",
                 logger: logger,
                 operation: { [spcMapBatchPersistenceRepo] in
@@ -611,10 +614,10 @@ extension SpcProvider: SpcSyncing {
                     )
                 }
             )
+            let succeeded = convectiveOutcome == .accepted
             logger.info(
-                "spc_map_convective_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
+                "spc_map_convective_persistence result=\(succeeded ? "committed_all_clear" : Self.mapSyncDomainOutcomeLogName(convectiveOutcome), privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
-            convectiveOutcome = succeeded ? .accepted : .failed
             convectiveSource = succeeded ? .acceptedAllClear(at: syncTime) : nil
         case .rejected(let reason):
             logger.info(
@@ -640,7 +643,7 @@ extension SpcProvider: SpcSyncing {
             switch batch.validation.fire {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
-            let succeeded = await Self.runMapProductSync(
+            fireOutcome = await Self.runMapProductSync(
                 named: "accepted_fire_batch_transaction",
                 logger: logger,
                 operation: { [spcMapBatchPersistenceRepo] in
@@ -652,25 +655,25 @@ extension SpcProvider: SpcSyncing {
                     )
                 }
             )
+            let succeeded = fireOutcome == .accepted
             logger.info(
                 "spc_map_fire_persistence result=\(succeeded ? "committed" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
             )
-            fireOutcome = succeeded ? .accepted : .failed
             fireSource = succeeded
                 ? .forecast(issued: anchorIssued, valid: anchorValid, expires: anchorExpires)
                 : nil
         case .acceptedAllClear(let syncTime):
-            let succeeded = await Self.runMapProductSync(
+            fireOutcome = await Self.runMapProductSync(
                 named: "accepted_all_clear_fire_batch_transaction",
                 logger: logger,
                 operation: { [spcMapBatchPersistenceRepo] in
                     try await spcMapBatchPersistenceRepo.commitAcceptedAllClearFireBatch(syncTime: syncTime)
                 }
             )
+            let succeeded = fireOutcome == .accepted
             logger.info(
                 "spc_map_fire_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
-            fireOutcome = succeeded ? .accepted : .failed
             fireSource = succeeded ? .acceptedAllClear(at: syncTime) : nil
         case .rejected(let reason):
             logger.info(
