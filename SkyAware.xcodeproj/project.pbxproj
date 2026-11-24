@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D910000331AA000100A10001 /* overall-1.geojson in Resources */ = {isa = PBXBuildFile; fileRef = D910000431AA000100A10001 /* overall-1.geojson */; };
 		A7670002A001000100A10001 /* Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670006A001000100A10001 /* Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift */; };
 		A7670003A001000100A10001 /* Tests/UnitTests/MapAcceptedUpdateMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670007A001000100A10001 /* Tests/UnitTests/MapAcceptedUpdateMeasurementTests.swift */; };
 		A7670004A001000100A10001 /* Tests/UnitTests/MapSceneWarmingMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7670008A001000100A10001 /* Tests/UnitTests/MapSceneWarmingMeasurementTests.swift */; };
@@ -68,6 +69,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D910000431AA000100A10001 /* overall-1.geojson */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Tests/UnitTests/Fixtures/WSSI/overall-1.geojson; sourceTree = "<group>"; };
 		A7670006A001000100A10001 /* Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift; sourceTree = "<group>"; };
 		A7670007A001000100A10001 /* Tests/UnitTests/MapAcceptedUpdateMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/MapAcceptedUpdateMeasurementTests.swift; sourceTree = "<group>"; };
 		A7670008A001000100A10001 /* Tests/UnitTests/MapSceneWarmingMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/MapSceneWarmingMeasurementTests.swift; sourceTree = "<group>"; };
@@ -117,6 +119,7 @@
 				UnitTests/FeedStateStoreTests.swift,
 				UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite,
 				UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite,
+				UnitTests/Fixtures/WSSI/overall-1.geojson,
 				UnitTests/ForegroundActivityReporterTests.swift,
 				UnitTests/ForegroundDurableContextReusePolicyTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
@@ -192,6 +195,7 @@
 				UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift,
 				UnitTests/WidgetSnapshotStoreTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+				UnitTests/WSSISourceDecoderTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -288,6 +292,7 @@
 				UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift,
 				UnitTests/WidgetSnapshotStoreTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+				UnitTests/WSSISourceDecoderTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};
@@ -683,6 +688,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D910000331AA000100A10001 /* overall-1.geojson in Resources */,
 				D2A000032F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite in Resources */,
 				D2A000052F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite in Resources */,
 			);
