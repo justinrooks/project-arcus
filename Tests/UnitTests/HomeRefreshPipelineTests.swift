@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import OSLog
+import SwiftData
 import Testing
 import ArcusCore
 @testable import SkyAware
@@ -3465,8 +3466,8 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncMapProductsCount() == 2)
     }
 
-    @Test("movement reprojects effective convective risk when a future-only replacement is rejected")
-    func slowProductRefresh_reprojectsEffectiveConvectiveRiskAtNewLocation() async throws {
+    @Test("movement reprojects effective convective risk for deferred and rejected replacements", arguments: [false, true])
+    func slowProductRefresh_reprojectsEffectiveConvectiveRiskAtNewLocation(coherentUpcoming: Bool) async throws {
         let container = try TestStore.container(
             for: [HomeProjection.self, ConvectiveOutlook.self, MD.self, Watch.self,
                   StormRisk.self, SevereRisk.self, FireRisk.self, SPCAcceptedDay1Convective.self]
@@ -3475,7 +3476,10 @@ struct HomeRefreshPipelineTests {
         defer { try? FileManager.default.removeItem(at: testDirectory) }
         let feedState = FeedStateStore(directoryURL: testDirectory.appendingPathComponent("feed"))
         let awareness = WeatherAwarenessSnapshotStore(directoryURL: testDirectory.appendingPathComponent("awareness"))
-        let providers = makeConvectiveMovementProviders(container: container, now: .now, feedStateStore: feedState)
+        let providers = makeConvectiveMovementProviders(
+            container: container, now: .now, feedStateStore: feedState, coherentUpcoming: coherentUpcoming
+        )
+        let upcomingValid = try #require(providers.valid)
         let origin = makeContext(latitude: 38, longitude: -104.5)
         let destination = makeContext(latitude: 39.5, longitude: -104.5, h3Cell: 654_321)
         let store = HomeProjectionStore(modelContainer: container)
@@ -3506,10 +3510,21 @@ struct HomeRefreshPipelineTests {
             )
         }
 
-        _ = try await refresh(.bootstrap, at: origin, with: providers.effective)
+        func comparisonState(for key: String) throws -> (locationKey: String?, state: RiskComparisonBaselineState?) {
+            let rows = try ModelContext(container).fetch(FetchDescriptor<HomeProjection>())
+            let row = try #require(rows.first { $0.projectionKey == key })
+            return (row.convectiveRiskComparisonLocationKey,
+                    RiskComparisonBaselineState.decode(row.convectiveRiskComparisonSourceKey))
+        }
+
+        _ = try await refresh(.backgroundLocationChange, at: origin, with: providers.effective)
         let prior = try #require(await store.projection(for: origin))
         try #require(prior.stormRisk == .allClear)
         try #require(prior.severeRisk == .allClear)
+        let baseline = try comparisonState(for: prior.projectionKey)
+        try #require(baseline.locationKey == HomeProjection.riskComparisonLocationKey(for: origin))
+        try #require(baseline.state?.baselineSourceKey == prior.convectiveSourceToken)
+        try #require(baseline.state?.profile?.stormRisk == .allClear)
         let priorWidgetTime = try #require(widgets.lastInput()?.riskSnapshotTimestamp)
         let source = try #require(await feedState.record(for: "spc.map.convective"))
         try #require(source.generation == 1)
@@ -3520,10 +3535,12 @@ struct HomeRefreshPipelineTests {
             .foregroundLocationChange, at: destination, with: providers.futureOnly,
             progress: .init(markHotAlertsCompleted: {}, report: { _ in }, publish: { await publications.append($0) })
         )
-        let rejected = try #require(await feedState.record(for: "spc.map.convective"))
-        try #require(rejected.lastFailure == .rejected)
-        #expect(rejected.generation == source.generation)
-        #expect(rejected.lastCanonicalAcceptanceAt == source.lastCanonicalAcceptanceAt)
+        let latest = try #require(await feedState.record(for: "spc.map.convective"))
+        try #require(latest.lastFailure == (coherentUpcoming ? nil : .rejected))
+        #expect(latest.lastDeferredUntil == (coherentUpcoming ? upcomingValid : nil))
+        #expect(latest.generation == source.generation)
+        #expect(latest.lastCanonicalAcceptanceAt == source.lastCanonicalAcceptanceAt)
+        #expect(snapshot.riskProfileChange == nil)
         try #require(await providers.futureOnly.getStormRisk(for: destination.snapshot.coordinates) == .marginal)
         try #require(
             await providers.futureOnly.getSevereRisk(for: destination.snapshot.coordinates) == .tornado(probability: 0.02)
@@ -3560,6 +3577,14 @@ struct HomeRefreshPipelineTests {
             #expect(repeated.riskProfileChange == nil)
             #expect(try await store.projection(for: destination)?.lastSlowProductsLoadAt == projected.lastSlowProductsLoadAt)
         }
+
+        let retainedBaseline = try comparisonState(for: prior.projectionKey)
+        #expect(retainedBaseline.locationKey == baseline.locationKey)
+        #expect(retainedBaseline.state == baseline.state)
+        let destinationBaseline = try comparisonState(for: projected.projectionKey)
+        #expect(destinationBaseline.locationKey == nil)
+        #expect(destinationBaseline.state?.baselineSourceKey == nil)
+        #expect(destinationBaseline.state?.observedSourceKey == prior.convectiveSourceToken)
 
         guard case .available(let supersededRisk) = await store.day1Risk(for: destination, newlyAcceptedSource: nil) else {
             Issue.record("Expected proven destination risk before a replacement")

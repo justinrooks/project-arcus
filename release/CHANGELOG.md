@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+<!-- Public baseline: v1.5.0 (ee78d8a528e440277b90e27b3f213dcceb610645). Evidence through: 0fa9a24b5eca6ee36d644f001a076e4e7c69b680. -->
+
+### Reliability
+
+- After you move, Today, widgets, and the weather-awareness summary can show Storm and Severe Risk for the new area using the last accepted Day 1 outlook while it remains valid, even if a replacement is temporarily unavailable.
+<!-- evidence: dd462ef -->
+- When the Storm Prediction Center publishes the next Day 1 outlook early, SkyAware keeps using the effective outlook while it remains valid and the replacement has yet to take effect. An eligible refresh can accept the replacement once it takes effect. Older dated forecasts, incomplete sets, and inconsistent updates cannot replace the accepted outlook.
+<!-- evidence: dd462ef, a42cfd3, 0fa9a24 -->
+
 ## v1.5.0
 
 <!-- Prepared TestFlight candidate; public baseline: v1.4.0(236) (afa5ee007ea9d3bacdec8767eaa1c363d05251cd); evidence through: 19be064e8c027e371a99fba7ba24cb9b322a89c0. -->

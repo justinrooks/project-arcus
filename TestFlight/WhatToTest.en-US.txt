@@ -1,17 +1,10 @@
-SkyAware 1.5.0 — TestFlight candidate
+SkyAware 1.5.1 — What to test
 
-Highlights:
-- SPC Day 1–3 Outlooks, discussions, and Map forecast-day navigation.
-- Clearer Map accessibility summaries, stable refresh presentation, and Reduce Motion support for initial centering.
-- Direct alert and mesoscale discussion notification navigation.
-- Weather-awareness Siri Shortcut and pressure-history chart, elevation, CSV export, and session restart.
-- More reliable location recovery, consent-aware sharing, and queued updates, with fewer equivalent updates while stationary.
-- More accurate slow-request states in Storm Setup and improved Home and widget freshness handling.
+Highlights
+- Storm and Severe Risk can update for your new area using the still-valid Day 1 outlook while a replacement is unavailable.
+- An early Day 1 outlook can be picked up on an eligible refresh after it takes effect.
 
-What to test:
-- Select Days 1–3 in Outlooks and Map; open discussions and return through detail-to-Map navigation. Confirm the selected forecast day and supported risk layers remain consistent.
-- Open NWS and mesoscale discussion notifications with the app closed or Home still loading. Check that the requested alert or discussion opens, or that unavailable content has a clear destination.
-- Run the weather-awareness Shortcut and compare its local summary with the app. In pressure diagnostics, collect readings, inspect the chart and elevation, export CSV, and restart collection.
-- Exercise location timeout and Today’s Try Again, then background and reopen the app. Move while offline, restart, and reconnect; confirm location-aware content recovers. Toggle sharing, location permission, and Precise Location and check that recovery follows the current settings. Include a stationary period and movement across a nearby targeting boundary when practical; report symptoms and timing rather than assuming notification delivery.
-- Check Storm Setup during a slow connection and compare Home with widgets after refresh. Check Combined widgets around alert end times and unavailable versus quiet risk states on Lock Screen widgets.
-- With VoiceOver and Reduce Motion enabled, inspect Map summaries and initial centering; interrupt and reopen Local Alerts during a transition.
+What to test
+- After Today loads Storm and Severe Risk, check it again after moving to a different area. If an outlook update is temporarily unavailable, compare Today, your risk widget, and the weather-awareness Shortcut. Check whether they reflect the new area and flag any unexpected Risk Data Unavailable state while the prior outlook is still valid.
+- If you notice a Day 1 outlook published before its valid time, compare Today and Map before and after that time. Check that the new outlook does not appear as current early, then refresh or reopen the app after it takes effect and check that the new outlook appears.
+- If something looks wrong, include the time and time zone, which surfaces differed, and whether a refresh or reopening recovered the display.

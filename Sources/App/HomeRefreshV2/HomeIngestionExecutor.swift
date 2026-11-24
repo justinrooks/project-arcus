@@ -993,6 +993,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
     private static func acceptedFeedDate(_ record: FeedStateRecord?, now: Date) -> Date? {
         guard let record, record.generation > 0, record.lastFailure == nil,
+              record.lastDeferredUntil == nil,
               record.lastTransportSource == .live || record.lastTransportSource == .revalidated,
               let acceptedAt = record.lastCanonicalAcceptanceAt,
               record.lastAttemptAt <= acceptedAt, acceptedAt <= now else { return nil }
@@ -1461,6 +1462,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             return "accepted"
         case .rejected:
             return "rejected"
+        case .deferred:
+            return "deferred"
         case .skipped:
             return "skipped"
         case .failed:
