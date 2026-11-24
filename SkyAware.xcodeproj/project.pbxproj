@@ -197,6 +197,7 @@
 				UnitTests/WidgetSnapshotTests.swift,
 				UnitTests/WSSIAcceptedStoreTests.swift,
 				UnitTests/WSSISourceDecoderTests.swift,
+				UnitTests/WSSISyncTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -295,6 +296,7 @@
 				UnitTests/WidgetSnapshotTests.swift,
 				UnitTests/WSSIAcceptedStoreTests.swift,
 				UnitTests/WSSISourceDecoderTests.swift,
+				UnitTests/WSSISyncTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};

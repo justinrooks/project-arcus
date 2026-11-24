@@ -26,7 +26,11 @@ struct ForgeWSSIClient: Sendable {
     private let origin: URL
     private let http: any HTTPClient
 
-    init(origin: URL, http: any HTTPClient = URLSessionHTTPClient()) {
+    // The accepted store owns WSSI payloads. Avoid retaining a second set in the transport cache.
+    init(
+        origin: URL,
+        http: any HTTPClient = URLSessionHTTPClient(urlCache: URLCache(memoryCapacity: 0, diskCapacity: 0))
+    ) {
         self.origin = origin
         self.http = http
     }

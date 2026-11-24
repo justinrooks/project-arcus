@@ -35,14 +35,22 @@ final class WSSIAcceptedSlot {
         self.eTag = eTag
     }
 
+    var revisionID: UUID? {
+        guard WSSIProduct(rawValue: product) != nil, WSSICoverage(rawValue: coverage) != nil else { return nil }
+        return revision
+    }
+
+    fileprivate var revisionDetails: WSSIAcceptedRevision {
+        .init(revision: revision, issuedAt: issuedAt, validFrom: validFrom, validTo: validTo,
+              gisFileDate: gisFileDate, gisIngestDate: gisIngestDate, retrievedAt: retrievedAt,
+              geometryPath: geometryPath)
+    }
+
     var snapshot: WSSIAcceptedStore.Slot? {
         guard let product = WSSIProduct(rawValue: product), let coverage = WSSICoverage(rawValue: coverage) else {
             return nil
         }
-        return .init(product: product, day: day,
-                     revision: .init(revision: revision, issuedAt: issuedAt, validFrom: validFrom, validTo: validTo,
-                                     gisFileDate: gisFileDate, gisIngestDate: gisIngestDate,
-                                     retrievedAt: retrievedAt, geometryPath: geometryPath),
+        return .init(product: product, day: day, revision: revisionDetails,
                      coverage: coverage, geometry: geometry, eTag: eTag)
     }
 }
@@ -111,6 +119,15 @@ actor WSSIAcceptedStore {
         try slotRow(key: Self.key(product, day))?.snapshot
     }
 
+    func acceptedRevision(product: WSSIProduct, day: Int, manifestGeneration: UUID) throws -> UUID? {
+        try requireManifestGeneration(manifestGeneration)
+        return try slotRow(key: Self.key(product, day))?.revisionID
+    }
+
+    func requireManifestGeneration(_ generation: UUID) throws {
+        guard try manifestRow()?.generation == generation else { throw Rejection.supersededManifest }
+    }
+
     /// A 304 leaves this representation in place. Its entries still need comparison with local slots.
     @discardableResult
     func saveManifest(_ body: Data, eTag: String?, replacing generation: UUID?) throws -> Manifest {
@@ -143,18 +160,19 @@ actor WSSIAcceptedStore {
         _ = try WSSISourceDecoder.geometry(from: geometry, for: entry)
         let key = Self.key(product, day)
         let row = try slotRow(key: key)
-        if let current = row?.snapshot {
-            if candidate.revision == current.revision.revision {
-                guard candidate == current.revision, entry.coverage == current.coverage,
-                      geometry == current.geometry else { throw Rejection.conflictingRevision }
+        if let row, row.revisionID != nil {
+            let current = row.revisionDetails
+            if candidate.revision == current.revision {
+                guard let snapshot = row.snapshot, candidate == current, entry.coverage == snapshot.coverage,
+                      geometry == snapshot.geometry else { throw Rejection.conflictingRevision }
                 return
             }
             // Mirror Forge's issuance ordering and its correction rule for equal issuance.
-            let newerCorrection = candidate.issuedAt == current.revision.issuedAt &&
+            let newerCorrection = candidate.issuedAt == current.issuedAt &&
                 candidate.gisFileDate.map { fileDate in
-                    current.revision.gisFileDate.map { fileDate > $0 } ?? false
+                    current.gisFileDate.map { fileDate > $0 } ?? false
                 } == true
-            guard candidate.issuedAt > current.revision.issuedAt || newerCorrection else {
+            guard candidate.issuedAt > current.issuedAt || newerCorrection else {
                 throw Rejection.staleRevision
             }
         }
