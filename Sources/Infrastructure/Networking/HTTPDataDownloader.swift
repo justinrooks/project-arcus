@@ -16,7 +16,7 @@ public enum HTTPExecutionMode: Sendable, Equatable {
     @TaskLocal public static var current: HTTPExecutionMode = .background
 }
 
-/// Determines whether a GET may use an already-cached response after transport fails.
+/// Determines whether a GET may use the HTTP cache.
 public enum HTTPFallbackPolicy: Sendable, Equatable {
     /// Maintains legacy behavior for callers that do not make a feed-specific decision.
     case unrestricted
@@ -24,6 +24,9 @@ public enum HTTPFallbackPolicy: Sendable, Equatable {
     case disallowed
     /// Accepts fallback only when the origin response has a trustworthy, bounded age.
     case maximumAge(TimeInterval)
+    /// Send the caller's conditional request as-is, preserve bodyless 304s, and recover only
+    /// a matching cached representation after a 304. Require the exact URL and a live response.
+    case explicitRevalidation
 }
 
 extension HTTPExecutionMode {
@@ -353,6 +356,7 @@ public final class URLSessionHTTPClient: HTTPClient {
         let session = session(for: mode)
         let executionContext = mode == .background ? BackgroundRefreshExecutionContext.current : nil
         let maxAttempts = policy.retryDelays.count + 1
+        let explicitRevalidation = fallbackPolicy == .explicitRevalidation
 
         for attempt in 0..<maxAttempts {
             try Task.checkCancellation()
@@ -368,6 +372,9 @@ public final class URLSessionHTTPClient: HTTPClient {
             }
             do {
                 var req = URLRequest(url: url)
+                if explicitRevalidation {
+                    req.cachePolicy = .reloadIgnoringLocalCacheData
+                }
                 req.httpMethod = method
                 req.httpBody = body
                 req.timeoutInterval = requestTimeout
@@ -379,7 +386,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                     )
                 }
 
-                let metricsCollector = URLSessionTaskMetricsCollector()
+                let metricsCollector = URLSessionTaskMetricsCollector(allowsRedirects: !explicitRevalidation)
                 let (data, response) = try await data(
                     for: req,
                     session: session,
@@ -407,6 +414,9 @@ public final class URLSessionHTTPClient: HTTPClient {
 
                 let responseHeaders = normalizedHeaders(from: http.allHeaderFields)
                 let responseSource = source(for: metricsCollector.metrics)
+                if explicitRevalidation, http.url != url || responseSource != .live {
+                    throw URLError(.badServerResponse)
+                }
                 let liveResponse = HTTPResponse(status: http.statusCode,
                                                 headers: responseHeaders,
                                                 data: data.isEmpty ? nil : data,
@@ -415,6 +425,9 @@ public final class URLSessionHTTPClient: HTTPClient {
                 case .success:
                     return liveResponse
                 case .notModified:
+                    if explicitRevalidation {
+                        return explicitlyRevalidated(liveResponse, for: req, timeout: policy.requestTimeout)
+                    }
                     if let cached = getCachedResponse(for: url, timeout: policy.requestTimeout) {
                         logger.notice("Using cache revalidation fallback (304) for host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                         return HTTPResponse(status: liveResponse.status,
@@ -433,6 +446,10 @@ public final class URLSessionHTTPClient: HTTPClient {
                             policy: policy
                         ) {
                             guard retryIsAdmitted(wait, in: executionContext) else {
+                                if explicitRevalidation, hasRemainingWork(in: executionContext) {
+                                    try Task.checkCancellation()
+                                    return liveResponse
+                                }
                                 return try await deadlineFallbackOrThrow(
                                     method: method,
                                     url: url,
@@ -464,7 +481,8 @@ public final class URLSessionHTTPClient: HTTPClient {
                     return liveResponse
                 }
             } catch {
-                if error is CancellationError || Task.isCancelled {
+                if error is CancellationError || Task.isCancelled
+                    || (explicitRevalidation && (error as? URLError)?.code == .cancelled) {
                     logger.debug("Request cancelled for host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public)")
                     throw CancellationError()
                 }
@@ -472,6 +490,10 @@ public final class URLSessionHTTPClient: HTTPClient {
                 if isTransient(error) {
                     if let wait = retryInterval(attempt: attempt, retryAfterSeconds: nil, policy: policy) {
                         guard retryIsAdmitted(wait, in: executionContext) else {
+                            if explicitRevalidation, hasRemainingWork(in: executionContext) {
+                                try Task.checkCancellation()
+                                throw error
+                            }
                             return try await deadlineFallbackOrThrow(
                                 method: method,
                                 url: url,
@@ -625,6 +647,23 @@ public final class URLSessionHTTPClient: HTTPClient {
         return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
     }
 
+    private func explicitlyRevalidated(
+        _ response: HTTPResponse, for request: URLRequest, timeout: TimeInterval
+    ) -> HTTPResponse {
+        guard let url = request.url,
+              let validator = request.value(forHTTPHeaderField: "If-None-Match"),
+              let tag = HTTPETag.opaqueValue(validator),
+              response.header("ETag").map({ HTTPETag.opaqueValue($0) == tag }) ?? true,
+              let cached = getCachedResponse(for: url, timeout: timeout),
+              let cachedHTTP = cached.response as? HTTPURLResponse,
+              cachedHTTP.url == url, cachedHTTP.statusCode == 200,
+              let cachedValidator = cachedHTTP.value(forHTTPHeaderField: "ETag"),
+              HTTPETag.opaqueValue(cachedValidator) == tag, !cached.data.isEmpty else {
+            return HTTPResponse(status: 304, headers: response.headers, data: nil)
+        }
+        return HTTPResponse(status: 304, headers: response.headers, data: cached.data, source: .cacheRevalidated304)
+    }
+
     private func cacheFallbackResponse(
         method: String,
         url: URL,
@@ -632,7 +671,7 @@ public final class URLSessionHTTPClient: HTTPClient {
         fallbackPolicy: HTTPFallbackPolicy,
         reason: String
     ) -> HTTPResponse? {
-        guard method == "GET", policy.allowCacheFallback else { return nil }
+        guard method == "GET", policy.allowCacheFallback, fallbackPolicy != .explicitRevalidation else { return nil }
         guard let cached = getCachedResponse(for: url, timeout: policy.requestTimeout) else { return nil }
         guard allowsFallback(cached, policy: fallbackPolicy) else {
             logger.notice("Rejected cached HTTP fallback host=\(url.host ?? "unknown", privacy: .public) path=\(self.diagnosticPath(for: url), privacy: .public) reason=\(reason, privacy: .public)")
@@ -661,7 +700,7 @@ public final class URLSessionHTTPClient: HTTPClient {
         switch policy {
         case .unrestricted:
             return true
-        case .disallowed:
+        case .disallowed, .explicitRevalidation:
             return false
         case .maximumAge(let maximumAge):
             guard maximumAge >= 0,
@@ -734,8 +773,25 @@ enum InstallationRequestRedirectPolicy {
     }
 }
 
+enum HTTPETag {
+    static func opaqueValue(_ value: String) -> Data? {
+        let tag = value.hasPrefix("W/") ? value.utf8.dropFirst(2) : value.utf8[...]
+        let opaque = tag.dropFirst().dropLast()
+        guard tag.count >= 2, tag.first == 0x22, tag.last == 0x22,
+              opaque.allSatisfy({ $0 == 0x21 || ($0 >= 0x23 && $0 != 0x7F) }) else {
+            return nil
+        }
+        return Data(opaque)
+    }
+}
+
 final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
     private let storedMetrics = Mutex<URLSessionTaskMetrics?>(nil)
+    private let allowsRedirects: Bool
+
+    init(allowsRedirects: Bool = true) {
+        self.allowsRedirects = allowsRedirects
+    }
 
     func urlSession(
         _ session: URLSession, task: URLSessionTask,
@@ -744,7 +800,7 @@ final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
     ) {
         // Enrollment bodies contain a permanent secret. Never forward installation writes,
         // including same-origin redirects, to another endpoint or protocol.
-        guard let original = task.originalRequest,
+        guard allowsRedirects, let original = task.originalRequest,
               InstallationRequestRedirectPolicy.allowsRedirect(for: original) else {
             completionHandler(nil)
             return

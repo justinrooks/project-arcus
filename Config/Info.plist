@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ArcusForgeURL</key>
+	<string>$(ARCUS_FORGE_URL)</string>
 	<key>ArcusSignalURL</key>
 	<string>$(ARCUS_SIGNAL_URL)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
