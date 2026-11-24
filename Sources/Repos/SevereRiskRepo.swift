@@ -67,11 +67,13 @@ actor SevereRiskRepo {
         let risks = try modelContext.fetch(
             FetchDescriptor<SevereRisk>(predicate: pred)
         )
-        let latestRisks = latestIssuanceSlicesByThreatType(from: risks)
+        return Self.strongestLocalRisk(in: latestIssuanceSlicesByThreatType(from: risks), for: point)
+    }
 
-        // 2) Sort by descending severity so we can early-exit on first hit.
+    static func strongestLocalRisk(in risks: [SevereRisk], for point: CLLocationCoordinate2D) -> SevereWeatherThreat {
+        // Sort by descending severity so we can early-exit on first hit.
         //    Within a threat type, prefer higher probability and then fresher issuances.
-        let bySeverity = latestRisks.sorted { lhs, rhs in
+        let bySeverity = risks.sorted { lhs, rhs in
             if lhs.threatLevel.priority != rhs.threatLevel.priority {
                 return lhs.threatLevel.priority > rhs.threatLevel.priority
             }

@@ -595,12 +595,18 @@ extension SpcProvider: SpcSyncing {
                 ? .forecast(issued: anchorIssued, valid: anchorValid, expires: anchorExpires)
                 : nil
         case .acceptedAllClear(let syncTime):
+            let windows = batch.products.values.compactMap { product in
+                product.product == .fireRH ? nil : product.windowMetadata
+            }
+            let window = batch.products[.categorical]?.windowMetadata
+                .flatMap { anchor in windows.allSatisfy { $0 == anchor } ? anchor : nil }
             let succeeded = await Self.runMapProductSync(
                 named: "accepted_all_clear_convective_batch_transaction",
                 logger: logger,
                 operation: { [spcMapBatchPersistenceRepo] in
                     try await spcMapBatchPersistenceRepo.commitAcceptedAllClearConvectiveBatch(
                         syncTime: syncTime,
+                        window: window.map { ($0.issued, $0.valid, $0.expires) },
                         failureInjection: mapBatchPersistenceFailureInjection
                     )
                 }

@@ -196,12 +196,23 @@ struct HomeProjectionCommitAcknowledgement: Sendable, Equatable {
     let record: HomeProjectionRecord
     let riskProfileChange: RiskProfileChange?
     let widgetPublication: WidgetSnapshotPublication
+    let acceptedDay1Risk: SPCDay1LocalRisk?
 
-    init(record: HomeProjectionRecord, riskProfileChange: RiskProfileChange?) {
+    init(
+        record: HomeProjectionRecord, riskProfileChange: RiskProfileChange?,
+        acceptedDay1Risk: SPCDay1LocalRisk? = nil
+    ) {
         self.record = record
         self.riskProfileChange = riskProfileChange
         self.widgetPublication = WidgetSnapshotPublication(projection: record)
+        self.acceptedDay1Risk = acceptedDay1Risk
     }
+}
+
+enum HomeDay1RiskQuery: Sendable {
+    case unsupported
+    case available(SPCDay1LocalRisk)
+    case unavailable
 }
 
 struct HomeProjectionCoreCommit: Sendable {
@@ -215,6 +226,7 @@ struct HomeProjectionCoreCommit: Sendable {
     let updatesConvectiveRisk: Bool
     let updatesFireRisk: Bool
     let convectiveSource: SpcMapSourceIdentity?
+    let day1Risk: SPCDay1LocalRisk?
     let fireSource: SpcMapSourceIdentity?
     let riskComparisonMode: RiskComparisonMode
     let hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])?
@@ -225,6 +237,7 @@ struct HomeProjectionCoreCommit: Sendable {
         updatesConvectiveRisk: Bool = true,
         updatesFireRisk: Bool = true,
         convectiveSource: SpcMapSourceIdentity? = nil,
+        day1Risk: SPCDay1LocalRisk? = nil,
         fireSource: SpcMapSourceIdentity? = nil,
         riskComparisonMode: RiskComparisonMode = .evaluate,
         hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])? = nil
@@ -234,6 +247,7 @@ struct HomeProjectionCoreCommit: Sendable {
         self.updatesConvectiveRisk = updatesConvectiveRisk
         self.updatesFireRisk = updatesFireRisk
         self.convectiveSource = convectiveSource
+        self.day1Risk = day1Risk
         self.fireSource = fireSource
         self.riskComparisonMode = riskComparisonMode
         self.hotAlerts = hotAlerts
@@ -243,6 +257,7 @@ struct HomeProjectionCoreCommit: Sendable {
 protocol HomeProjectionPersisting: Sendable {
     func projection(for context: LocationContext) async throws -> HomeProjectionRecord?
     func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication?
+    func day1Risk(for context: LocationContext, newlyAcceptedSource: SpcMapSourceIdentity?) async -> HomeDay1RiskQuery
 
     func updateStormSetup(
         _ stormSetup: StormSetupCurrentResponse,
@@ -287,6 +302,10 @@ protocol HomeProjectionPersisting: Sendable {
 }
 
 extension HomeProjectionPersisting {
+    func day1Risk(for context: LocationContext, newlyAcceptedSource: SpcMapSourceIdentity?) async -> HomeDay1RiskQuery {
+        .unsupported
+    }
+
     func widgetPublication(for context: LocationContext) async throws -> WidgetSnapshotPublication? {
         try await projection(for: context).map { WidgetSnapshotPublication(projection: $0) }
     }
@@ -725,6 +744,62 @@ actor HomeProjectionStore {
         for context: LocationContext,
         loadedAt: Date = .now
     ) async throws -> HomeProjectionCommitAcknowledgement {
+        let acknowledgement: HomeProjectionCommitAcknowledgement
+        if let risk = commit.day1Risk, commit.slowProducts != nil {
+            acknowledgement = try retentionCoordinator.withActiveProjectionKey { activeKey in
+                guard activeKey == nil || activeKey == HomeProjection.projectionKey(for: context) else {
+                    throw CancellationError()
+                }
+                return try SpcMapBatchPersistenceRepo.day1CommitLock.withLock {
+                    try Task.checkCancellation()
+                    let revision = try? SpcMapBatchPersistenceRepo.acceptedDay1Revision(in: ModelContext(modelContainer))
+                    let point = context.snapshot.coordinates
+                    let usable = revision?.id == risk.revision
+                        && revision?.isEffective(at: .now, newlyAcceptedSource: commit.convectiveSource) == true
+                        && risk.latitude == point.latitude && risk.longitude == point.longitude
+                    return try saveCore(commit, for: context, loadedAt: loadedAt, day1Risk: usable ? risk : nil)
+                }
+            }
+        } else {
+            acknowledgement = try saveCore(commit, for: context, loadedAt: loadedAt, day1Risk: nil)
+        }
+        let acceptsRisk = (commit.slowProducts != nil && (
+            (commit.updatesConvectiveRisk && commit.day1Risk == nil) || commit.updatesFireRisk
+        )) || acknowledgement.acceptedDay1Risk != nil
+        if acceptsRisk || commit.hotAlerts != nil {
+            acceptedWidgetPublication = acknowledgement.widgetPublication
+            awarenessProjectionKey = acknowledgement.record.projectionKey
+            await publishAcceptedAwareness()
+        }
+        return acknowledgement
+    }
+
+    func day1Risk(for context: LocationContext, newlyAcceptedSource: SpcMapSourceIdentity?) async -> HomeDay1RiskQuery {
+        guard modelContainer.schema.entities.contains(where: { $0.name == "SPCAcceptedDay1Convective" }) else {
+            return .unsupported
+        }
+        do {
+            let risk = try SpcMapBatchPersistenceRepo.day1CommitLock.withLock {
+                try SpcMapBatchPersistenceRepo.acceptedDay1Risk(
+                    in: ModelContext(modelContainer), for: context.snapshot.coordinates, at: .now,
+                    newlyAcceptedSource: newlyAcceptedSource
+                )
+            }
+            return risk.map(HomeDay1RiskQuery.available) ?? .unavailable
+        } catch {
+            Logger.appHomeRefresh.error("Unable to assess accepted Day 1 convective geometry")
+            return .unavailable
+        }
+    }
+
+    private func saveCore(
+        _ commit: HomeProjectionCoreCommit,
+        for context: LocationContext,
+        loadedAt: Date,
+        day1Risk: SPCDay1LocalRisk?
+    ) throws -> HomeProjectionCommitAcknowledgement {
+        let updatesConvective = day1Risk != nil || (commit.day1Risk == nil && commit.updatesConvectiveRisk)
+        let reprojectsRetainedDay1Risk = day1Risk.map { $0.source != commit.convectiveSource } ?? false
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
         let persistedProfile = RiskProfile(
             stormRisk: projection.stormRisk,
@@ -741,9 +816,9 @@ actor HomeProjectionStore {
             projection.lastWeatherLoadAt = loadedAt
         }
         if let slowProducts = commit.slowProducts {
-            if commit.updatesConvectiveRisk {
-                projection.stormRisk = slowProducts.stormRisk
-                projection.severeRisk = slowProducts.severeRisk
+            if updatesConvective {
+                projection.stormRisk = day1Risk?.storm ?? slowProducts.stormRisk
+                projection.severeRisk = day1Risk?.severe ?? slowProducts.severeRisk
             }
             if commit.updatesFireRisk {
                 projection.fireRisk = slowProducts.fireRisk
@@ -757,15 +832,15 @@ actor HomeProjectionStore {
             previousSevereRisk = currentProfile.severeRisk
             previousFireRisk = currentProfile.fireRisk
 
-            if commit.updatesConvectiveRisk,
+            if updatesConvective,
                let previousProfile = try processComparisonBaseline(
                    for: .convective,
                    projection: projection,
                    context: context,
-                   acceptedSource: commit.convectiveSource,
+                   acceptedSource: day1Risk?.source ?? commit.convectiveSource,
                    currentProfile: currentProfile,
                    persistedProfile: persistedProfile,
-                   mode: commit.riskComparisonMode
+                   mode: commit.updatesConvectiveRisk ? commit.riskComparisonMode : .observeOnly
                ) {
                 previousStormRisk = previousProfile.stormRisk
                 previousSevereRisk = previousProfile.severeRisk
@@ -784,7 +859,10 @@ actor HomeProjectionStore {
                 previousFireRisk = previousProfile.fireRisk
                 eligibleDimensions.append(.fire)
             }
-            if commit.updatesConvectiveRisk && commit.updatesFireRisk {
+            if reprojectsRetainedDay1Risk, let day1Risk {
+                // Carry the original source acceptance time into the new local assessment.
+                projection.lastSlowProductsLoadAt = day1Risk.acceptedAt
+            } else if updatesConvective && commit.updatesFireRisk {
                 projection.lastSlowProductsLoadAt = loadedAt
             }
         }
@@ -796,7 +874,7 @@ actor HomeProjectionStore {
 
         projection.updatedAt = loadedAt
         try saveProjection(named: "Projection Core Save")
-        let acknowledgement = HomeProjectionCommitAcknowledgement(
+        return HomeProjectionCommitAcknowledgement(
             record: projection.record,
             riskProfileChange: .init(
                 previous: commit.slowProducts.map { _ in
@@ -817,15 +895,9 @@ actor HomeProjectionStore {
                 comparisonLocationKey: HomeProjection.riskComparisonLocationKey(for: context),
                 locationSummary: projection.placemarkSummary,
                 eligibleDimensions: eligibleDimensions
-            )
+            ),
+            acceptedDay1Risk: day1Risk
         )
-        let acceptsRisk = commit.slowProducts != nil && (commit.updatesConvectiveRisk || commit.updatesFireRisk)
-        if acceptsRisk || commit.hotAlerts != nil {
-            acceptedWidgetPublication = acknowledgement.widgetPublication
-            awarenessProjectionKey = acknowledgement.record.projectionKey
-            await publishAcceptedAwareness()
-        }
-        return acknowledgement
     }
 
     private enum RiskComparisonDomain {

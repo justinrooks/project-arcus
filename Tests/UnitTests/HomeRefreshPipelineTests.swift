@@ -3465,6 +3465,135 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncMapProductsCount() == 2)
     }
 
+    @Test("movement reprojects effective convective risk when a future-only replacement is rejected")
+    func slowProductRefresh_reprojectsEffectiveConvectiveRiskAtNewLocation() async throws {
+        let container = try TestStore.container(
+            for: [HomeProjection.self, ConvectiveOutlook.self, MD.self, Watch.self,
+                  StormRisk.self, SevereRisk.self, FireRisk.self, SPCAcceptedDay1Convective.self]
+        )
+        let testDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+        let feedState = FeedStateStore(directoryURL: testDirectory.appendingPathComponent("feed"))
+        let awareness = WeatherAwarenessSnapshotStore(directoryURL: testDirectory.appendingPathComponent("awareness"))
+        let providers = makeConvectiveMovementProviders(container: container, now: .now, feedStateStore: feedState)
+        let origin = makeContext(latitude: 38, longitude: -104.5)
+        let destination = makeContext(latitude: 39.5, longitude: -104.5, h3Cell: 654_321)
+        let store = HomeProjectionStore(modelContainer: container)
+        let widgets = RecordingWidgetSnapshotRefresher()
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        await store.configureAwarenessSnapshots(awareness)
+
+        func refresh(
+            _ trigger: HomeRefreshTrigger, at context: LocationContext, with provider: SpcProvider,
+            progress: HomeIngestionRunProgress = .none
+        ) async throws -> HomeSnapshot {
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: provider,
+                    arcusAlertSync: alerts,
+                    weatherClient: FakeWeatherClient(result: .failure),
+                    locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                    snapshotStore: HomeSnapshotStore(
+                        spcRisk: provider, spcOutlook: provider, arcusAlerts: alerts, arcusMesos: StubHomeMesoQuery()
+                    ),
+                    projectionStore: store,
+                    widgetSnapshotRefresher: widgets
+                )
+            )
+            return try await executor.run(
+                plan: .init(request: .init(trigger: trigger, locationContext: context)), progress: progress
+            )
+        }
+
+        _ = try await refresh(.bootstrap, at: origin, with: providers.effective)
+        let prior = try #require(await store.projection(for: origin))
+        try #require(prior.stormRisk == .allClear)
+        try #require(prior.severeRisk == .allClear)
+        let priorWidgetTime = try #require(widgets.lastInput()?.riskSnapshotTimestamp)
+        let source = try #require(await feedState.record(for: "spc.map.convective"))
+        try #require(source.generation == 1)
+        try #require(await store.projection(for: destination) == nil)
+
+        let publications = PipelinePublicationRecorder()
+        let snapshot = try await refresh(
+            .foregroundLocationChange, at: destination, with: providers.futureOnly,
+            progress: .init(markHotAlertsCompleted: {}, report: { _ in }, publish: { await publications.append($0) })
+        )
+        let rejected = try #require(await feedState.record(for: "spc.map.convective"))
+        try #require(rejected.lastFailure == .rejected)
+        #expect(rejected.generation == source.generation)
+        #expect(rejected.lastCanonicalAcceptanceAt == source.lastCanonicalAcceptanceAt)
+        try #require(await providers.futureOnly.getStormRisk(for: destination.snapshot.coordinates) == .marginal)
+        try #require(
+            await providers.futureOnly.getSevereRisk(for: destination.snapshot.coordinates) == .tornado(probability: 0.02)
+        )
+        let projected = try #require(await store.projection(for: destination))
+        #expect(snapshot.fireRisk == .critical)
+        #expect(projected.fireRisk == .critical)
+        #expect(snapshot.stormRisk == .marginal)
+        #expect(snapshot.severeRisk == .tornado(probability: 0.02))
+        #expect(projected.stormRisk == .marginal)
+        #expect(projected.severeRisk == .tornado(probability: 0.02))
+        #expect(projected.convectiveSourceToken == prior.convectiveSourceToken)
+        let core = try #require(await publications.firstCore())
+        #expect(core.hasAcceptedCoreSnapshot)
+        #expect(core.refreshKey == destination.refreshKey)
+        #expect(core.stormRisk == projected.stormRisk)
+        #expect(core.severeRisk == projected.severeRisk)
+        #expect(core.fireRisk == projected.fireRisk)
+        let widget = try #require(widgets.lastInput())
+        #expect(widget.publication?.projection == projected)
+        #expect(widget.riskSnapshotTimestamp == priorWidgetTime)
+        if case .assessment(let assessment) = await awareness.read(expectedProjectionKey: projected.projectionKey) {
+            #expect(assessment.risks.storm == .marginal)
+            #expect(assessment.risks.severe == .tornado(probability: 0.02))
+            #expect(assessment.risks.convectiveSourceToken == prior.convectiveSourceToken)
+        } else {
+            Issue.record("Expected an accepted awareness snapshot for the destination")
+        }
+
+        for trigger in [HomeRefreshTrigger.manualRefresh, .backgroundLocationChange] {
+            let repeated = try await refresh(trigger, at: destination, with: providers.futureOnly)
+            #expect(repeated.stormRisk == .marginal)
+            #expect(repeated.severeRisk == .tornado(probability: 0.02))
+            #expect(repeated.riskProfileChange == nil)
+            #expect(try await store.projection(for: destination)?.lastSlowProductsLoadAt == projected.lastSlowProductsLoadAt)
+        }
+
+        guard case .available(let supersededRisk) = await store.day1Risk(for: destination, newlyAcceptedSource: nil) else {
+            Issue.record("Expected proven destination risk before a replacement")
+            return
+        }
+        let retention = HomeProjectionRetentionCoordinator.forStore(container)
+        retention.setActiveProjectionKey(prior.projectionKey)
+        defer { retention.setActiveProjectionKey(nil) }
+        await #expect(throws: CancellationError.self) {
+            try await store.commitCore(
+                .init(slowProducts: (.allClear, .allClear, nil), day1Risk: supersededRisk), for: destination
+            )
+        }
+        retention.setActiveProjectionKey(projected.projectionKey)
+
+        let replacement = Date()
+        try await SpcMapBatchPersistenceRepo(modelContainer: container).commitAcceptedAllClearConvectiveBatch(
+            syncTime: replacement, window: (replacement, replacement, replacement.addingTimeInterval(3600))
+        )
+        let obsolete = try await store.commitCore(
+            .init(slowProducts: (.allClear, .allClear, nil), updatesFireRisk: false, day1Risk: supersededRisk),
+            for: destination
+        )
+        #expect(obsolete.acceptedDay1Risk == nil)
+        #expect(obsolete.record.stormRisk == .marginal)
+        #expect(obsolete.record.severeRisk == .tornado(probability: 0.02))
+
+        let updated = try await refresh(.manualRefresh, at: destination, with: providers.futureOnly)
+        #expect(updated.stormRisk == .allClear)
+        #expect(updated.severeRisk == .allClear)
+        #expect(updated.fireRisk == .critical)
+        #expect(updated.riskProfileChange == nil)
+    }
+
     @Test("rejected convective domain preserves expired values while accepted fire clears and retries")
     func slowProductRefresh_rejectedConvectivePreservesBaselineAndRetriesWithoutReversal() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -5942,7 +6071,8 @@ private struct FailingHomeSnapshotReader: HomeSnapshotReading {
         for context: LocationContext?,
         weather: SummaryWeather?,
         freshness: HomeFreshnessState,
-        refreshMesos: Bool
+        refreshMesos: Bool,
+        readsConvectiveRisk: Bool
     ) async throws -> HomeSnapshot {
         throw TestFailure.failedRead
     }

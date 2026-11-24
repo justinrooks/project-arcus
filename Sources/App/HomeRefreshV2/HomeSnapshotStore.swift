@@ -14,7 +14,8 @@ protocol HomeSnapshotReading: Sendable {
         for context: LocationContext?,
         weather: SummaryWeather?,
         freshness: HomeFreshnessState,
-        refreshMesos: Bool
+        refreshMesos: Bool,
+        readsConvectiveRisk: Bool
     ) async throws -> HomeSnapshot
 }
 
@@ -40,7 +41,8 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         for context: LocationContext?,
         weather: SummaryWeather?,
         freshness: HomeFreshnessState,
-        refreshMesos: Bool
+        refreshMesos: Bool,
+        readsConvectiveRisk: Bool = true
     ) async throws -> HomeSnapshot {
         guard let context else {
             let collection = try await spcOutlook.getConvectiveOutlookSnapshot()
@@ -58,8 +60,8 @@ actor HomeSnapshotStore: HomeSnapshotReading {
 
         let coord = context.snapshot.coordinates
 
-        async let stormRisk = spcRisk.getStormRisk(for: coord)
-        async let severeRisk = spcRisk.getSevereRisk(for: coord)
+        async let stormRisk: StormRiskLevel? = readsConvectiveRisk ? spcRisk.getStormRisk(for: coord) : nil
+        async let severeRisk: SevereWeatherThreat? = readsConvectiveRisk ? spcRisk.getSevereRisk(for: coord) : nil
         async let fireRisk = spcRisk.getFireRisk(for: coord)
         async let mesoCollection = refreshMesos ? loadMesos(for: context) : (mesos: [], isAccepted: false)
         async let alerts = arcusAlerts.getActiveAlerts(context: context)

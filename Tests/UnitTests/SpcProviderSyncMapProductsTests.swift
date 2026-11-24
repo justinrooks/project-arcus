@@ -21,6 +21,101 @@ private struct FireMockClient: SpcClient {
 
 @Suite("SpcProvider.syncMapProducts", .serialized)
 struct SpcProviderSyncMapProductsTests {
+    @Test("Day 1 proof survives V6 migration, rollback and reopen with its exact effective window")
+    @MainActor
+    func day1RevisionMigrationAndReopen() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let valid = now.addingTimeInterval(-3600)
+        let expires = now.addingTimeInterval(3600)
+        let point = CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("cache.store")
+        let legacySchema = Schema(versionedSchema: SkyAwarePersistenceSchemaV6.self)
+        do {
+            let container = try ModelContainer(
+                for: legacySchema, configurations: ModelConfiguration(schema: legacySchema, url: url)
+            )
+            try await StormRiskRepo(modelContainer: container).refreshStormRisk(using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    issue: spcTimestamp(valid), valid: spcTimestamp(valid), expire: spcTimestamp(expires)
+                )
+            ))
+        }
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
+        func reopen() throws -> ModelContainer {
+            try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                               configurations: ModelConfiguration(schema: schema, url: url))
+        }
+        func risk(in container: ModelContainer, asOf date: Date) throws -> SPCDay1LocalRisk? {
+            try SpcMapBatchPersistenceRepo.acceptedDay1Risk(
+                in: ModelContext(container), for: point, at: date, newlyAcceptedSource: nil
+            )
+        }
+
+        let candidate = ScriptedMapSyncClient(geoJsonByProduct: [
+            .categorical: makeCategoricalData(
+                issue: spcTimestamp(valid), valid: spcTimestamp(valid), expire: spcTimestamp(expires)
+            ),
+            .tornado: makeTornadoData(
+                issue: spcTimestamp(valid), valid: spcTimestamp(valid), expire: spcTimestamp(expires)
+            ),
+            .hail: emptyGeoJSONData(),
+            .wind: emptyGeoJSONData()
+        ])
+        let first: SPCDay1LocalRisk
+        do {
+            let container = try reopen()
+            #expect(try ModelContext(container).fetchCount(FetchDescriptor<StormRisk>()) == 1)
+            #expect(try risk(in: container, asOf: now) == nil)
+            let repo = SpcMapBatchPersistenceRepo(modelContainer: container)
+            try await repo.commitAcceptedConvectiveBatch(
+                using: candidate, anchorIssued: valid, anchorValid: valid, anchorExpires: expires, acceptedAt: now
+            )
+            first = try #require(try risk(in: container, asOf: now))
+            #expect(first.storm == .marginal)
+            #expect(first.severe == .tornado(probability: 0.02))
+            await #expect(throws: CancellationError.self) {
+                try await repo.commitAcceptedConvectiveBatch(
+                    using: candidate, anchorIssued: valid, anchorValid: valid, anchorExpires: expires,
+                    acceptedAt: now.addingTimeInterval(60), failureInjection: .afterHailMutation
+                )
+            }
+        }
+        do {
+            let container = try reopen()
+            #expect(try risk(in: container, asOf: now) == first)
+            #expect(try risk(in: container, asOf: valid.addingTimeInterval(-1)) == nil)
+            #expect(try risk(in: container, asOf: expires) == nil)
+            let context = ModelContext(container)
+            context.delete(try #require(context.fetch(FetchDescriptor<SevereRisk>()).first))
+            try context.save()
+            #expect(try risk(in: container, asOf: now) == nil)
+            try await SpcMapBatchPersistenceRepo(modelContainer: container).commitAcceptedAllClearConvectiveBatch(
+                syncTime: now, window: (valid, valid, expires)
+            )
+        }
+        do {
+            let container = try reopen()
+            let clear = try #require(try risk(in: container, asOf: now))
+            #expect(clear.source == .acceptedAllClear(at: now))
+            #expect(clear.storm == .allClear)
+            #expect(clear.severe == .allClear)
+            #expect(try risk(in: container, asOf: expires) == nil)
+            try await SpcMapBatchPersistenceRepo(modelContainer: container).commitAcceptedAllClearConvectiveBatch(
+                syncTime: now
+            )
+        }
+        let container = try reopen()
+        #expect(try risk(in: container, asOf: now) == nil)
+        let justAccepted = try SpcMapBatchPersistenceRepo.acceptedDay1Risk(
+            in: ModelContext(container), for: point, at: now, newlyAcceptedSource: .acceptedAllClear(at: now)
+        )
+        #expect(justAccepted?.storm == .allClear)
+        #expect(justAccepted?.severe == .allClear)
+    }
+
     @Test("Map sync caps concurrent product fanout at three")
     func mapSyncCapsFanoutAtThree() async throws {
         let container = try await makeMapSyncContainer()
@@ -1654,6 +1749,43 @@ private actor OutlookSyncGate {
     }
 }
 
+/// Both providers use the same persisted geometry and feed state, as on a subsequent app run.
+func makeConvectiveMovementProviders(
+    container: ModelContainer,
+    now: Date,
+    feedStateStore: FeedStateStore
+) -> (effective: SpcProvider, futureOnly: SpcProvider) {
+    let issued = spcTimestamp(now.addingTimeInterval(-7200))
+    let expires = spcTimestamp(now.addingTimeInterval(7200))
+    let incomingIssue = spcTimestamp(now.addingTimeInterval(-1800))
+    let incomingValid = spcTimestamp(now.addingTimeInterval(3600))
+    let effective: [GeoJSONProduct: Data] = [
+        .categorical: makeCategoricalData(issue: issued, valid: issued, expire: expires),
+        .hail: emptyGeoJSONData(),
+        .wind: emptyGeoJSONData(),
+        .tornado: makeTornadoData(issue: issued, valid: issued, expire: expires),
+        .fireRH: emptyGeoJSONData()
+    ]
+    let futureHazard = makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: expires)
+    let futureOnly: [GeoJSONProduct: Data] = [
+        .categorical: makeCategoricalData(issue: incomingIssue, valid: incomingValid, expire: expires),
+        .hail: futureHazard,
+        .wind: futureHazard,
+        .tornado: futureHazard,
+        .fireRH: makeFireData(issue: incomingIssue, valid: incomingIssue, expire: expires)
+    ]
+    return (
+        makeSpcProviderForMapSyncTests(
+            container: container, client: ScriptedMapSyncClient(geoJsonByProduct: effective),
+            feedStateStore: feedStateStore
+        ),
+        makeSpcProviderForMapSyncTests(
+            container: container, client: ScriptedMapSyncClient(geoJsonByProduct: futureOnly),
+            feedStateStore: feedStateStore
+        )
+    )
+}
+
 private func makeSpcProviderForMapSyncTests(
     container: ModelContainer,
     client: any SpcClient,
@@ -1691,7 +1823,8 @@ private func makeSpcProviderForMapSyncTests(
 private func makeMapSyncContainer() async throws -> ModelContainer {
     try await MainActor.run {
         let container = try TestStore.container(
-            for: [ConvectiveOutlook.self, MD.self, Watch.self, StormRisk.self, SevereRisk.self, FireRisk.self]
+            for: [ConvectiveOutlook.self, MD.self, Watch.self, StormRisk.self, SevereRisk.self, FireRisk.self,
+                  SPCAcceptedDay1Convective.self]
         )
         try TestStore.reset(ConvectiveOutlook.self, in: container)
         try TestStore.reset(MD.self, in: container)
