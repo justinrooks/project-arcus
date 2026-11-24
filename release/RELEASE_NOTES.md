@@ -1,5 +1,14 @@
 # Release Notes
 
+## Unreleased
+
+## Overview
+This update improves how SkyAware shows local severe-weather risk when you move and when the Storm Prediction Center issues a new Day 1 outlook.
+
+## Highlights
+- After you move to a new area, Today, widgets, and the weather-awareness summary can use the still-valid Day 1 outlook to show risk for your new location while a replacement is unavailable.
+- When the next Day 1 outlook is published early, SkyAware keeps using the effective outlook. The new one can appear on the next eligible refresh after it takes effect.
+
 ## v1.5.0
 
 ## Overview
