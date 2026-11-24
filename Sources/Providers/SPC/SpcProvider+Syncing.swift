@@ -28,6 +28,10 @@ extension SpcProvider: SpcSyncing {
     }
 
     func syncMapProductsOutcome() async -> SpcMapSyncOutcome {
+        await syncMapProductsOutcome(now: Date.init)
+    }
+
+    func syncMapProductsOutcome(now: @escaping @Sendable () -> Date) async -> SpcMapSyncOutcome {
         if let inFlight = mapSyncTask {
             logger.debug("SPC map sync already in-flight; joining existing task")
             return await inFlight.value
@@ -35,20 +39,20 @@ extension SpcProvider: SpcSyncing {
 
         logger.info("SPC map sync started")
         let task = Task { [self] in
-            await runMapProductsSync()
+            await runMapProductsSync(now: now)
         }
         mapSyncTask = task
         return await task.value
     }
 
-    private func runMapProductsSync() async -> SpcMapSyncOutcome {
+    private func runMapProductsSync(now: @Sendable () -> Date) async -> SpcMapSyncOutcome {
         let runInterval = signposter.beginInterval("Spc Sync Map Products")
         var mapSyncOutcome: SpcMapSyncOutcome = .failed
         defer {
             signposter.endInterval("Spc Sync Map Products", runInterval)
             mapSyncTask = nil
             if !Task.isCancelled && mapSyncOutcome.isFullyAccepted {
-                lastMapSyncFinishedAt = Date()
+                lastMapSyncFinishedAt = now()
             }
             logger.info(
                 "SPC map sync finished outcome=\(Self.mapSyncOutcomeLogName(mapSyncOutcome), privacy: .public)"
@@ -56,13 +60,14 @@ extension SpcProvider: SpcSyncing {
         }
 
         if Task.isCancelled { return .failed }
-        if shouldSkipMapSync() {
+        if shouldSkipMapSync(now: now()) {
             mapSyncOutcome = .skipped
         } else {
-            await record(failure: .cancelled, feedID: "spc.map.convective")
-            await record(failure: .cancelled, feedID: "spc.map.fire")
-            let stagedBatch = await stageMapProducts(now: Date())
-            mapSyncOutcome = await persistStagedMapProducts(stagedBatch)
+            let attemptedAt = now()
+            await record(failure: .cancelled, feedID: "spc.map.convective", now: attemptedAt)
+            await record(failure: .cancelled, feedID: "spc.map.fire", now: attemptedAt)
+            let stagedBatch = await stageMapProducts(now: now)
+            mapSyncOutcome = await persistStagedMapProducts(stagedBatch, now: now)
         }
         // Retry each failed future day without fetching or republishing accepted current domains.
         _ = await syncFutureCategoricalForecast(for: .day2)
@@ -378,11 +383,11 @@ extension SpcProvider: SpcSyncing {
         source: HTTPResponse.Source? = nil,
         canonicalAccepted: Bool = false,
         failure: FeedStateFailureClassification? = nil,
-        feedID: String
+        feedID: String,
+        now: Date = .now,
+        deferredUntil: Date? = nil
     ) async {
         guard let feedStateStore else { return }
-
-        let now = Date.now
         let networkSucceeded = source == .live || source == .cacheRevalidated304
         do {
             _ = try await feedStateStore.update(
@@ -393,7 +398,8 @@ extension SpcProvider: SpcSyncing {
                     canonicalAcceptedAt: canonicalAccepted ? now : nil,
                     validAt: canonicalAccepted ? now : nil,
                     transportSource: source.map(Self.feedStateTransportSource(for:)),
-                    failure: failure ?? (source == .cacheFallback ? .transport : nil)
+                    failure: failure ?? (source == .cacheFallback ? .transport : nil),
+                    deferredUntil: deferredUntil
                 )
             )
         } catch {
@@ -404,26 +410,32 @@ extension SpcProvider: SpcSyncing {
     private func recordMapDomain(
         outcome: SpcMapSyncDomainOutcome,
         source: HTTPResponse.Source?,
-        feedID: String
+        feedID: String,
+        now: Date = .now
     ) async {
         switch outcome {
         case .accepted:
             await record(
                 source: source,
                 canonicalAccepted: source == .live || source == .cacheRevalidated304,
-                feedID: feedID
+                feedID: feedID,
+                now: now
             )
+        case .deferred(let valid):
+            await record(source: source, feedID: feedID, now: now, deferredUntil: valid)
         case .rejected:
             await record(
                 source: source,
                 failure: source == nil || source == .cacheFallback ? .transport : .rejected,
-                feedID: feedID
+                feedID: feedID,
+                now: now
             )
         case .failed:
             await record(
                 source: source,
                 failure: source == nil ? .transport : .persistence,
-                feedID: feedID
+                feedID: feedID,
+                now: now
             )
         case .skipped:
             break
@@ -479,6 +491,8 @@ extension SpcProvider: SpcSyncing {
             return "accepted"
         case .rejected:
             return "rejected"
+        case .deferred:
+            return "deferred"
         case .skipped:
             return "skipped"
         case .failed:
@@ -486,9 +500,10 @@ extension SpcProvider: SpcSyncing {
         }
     }
 
-    private func stageMapProducts(now: Date) async -> StagedSpcMapProductBatch {
+    private func stageMapProducts(now: @Sendable () -> Date) async -> StagedSpcMapProductBatch {
         let logger = self.logger
         let client = self.client
+        let fireEvaluationTime = now()
 
         let stagedProducts = await withTaskGroup(
             of: (GeoJSONProduct, StagedSpcMapProduct).self,
@@ -502,7 +517,9 @@ extension SpcProvider: SpcSyncing {
                 guard let product = pending.popFirst() else { return }
                 active += 1
                 group.addTask {
-                    let staged = await self.fetchStagedMapProduct(product: product, client: client, now: now)
+                    let staged = await self.fetchStagedMapProduct(
+                        product: product, client: client, fireEvaluationTime: fireEvaluationTime
+                    )
                     return (product, staged)
                 }
             }
@@ -527,7 +544,12 @@ extension SpcProvider: SpcSyncing {
             return results
         }
 
-        let validation = validateStagedMapBatch(stagedProducts, now: now)
+        // Check Day 1 as a complete batch, including requests that cross VALID in flight.
+        let evaluatedAt = now()
+        let validation = StagedSpcMapBatchValidation(
+            convective: validateConvectiveDomain(stagedProducts, now: evaluatedAt),
+            fire: validateFireDomain(stagedProducts[.fireRH], now: fireEvaluationTime)
+        )
         logStagedMapBatchProducts(stagedProducts)
         switch validation.convective {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
@@ -537,6 +559,10 @@ extension SpcProvider: SpcSyncing {
         case .acceptedAllClear(let syncTime):
             logger.info(
                 "spc_map_convective_validation result=accepted_all_clear reason=none productCount=\(stagedProducts.count, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
+            )
+        case .deferred(let window):
+            logger.info(
+                "spc_map_convective_validation result=deferred reason=future_validity anchorIssued=\(Self.isoTimestamp(window.issued), privacy: .public) anchorValid=\(Self.isoTimestamp(window.valid), privacy: .public) anchorExpires=\(Self.isoTimestamp(window.expires), privacy: .public)"
             )
         case .rejected(let reason):
             logger.warning(
@@ -552,15 +578,19 @@ extension SpcProvider: SpcSyncing {
             logger.info(
                 "spc_map_fire_validation result=accepted_all_clear reason=none syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
+        case .deferred:
+            break
         case .rejected(let reason):
             logger.warning(
                 "spc_map_fire_validation result=rejected reason=\(reason, privacy: .public)"
             )
         }
-        return StagedSpcMapProductBatch(products: stagedProducts, validation: validation)
+        return StagedSpcMapProductBatch(products: stagedProducts, validation: validation, evaluatedAt: evaluatedAt)
     }
 
-    private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> SpcMapSyncOutcome {
+    private func persistStagedMapProducts(
+        _ batch: StagedSpcMapProductBatch, now: @Sendable () -> Date
+    ) async -> SpcMapSyncOutcome {
         let convectiveTransport = Self.transportSource(
             in: batch.products,
             for: [.categorical, .hail, .wind, .tornado]
@@ -586,6 +616,7 @@ extension SpcProvider: SpcSyncing {
                         anchorIssued: anchorIssued,
                         anchorValid: anchorValid,
                         anchorExpires: anchorExpires,
+                        acceptedAt: batch.evaluatedAt,
                         failureInjection: mapBatchPersistenceFailureInjection
                     )
                 }
@@ -619,6 +650,9 @@ extension SpcProvider: SpcSyncing {
                 "spc_map_convective_persistence result=\(succeeded ? "committed_all_clear" : Self.mapSyncDomainOutcomeLogName(convectiveOutcome), privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
             convectiveSource = succeeded ? .acceptedAllClear(at: syncTime) : nil
+        case .deferred(let window):
+            convectiveOutcome = .deferred(until: window.valid)
+            convectiveSource = nil
         case .rejected(let reason):
             logger.info(
                 "spc_map_convective_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
@@ -630,7 +664,8 @@ extension SpcProvider: SpcSyncing {
         await recordMapDomain(
             outcome: convectiveOutcome,
             source: convectiveTransport,
-            feedID: "spc.map.convective"
+            feedID: "spc.map.convective",
+            now: now()
         )
 
         let fireOutcome: SpcMapSyncDomainOutcome
@@ -675,6 +710,9 @@ extension SpcProvider: SpcSyncing {
                 "spc_map_fire_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
             fireSource = succeeded ? .acceptedAllClear(at: syncTime) : nil
+        case .deferred:
+            fireOutcome = .rejected
+            fireSource = nil
         case .rejected(let reason):
             logger.info(
                 "spc_map_fire_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
@@ -686,7 +724,8 @@ extension SpcProvider: SpcSyncing {
         await recordMapDomain(
             outcome: fireOutcome,
             source: fireTransport,
-            feedID: "spc.map.fire"
+            feedID: "spc.map.fire",
+            now: now()
         )
 
         return SpcMapSyncOutcome(
@@ -702,7 +741,7 @@ extension SpcProvider: SpcSyncing {
     private func fetchStagedMapProduct(
         product: GeoJSONProduct,
         client: any SpcClient,
-        now: Date
+        fireEvaluationTime: Date
     ) async -> StagedSpcMapProduct {
         do {
             let response = try await client.fetchGeoJsonResponse(for: product)
@@ -723,52 +762,34 @@ extension SpcProvider: SpcSyncing {
                 )
             }
 
+            let firstProperties = decoded.features.first?.properties
+            let issued = firstProperties?.ISSUE.asUTCDate()
+            let valid = firstProperties?.VALID.asUTCDate()
+            let expires = firstProperties?.EXPIRE.asUTCDate()
             let metadata: StagedProductWindowMetadata?
+            let status: StagedSpcMapProductValidation
             do {
-                metadata = try await preflightMetadata(for: product, decoded: decoded, now: now)
-            } catch let preflightError as StagedProductPreflightError {
-                return StagedSpcMapProduct(
-                    product: product,
-                    decoded: decoded,
-                    featureCount: decoded.features.count,
-                    materialPolygonCount: decoded.materialPolygonCount,
-                    issued: nil,
-                    valid: nil,
-                    expires: nil,
-                    data: data,
-                    transportSource: response.source,
-                    status: .rejected(reason: preflightError.reason),
-                    windowMetadata: nil
+                metadata = try await preflightMetadata(
+                    for: product, decoded: decoded, fireEvaluationTime: fireEvaluationTime
                 )
+                status = .accepted
             } catch {
+                let reason = (error as? StagedProductPreflightError)?.reason ?? "\(product.rawValue)_preflight_failed"
                 return StagedSpcMapProduct(
                     product: product,
                     decoded: decoded,
                     featureCount: decoded.features.count,
                     materialPolygonCount: decoded.materialPolygonCount,
-                    issued: nil,
-                    valid: nil,
-                    expires: nil,
+                    issued: issued,
+                    valid: valid,
+                    expires: expires,
                     data: data,
                     transportSource: response.source,
-                    status: .rejected(reason: "\(product.rawValue)_preflight_failed"),
+                    status: .rejected(reason: reason),
                     windowMetadata: nil
                 )
             }
-            let issued = metadata?.issued
-            let valid = metadata?.valid
-            let expires = metadata?.expires
             let materialPolygonCount = decoded.materialPolygonCount
-            let status = Self.validateStagedProduct(
-                product: product,
-                featureCount: decoded.features.count,
-                materialPolygonCount: materialPolygonCount,
-                issued: issued,
-                valid: valid,
-                expires: expires,
-                now: now
-            )
-
             return StagedSpcMapProduct(
                 product: product,
                 decoded: decoded,
@@ -842,27 +863,44 @@ extension SpcProvider: SpcSyncing {
         }
     }
 
-    private func validateStagedMapBatch(
-        _ stagedProducts: [GeoJSONProduct: StagedSpcMapProduct],
-        now: Date
-    ) -> StagedSpcMapBatchValidation {
-        let convective = validateConvectiveDomain(stagedProducts, now: now)
-        let fire = validateFireDomain(stagedProducts[.fireRH], now: now)
-        return StagedSpcMapBatchValidation(convective: convective, fire: fire)
-    }
-
     private func validateConvectiveDomain(
         _ stagedProducts: [GeoJSONProduct: StagedSpcMapProduct],
         now: Date
     ) -> StagedSpcMapDomainValidation {
         let products: [GeoJSONProduct] = [.categorical, .hail, .wind, .tornado]
 
+        var upcomingWindow: StagedProductWindowMetadata?
         for product in products {
             guard let staged = stagedProducts[product] else {
                 return .rejected(reason: "\(product.rawValue)_missing")
             }
-            guard case .accepted = staged.status else {
-                return .rejected(reason: "\(product.rawValue)_rejected")
+            if case .rejected(let reason) = staged.status {
+                return .rejected(reason: reason)
+            }
+            guard let window = staged.windowMetadata else { continue }
+            guard window.expires > now else {
+                return .rejected(reason: "\(product.rawValue)_expired")
+            }
+            if window.valid > now {
+                guard window.valid < window.expires else {
+                    return .rejected(reason: "\(product.rawValue)_window_invalid")
+                }
+                upcomingWindow = window
+            }
+        }
+
+        if let upcomingWindow {
+            guard stagedProducts[.categorical]?.windowMetadata == upcomingWindow else {
+                return .rejected(reason: "categorical_mixed_window")
+            }
+            for product in products {
+                if let window = stagedProducts[product]?.windowMetadata, window != upcomingWindow {
+                    return .rejected(reason: "\(product.rawValue)_mixed_window")
+                }
+            }
+            let source = Self.transportSource(in: stagedProducts, for: products)
+            guard source == .live || source == .cacheRevalidated304 else {
+                return .rejected(reason: "future_validity_unverified_transport")
             }
         }
 
@@ -870,7 +908,7 @@ extension SpcProvider: SpcSyncing {
             stagedProducts[product]?.materialPolygonCount == 0
         }
         if allProductsMateriallyEmpty {
-            return .acceptedAllClear(syncTime: now)
+            return upcomingWindow.map { .deferred($0) } ?? .acceptedAllClear(syncTime: now)
         }
 
         guard let categorical = stagedProducts[.categorical] else {
@@ -900,6 +938,7 @@ extension SpcProvider: SpcSyncing {
             }
         }
 
+        if let upcomingWindow { return .deferred(upcomingWindow) }
         return .accepted(
             anchorIssued: categoricalWindow.issued,
             anchorValid: categoricalWindow.valid,
@@ -932,51 +971,28 @@ extension SpcProvider: SpcSyncing {
         )
     }
 
-    private static func validateStagedProduct(
-        product: GeoJSONProduct,
-        featureCount: Int,
-        materialPolygonCount: Int,
-        issued: Date?,
-        valid: Date?,
-        expires: Date?,
-        now: Date
-    ) -> StagedSpcMapProductValidation {
-        if featureCount == 0 {
-            return .accepted
-        }
-
-        if materialPolygonCount == 0 && issued == nil && valid == nil && expires == nil {
-            return .rejected(reason: "\(product.rawValue)_metadata_invalid")
-        }
-
-        guard
-            let issued,
-            let valid,
-            let expires
-        else {
-            return .rejected(reason: "\(product.rawValue)_metadata_invalid")
-        }
-
-        guard issued <= expires, valid <= expires else {
-            return .rejected(reason: "\(product.rawValue)_window_invalid")
-        }
-
-        if expires <= now {
-            return .rejected(reason: "\(product.rawValue)_expired")
-        }
-
-        if valid > now {
-            return .rejected(reason: "\(product.rawValue)_future_only")
-        }
-
-        return .accepted
-    }
-
     private func preflightMetadata(
         for product: GeoJSONProduct,
         decoded: GeoJSONFeatureCollection,
-        now: Date
+        fireEvaluationTime: Date
     ) async throws -> StagedProductWindowMetadata? {
+        if product != .fireRH {
+            guard decoded.type == "FeatureCollection", decoded.features.allSatisfy({ feature in
+                guard feature.type == "Feature" else { return false }
+                let geometry = feature.geometry
+                switch geometry.type {
+                case "MultiPolygon":
+                    return !geometry.coordinates.isEmpty && feature.materialPolygonCount == geometry.coordinates.count
+                case "GeometryCollection":
+                    return geometry.geometries.isEmpty && geometry.coordinates.isEmpty
+                default:
+                    return false
+                }
+            }) else {
+                throw StagedProductPreflightError(reason: "\(product.rawValue)_geometry_invalid")
+            }
+        }
+
         guard decoded.features.isEmpty == false else {
             return nil
         }
@@ -993,10 +1009,10 @@ extension SpcProvider: SpcSyncing {
             guard issued <= expires, valid <= expires else {
                 throw StagedProductPreflightError(reason: "\(product.rawValue)_window_invalid")
             }
-            if expires <= now {
+            if product == .fireRH && expires <= fireEvaluationTime {
                 throw StagedProductPreflightError(reason: "\(product.rawValue)_expired")
             }
-            if valid > now {
+            if product == .fireRH && valid > fireEvaluationTime {
                 throw StagedProductPreflightError(reason: "\(product.rawValue)_future_only")
             }
             return StagedProductWindowMetadata(issued: issued, valid: valid, expires: expires)
@@ -1038,7 +1054,7 @@ extension SpcProvider: SpcSyncing {
             switch staged.status {
             case .accepted:
                 logger.info(
-                    "spc_map_product_stage product=\(product.rawValue, privacy: .public) result=accepted reason=none featureCount=\(staged.featureCount, privacy: .public) materialPolygonCount=\(staged.materialPolygonCount, privacy: .public) issue=\(Self.isoTimestamp(staged.issued), privacy: .public) valid=\(Self.isoTimestamp(staged.valid), privacy: .public) expire=\(Self.isoTimestamp(staged.expires), privacy: .public)"
+                    "spc_map_product_stage product=\(product.rawValue, privacy: .public) result=validated reason=none featureCount=\(staged.featureCount, privacy: .public) materialPolygonCount=\(staged.materialPolygonCount, privacy: .public) issue=\(Self.isoTimestamp(staged.issued), privacy: .public) valid=\(Self.isoTimestamp(staged.valid), privacy: .public) expire=\(Self.isoTimestamp(staged.expires), privacy: .public)"
                 )
             case .rejected(let reason):
                 logger.warning(
@@ -1094,6 +1110,7 @@ private struct SourceTrackingSpcClient: SpcClient {
 private struct StagedSpcMapProductBatch: Sendable {
     let products: [GeoJSONProduct: StagedSpcMapProduct]
     let validation: StagedSpcMapBatchValidation
+    let evaluatedAt: Date
 }
 
 private struct StagedSpcMapProduct: Sendable {
@@ -1123,6 +1140,7 @@ private struct StagedSpcMapBatchValidation: Sendable {
 private enum StagedSpcMapDomainValidation: Sendable {
     case accepted(anchorIssued: Date, anchorValid: Date, anchorExpires: Date)
     case acceptedAllClear(syncTime: Date)
+    case deferred(StagedProductWindowMetadata)
     case rejected(reason: String)
 }
 

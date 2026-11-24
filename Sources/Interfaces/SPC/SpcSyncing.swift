@@ -28,6 +28,7 @@ enum SpcMapSourceIdentity: Sendable, Equatable {
 enum SpcMapSyncDomainOutcome: Sendable, Equatable {
     case accepted
     case rejected
+    case deferred(until: Date)
     case skipped
     case failed
 

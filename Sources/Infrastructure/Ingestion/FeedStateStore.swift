@@ -27,6 +27,8 @@ struct FeedStateRecord: Codable, Sendable, Equatable {
     var lastValidityAt: Date?
     var lastTransportSource: FeedStateTransportSource?
     var generation: Int
+    // VALID of a network-verified candidate from the latest attempt.
+    var lastDeferredUntil: Date?
     var lastFailure: FeedStateFailureClassification?
     fileprivate var lastAttemptOrderingKey: String
 
@@ -38,6 +40,7 @@ struct FeedStateRecord: Codable, Sendable, Equatable {
         lastValidityAt = nil
         lastTransportSource = nil
         generation = 0
+        lastDeferredUntil = nil
         lastFailure = nil
         lastAttemptOrderingKey = ""
     }
@@ -56,6 +59,7 @@ struct FeedStateUpdate: Sendable {
     let validAt: Date?
     let transportSource: FeedStateTransportSource?
     let failure: FeedStateFailureClassification?
+    let deferredUntil: Date?
 
     init(
         feedID: String,
@@ -64,7 +68,8 @@ struct FeedStateUpdate: Sendable {
         canonicalAcceptedAt: Date? = nil,
         validAt: Date? = nil,
         transportSource: FeedStateTransportSource? = nil,
-        failure: FeedStateFailureClassification? = nil
+        failure: FeedStateFailureClassification? = nil,
+        deferredUntil: Date? = nil
     ) {
         self.feedID = feedID
         self.attemptedAt = attemptedAt
@@ -73,6 +78,7 @@ struct FeedStateUpdate: Sendable {
         self.validAt = validAt
         self.transportSource = transportSource
         self.failure = failure
+        self.deferredUntil = deferredUntil
     }
 }
 
@@ -151,6 +157,7 @@ actor FeedStateStore {
             record.lastAttemptAt = update.attemptedAt
             record.lastTransportSource = update.transportSource
             record.lastFailure = update.failure
+            record.lastDeferredUntil = update.deferredUntil
             record.lastAttemptOrderingKey = update.attemptOrderingKey
         }
         record.lastNetworkSuccessAt = latest(record.lastNetworkSuccessAt, update.networkSucceededAt)
@@ -267,12 +274,19 @@ private extension FeedStateUpdate {
             canonicalAcceptedAt?.ISO8601Format() ?? "",
             validAt?.ISO8601Format() ?? "",
             transportSource?.rawValue ?? "",
-            failure?.rawValue ?? ""
+            failure?.rawValue ?? "",
+            deferredUntil?.ISO8601Format() ?? ""
         ].joined(separator: "|")
     }
 
     func replacesLatestAttempt(in record: FeedStateRecord) -> Bool {
-        attemptedAt > record.lastAttemptAt ||
-            (attemptedAt == record.lastAttemptAt && attemptOrderingKey > record.lastAttemptOrderingKey)
+        if attemptedAt != record.lastAttemptAt { return attemptedAt > record.lastAttemptAt }
+        if record.lastAttemptOrderingKey.isEmpty { return true }
+        // Map and outlook sync record cancellation provisionally before the fetch.
+        // A completed attempt at the same clock time must replace that marker.
+        let isCancellation = failure == .cancelled
+        let recordedCancellation = record.lastFailure == .cancelled
+        if isCancellation != recordedCancellation { return !isCancellation }
+        return attemptOrderingKey > record.lastAttemptOrderingKey
     }
 }
