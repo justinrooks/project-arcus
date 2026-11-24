@@ -926,6 +926,83 @@ struct SpcProviderSyncMapProductsTests {
         #expect(feedAfter.generation == feedBefore.generation + 1)
     }
 
+    enum InvalidDatedBatch: CaseIterable {
+        case mixedMaterial, mixedAllClear, unanchoredAllClear, futureIssuance
+    }
+
+    @Test("Invalid dated Day 1 candidates preserve the accepted revision", arguments: InvalidDatedBatch.allCases)
+    @MainActor
+    func invalidDatedBatchPreservesAcceptedRevision(_ candidate: InvalidDatedBatch) async throws {
+        let valid = try #require("202611240100".asUTCDate())
+        let before = valid.addingTimeInterval(-120)
+        let priorTime = before.addingTimeInterval(-120)
+        let container = try await makeMapSyncContainer()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let feed = FeedStateStore(directoryURL: directory, nowProvider: { valid })
+        let oldIssue = "202611232000"
+        let oldExpiry = "202611240300"
+        let prior = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: [
+                .categorical: makeCategoricalData(issue: oldIssue, valid: oldIssue, expire: oldExpiry),
+                .tornado: makeTornadoData(issue: oldIssue, valid: oldIssue, expire: oldExpiry),
+                .hail: emptyGeoJSONData(), .wind: emptyGeoJSONData(), .fireRH: emptyGeoJSONData()
+            ]),
+            feedStateStore: feed
+        )
+        try #require(await prior.syncMapProductsOutcome(now: { priorTime }).isFullyAccepted)
+        let feedBefore = try #require(await feed.record(for: "spc.map.convective"))
+
+        func risk(at time: Date) throws -> SPCDay1LocalRisk? {
+            try SpcMapBatchPersistenceRepo.acceptedDay1Risk(
+                in: ModelContext(container), for: .init(latitude: 39.5, longitude: -104.5),
+                at: time, newlyAcceptedSource: nil
+            )
+        }
+        let priorRisk = try #require(try risk(at: before))
+        try #require(priorRisk.storm == .marginal && priorRisk.severe == .tornado(probability: 0.02))
+        let beforeContext = ModelContext(container)
+        let stormIDs = try Set(beforeContext.fetch(FetchDescriptor<StormRisk>()).map(\.id))
+        let severeIDs = try Set(beforeContext.fetch(FetchDescriptor<SevereRisk>()).map(\.id))
+
+        var products = upcomingDay1Batch()
+        let oldNoArea = makeNoAreaData(issue: oldIssue, valid: oldIssue, expire: oldExpiry)
+        switch candidate {
+        case .mixedMaterial:
+            products[.tornado] = oldNoArea
+        case .mixedAllClear, .unanchoredAllClear:
+            products[.categorical] = candidate == .mixedAllClear
+                ? makeNoAreaData(issue: "202611240055", valid: "202611240100", expire: "202611241200")
+                : emptyGeoJSONData()
+            products[.hail] = emptyGeoJSONData()
+            products[.wind] = emptyGeoJSONData()
+            products[.tornado] = oldNoArea
+        case .futureIssuance:
+            products = upcomingDay1Batch(issue: "202611240059")
+        }
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container, client: ScriptedMapSyncClient(geoJsonByProduct: products), feedStateStore: feed
+        )
+
+        for time in candidate == .futureIssuance ? [before] : [before, valid] {
+            let outcome = await provider.syncMapProductsOutcome(now: { time })
+            #expect(outcome.convective == .rejected)
+            #expect(outcome.convectiveSource == nil)
+            #expect(outcome.fire == .accepted)
+            #expect(try risk(at: time) == priorRisk)
+            let context = ModelContext(container)
+            #expect(try Set(context.fetch(FetchDescriptor<StormRisk>()).map(\.id)) == stormIDs)
+            #expect(try Set(context.fetch(FetchDescriptor<SevereRisk>()).map(\.id)) == severeIDs)
+            let latest = try #require(await feed.record(for: "spc.map.convective"))
+            #expect(latest.lastFailure == .rejected)
+            #expect(latest.lastDeferredUntil == nil)
+            #expect(latest.generation == feedBefore.generation)
+            #expect(latest.lastCanonicalAcceptanceAt == feedBefore.lastCanonicalAcceptanceAt)
+            #expect(latest.lastValidityAt == feedBefore.lastValidityAt)
+        }
+    }
+
     @Test("Day 1 uses the evaluation time after the fetch completes")
     @MainActor
     func day1FetchStraddlesValidityBoundary() async throws {
@@ -1999,8 +2076,9 @@ private actor OutlookSyncGate {
 func makeConvectiveMovementProviders(
     container: ModelContainer,
     now: Date,
-    feedStateStore: FeedStateStore
-) -> (effective: SpcProvider, futureOnly: SpcProvider) {
+    feedStateStore: FeedStateStore,
+    coherentUpcoming: Bool
+) -> (effective: SpcProvider, futureOnly: SpcProvider, valid: Date?) {
     let issued = spcTimestamp(now.addingTimeInterval(-7200))
     let expires = spcTimestamp(now.addingTimeInterval(7200))
     let incomingIssue = spcTimestamp(now.addingTimeInterval(-1800))
@@ -2016,8 +2094,7 @@ func makeConvectiveMovementProviders(
     let futureOnly: [GeoJSONProduct: Data] = [
         .categorical: makeCategoricalData(issue: incomingIssue, valid: incomingValid, expire: expires),
         .hail: futureHazard,
-        // Exercise rejection in the #927 movement tests using a mixed effective/upcoming batch.
-        .wind: makeTornadoData(issue: issued, valid: issued, expire: expires),
+        .wind: coherentUpcoming ? futureHazard : makeTornadoData(issue: issued, valid: issued, expire: expires),
         .tornado: futureHazard,
         .fireRH: makeFireData(issue: incomingIssue, valid: incomingIssue, expire: expires)
     ]
@@ -2029,7 +2106,8 @@ func makeConvectiveMovementProviders(
         makeSpcProviderForMapSyncTests(
             container: container, client: ScriptedMapSyncClient(geoJsonByProduct: futureOnly),
             feedStateStore: feedStateStore
-        )
+        ),
+        incomingValid.asUTCDate()
     )
 }
 
@@ -2083,12 +2161,12 @@ private func makeMapSyncContainer() async throws -> ModelContainer {
     }
 }
 
-private func upcomingDay1Batch() -> [GeoJSONProduct: Data] {
-    let hazard = makeTornadoData(issue: "202611240055", valid: "202611240100", expire: "202611241200")
+private func upcomingDay1Batch(issue: String = "202611240055") -> [GeoJSONProduct: Data] {
+    let hazard = makeTornadoData(issue: issue, valid: "202611240100", expire: "202611241200")
     return [
         .categorical: makeCategoricalData(
             label: "ENH", label2: "Enhanced Risk", dn: 4,
-            issue: "202611240055", valid: "202611240100", expire: "202611241200"
+            issue: issue, valid: "202611240100", expire: "202611241200"
         ),
         .hail: hazard, .wind: hazard, .tornado: hazard,
         .fireRH: makeFireData(issue: "202611232000", valid: "202611232000", expire: "202611241200")

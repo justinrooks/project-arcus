@@ -629,11 +629,7 @@ extension SpcProvider: SpcSyncing {
                 ? .forecast(issued: anchorIssued, valid: anchorValid, expires: anchorExpires)
                 : nil
         case .acceptedAllClear(let syncTime):
-            let windows = batch.products.values.compactMap { product in
-                product.product == .fireRH ? nil : product.windowMetadata
-            }
             let window = batch.products[.categorical]?.windowMetadata
-                .flatMap { anchor in windows.allSatisfy { $0 == anchor } ? anchor : nil }
             convectiveOutcome = await Self.runMapProductSync(
                 named: "accepted_all_clear_convective_batch_transaction",
                 logger: logger,
@@ -869,7 +865,11 @@ extension SpcProvider: SpcSyncing {
     ) -> StagedSpcMapDomainValidation {
         let products: [GeoJSONProduct] = [.categorical, .hail, .wind, .tornado]
 
-        var upcomingWindow: StagedProductWindowMetadata?
+        guard let categorical = stagedProducts[.categorical] else {
+            return .rejected(reason: "categorical_missing")
+        }
+        let categoricalWindow = categorical.windowMetadata
+        var hasMaterialGeometry = false
         for product in products {
             guard let staged = stagedProducts[product] else {
                 return .rejected(reason: "\(product.rawValue)_missing")
@@ -877,68 +877,38 @@ extension SpcProvider: SpcSyncing {
             if case .rejected(let reason) = staged.status {
                 return .rejected(reason: reason)
             }
-            guard let window = staged.windowMetadata else { continue }
-            guard window.expires > now else {
-                return .rejected(reason: "\(product.rawValue)_expired")
+            if let window = staged.windowMetadata, window != categoricalWindow {
+                return .rejected(reason: categoricalWindow == nil
+                    ? "\(product.rawValue)_unanchored_window"
+                    : "\(product.rawValue)_mixed_window")
             }
-            if window.valid > now {
-                guard window.valid < window.expires else {
-                    return .rejected(reason: "\(product.rawValue)_window_invalid")
-                }
-                upcomingWindow = window
-            }
+            hasMaterialGeometry = hasMaterialGeometry || staged.materialPolygonCount > 0
         }
-
-        if let upcomingWindow {
-            guard stagedProducts[.categorical]?.windowMetadata == upcomingWindow else {
-                return .rejected(reason: "categorical_mixed_window")
-            }
-            for product in products {
-                if let window = stagedProducts[product]?.windowMetadata, window != upcomingWindow {
-                    return .rejected(reason: "\(product.rawValue)_mixed_window")
-                }
+        guard !hasMaterialGeometry || categorical.materialPolygonCount > 0 else {
+            return .rejected(reason: "categorical_empty_with_non_empty_non_categorical")
+        }
+        guard let categoricalWindow else {
+            return .acceptedAllClear(syncTime: now)
+        }
+        guard categoricalWindow.issued <= now else {
+            return .rejected(reason: "categorical_future_issuance")
+        }
+        guard categoricalWindow.expires > now else {
+            return .rejected(reason: "categorical_expired")
+        }
+        if categoricalWindow.valid > now {
+            guard categoricalWindow.valid < categoricalWindow.expires else {
+                return .rejected(reason: "categorical_window_invalid")
             }
             let source = Self.transportSource(in: stagedProducts, for: products)
             guard source == .live || source == .cacheRevalidated304 else {
                 return .rejected(reason: "future_validity_unverified_transport")
             }
+            return .deferred(categoricalWindow)
         }
-
-        let allProductsMateriallyEmpty = products.allSatisfy { product in
-            stagedProducts[product]?.materialPolygonCount == 0
+        guard hasMaterialGeometry else {
+            return .acceptedAllClear(syncTime: now)
         }
-        if allProductsMateriallyEmpty {
-            return upcomingWindow.map { .deferred($0) } ?? .acceptedAllClear(syncTime: now)
-        }
-
-        guard let categorical = stagedProducts[.categorical] else {
-            return .rejected(reason: "categorical_missing")
-        }
-
-        guard categorical.materialPolygonCount > 0 else {
-            return .rejected(reason: "categorical_empty_with_non_empty_non_categorical")
-        }
-
-        guard let categoricalWindow = categorical.windowMetadata else {
-            return .rejected(reason: "categorical_metadata_invalid")
-        }
-
-        for product in products where product != .categorical {
-            guard let staged = stagedProducts[product] else {
-                return .rejected(reason: "\(product.rawValue)_missing")
-            }
-
-            let requiresWindowMatch = staged.materialPolygonCount > 0
-            guard requiresWindowMatch else { continue }
-            guard let window = staged.windowMetadata else {
-                return .rejected(reason: "\(product.rawValue)_metadata_invalid")
-            }
-            guard window == categoricalWindow else {
-                return .rejected(reason: "\(product.rawValue)_mixed_window")
-            }
-        }
-
-        if let upcomingWindow { return .deferred(upcomingWindow) }
         return .accepted(
             anchorIssued: categoricalWindow.issued,
             anchorValid: categoricalWindow.valid,
