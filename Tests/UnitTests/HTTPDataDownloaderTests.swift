@@ -13,6 +13,7 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var stubsByURL: [String: [HTTPStubResult]] = [:]
     nonisolated(unsafe) private static var requestTimeoutsByURL: [String: [TimeInterval]] = [:]
+    nonisolated(unsafe) private static var requestsByURL: [URL: [URLRequest]] = [:]
     nonisolated(unsafe) private static var stoppedURLs: Set<String> = []
     nonisolated(unsafe) private static var requestStartContinuations: [String: [CheckedContinuation<Void, Never>]] = [:]
 
@@ -20,6 +21,7 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
         lock.lock()
         stubsByURL = [:]
         requestTimeoutsByURL = [:]
+        requestsByURL = [:]
         stoppedURLs = []
         let continuations = requestStartContinuations.values.flatMap { $0 }
         requestStartContinuations = [:]
@@ -45,6 +47,12 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return stoppedURLs.contains(url.absoluteString)
+    }
+
+    static func requests(for url: URL) -> [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requestsByURL[url] ?? []
     }
 
     static func waitForRequest(for url: URL) async {
@@ -74,7 +82,7 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        Self.record(timeout: request.timeoutInterval, for: url)
+        Self.record(request, for: url)
 
         guard let next = Self.popStub(for: url) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
@@ -116,9 +124,10 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
         return item
     }
 
-    private static func record(timeout: TimeInterval, for url: URL) {
+    private static func record(_ request: URLRequest, for url: URL) {
         lock.lock()
-        requestTimeoutsByURL[url.absoluteString, default: []].append(timeout)
+        requestsByURL[url, default: []].append(request)
+        requestTimeoutsByURL[url.absoluteString, default: []].append(request.timeoutInterval)
         let continuations = requestStartContinuations.removeValue(forKey: url.absoluteString) ?? []
         lock.unlock()
         continuations.forEach { $0.resume() }
@@ -147,6 +156,179 @@ private actor HTTPTestDeadlineGate {
 
 @Suite("HTTPDataDownloader", .serialized)
 struct HTTPDataDownloaderTests {
+    private static let forgeOrigin = URL(string: "https://example.test")!
+
+    @Test(arguments: [nil, #""revision""#, #""stale""#] as [String?])
+    func forgeRevalidatesAndLeavesUnconditionalRecoveryToCaller(cachedETag: String?) async throws {
+        let manifestURL = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")
+        let validator = #"W/"revision""#
+        let cachedBody = Data("cached".utf8)
+        let freshBody = Data("fresh".utf8)
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 0)
+        if let cachedETag {
+            storeCachedBody(cachedBody, for: manifestURL, cache: cache, headers: ["ETag": cachedETag])
+        }
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([manifestURL: [
+            .response(status: 304, headers: ["eTAG": validator], body: nil),
+            .response(status: 200, headers: ["ETag": #""fresh""#], body: freshBody)
+        ]])
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: makeDownloader(cache: cache))
+
+        let conditional = try await client.fetchManifest(ifNoneMatch: validator)
+        #expect(conditional.path == "/v1/wssi/manifest")
+        #expect(conditional.eTag == validator)
+        #expect(conditional.outcome == .notModified(cachedBody: cachedETag == #""revision""# ? cachedBody : nil))
+        #expect(HTTPTestURLProtocol.requests(for: manifestURL).count == 1)
+        let request = try #require(HTTPTestURLProtocol.requests(for: manifestURL).first)
+        #expect(request.value(forHTTPHeaderField: "If-None-Match") == validator)
+        #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+
+        let fresh = try await client.fetchManifest()
+        #expect(fresh.outcome == .body(freshBody))
+        #expect(fresh.eTag == #""fresh""#)
+        #expect(HTTPTestURLProtocol.requests(for: manifestURL).last?.value(forHTTPHeaderField: "If-None-Match") == nil)
+    }
+
+    @Test
+    func forgeGeometryPreservesExactAcceptedPath() async throws {
+        let path = "/v1/wssi/Overall_Impact/days/1/revisions/12345678-1234-4321-8765-123456789abc/geometry"
+        let revision = try #require(UUID(uuidString: "12345678-1234-4321-8765-123456789abc"))
+        let url = Self.forgeOrigin.appending(path: path)
+        let body = Data("geometry".utf8)
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [
+            .response(status: 200, headers: ["ETag": #""geometry""#], body: body),
+            .response(status: 304, headers: [:], body: nil),
+            .response(status: 404, headers: [:], body: nil)
+        ]])
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 0)
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: makeDownloader(cache: cache))
+        func entry(path: String) -> WSSIManifestEntry {
+            let accepted = WSSIAcceptedRevision(
+                revision: revision, issuedAt: .distantPast, validFrom: .distantPast, validTo: .distantFuture,
+                gisFileDate: nil, gisIngestDate: nil, retrievedAt: .distantPast, geometryPath: path
+            )
+            return WSSIManifestEntry(
+                product: .overallImpact, day: 1, validity: .valid, sourceStatus: .available,
+                pollHealth: .successful, coverage: .unknown, accepted: accepted
+            )
+        }
+
+        for invalid in ["https://other.test" + path, "//other.test" + path, path + "?x=1",
+                        path.replacingOccurrences(of: "/days/1/", with: "/days/2/"),
+                        path.replacingOccurrences(of: "Overall_Impact", with: "Snow_Amount"),
+                        path.replacingOccurrences(of: "12345678", with: "87654321"), "/x/.." + path] {
+            await #expect(throws: ForgeWSSIClient.Error.invalidGeometryPath) {
+                try await client.fetchGeometry(for: entry(path: invalid))
+            }
+        }
+        #expect(HTTPTestURLProtocol.requests(for: url).isEmpty)
+        let fresh = try await client.fetchGeometry(for: entry(path: path))
+        #expect(fresh.path == path)
+        #expect(fresh.outcome == .body(body))
+        cache.removeAllCachedResponses()
+        let revalidated = try await client.fetchGeometry(for: entry(path: path), ifNoneMatch: fresh.eTag)
+        #expect(revalidated.outcome == .notModified(cachedBody: nil))
+        #expect(revalidated.eTag == nil)
+        await #expect(throws: ForgeWSSIClient.Error.httpStatus(404, retryAfterSeconds: nil)) {
+            try await client.fetchGeometry(for: entry(path: path))
+        }
+        #expect(HTTPTestURLProtocol.requests(for: url).count == 3)
+    }
+
+    @Test
+    func forgeRejectsInvalidOriginBeforeSending() async throws {
+        let origin = try #require(URL(string: "http://example.test"))
+        let url = origin.appending(path: "/v1/wssi/manifest")
+        HTTPTestURLProtocol.reset()
+        let client = ForgeWSSIClient(origin: origin, http: makeDownloader())
+        await #expect(throws: ForgeWSSIClient.Error.invalidOrigin) { try await client.fetchManifest() }
+        #expect(HTTPTestURLProtocol.requests(for: url).isEmpty)
+    }
+
+    @Test(arguments: [429, 503])
+    func forgeRetriesBusyResponsesWithoutFallingBack(status: Int) async throws {
+        let url = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 0)
+        storeCachedBody(Data("cached".utf8), for: url, cache: cache)
+        HTTPTestURLProtocol.reset()
+        let busy = HTTPStubResult.response(status: status, headers: ["Retry-After": "2"], body: nil)
+        HTTPTestURLProtocol.setStubs([url: [busy, busy]])
+        let sleeps = Mutex<[TimeInterval]>([])
+        let http = makeDownloader(
+            cache: cache, backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: [1]),
+            sleepFor: { delay in sleeps.withLock { $0.append(delay) } }
+        )
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: http)
+        await #expect(throws: ForgeWSSIClient.Error.httpStatus(status, retryAfterSeconds: 2)) {
+            try await client.fetchManifest()
+        }
+        #expect(sleeps.withLock { $0 } == [2])
+        #expect(HTTPTestURLProtocol.requests(for: url).count == 2)
+    }
+
+    @Test(arguments: [URLError.Code.timedOut, .cancelled])
+    func forgePreservesTransportFailures(code: URLError.Code) async throws {
+        let url = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 0)
+        storeCachedBody(Data("cached".utf8), for: url, cache: cache)
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.error(URLError(code)), .error(URLError(code))]])
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: makeDownloader(cache: cache))
+        if code == .cancelled {
+            await #expect(throws: CancellationError.self) { try await client.fetchManifest() }
+        } else {
+            let error = await #expect(throws: URLError.self) { try await client.fetchManifest() }
+            #expect(error?.code == code)
+        }
+        #expect(HTTPTestURLProtocol.requests(for: url).count == (code == .cancelled ? 1 : 2))
+    }
+
+    @Test(arguments: [429, 503, nil] as [Int?])
+    func forgePreservesFailureWhenRetryCannotFitBackgroundBudget(status: Int?) async {
+        let url = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")
+        HTTPTestURLProtocol.reset()
+        let stub = status.map { HTTPStubResult.response(status: $0, headers: ["Retry-After": "5"], body: nil) }
+            ?? .error(URLError(.timedOut))
+        HTTPTestURLProtocol.setStubs([url: [stub]])
+        let start = ContinuousClock.now
+        let context = BackgroundRefreshExecutionContext(budget: budget(workDuration: .seconds(3), start: start))
+        let sleeps = Mutex<[TimeInterval]>([])
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: makeDownloader(
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: [5]),
+            sleepFor: { delay in sleeps.withLock { $0.append(delay) } },
+            budgetNow: { start }
+        ))
+
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await HTTPExecutionMode.$current.withValue(.background) {
+                if let status {
+                    await #expect(throws: ForgeWSSIClient.Error.httpStatus(status, retryAfterSeconds: 5)) {
+                        try await client.fetchManifest()
+                    }
+                } else {
+                    let error = await #expect(throws: URLError.self) { try await client.fetchManifest() }
+                    #expect(error?.code == .timedOut)
+                }
+            }
+        }
+        #expect(HTTPTestURLProtocol.requests(for: url).count == 1)
+        #expect(sleeps.withLock { $0 }.isEmpty)
+        #expect(await !context.deadlineState.exceeded())
+    }
+
+    @Test(arguments: [nil, #""different""#] as [String?])
+    func forgeRejectsUnsolicitedOrConflicting304(validator: String?) async {
+        let url = Self.forgeOrigin.appending(path: "/v1/wssi/manifest")
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: 304, headers: ["ETag": #""current""#], body: nil)]])
+        let client = ForgeWSSIClient(origin: Self.forgeOrigin, http: makeDownloader())
+        await #expect(throws: ForgeWSSIClient.Error.invalidNotModified) {
+            try await client.fetchManifest(ifNoneMatch: validator)
+        }
+    }
+
     @Test("429 with Retry-After retries and then succeeds")
     func retries429ThenSucceeds() async throws {
         let url = URL(string: "https://example.test/retry-429")!
