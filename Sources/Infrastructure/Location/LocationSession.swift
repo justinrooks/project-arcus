@@ -140,6 +140,14 @@ final class LocationSession: Sendable {
         }
     }
 
+    /// Read the accepted point for local spatial queries that do not need NWS enrichment.
+    func acceptedPointObservation() async -> LocationSnapshot? {
+        guard let snapshot = await locationClient.snapshot(),
+              authorizationStatus.isLocationAuthorized, acceptsPrecisionEvidence(snapshot),
+              snapshot.h3Cell != nil else { return nil }
+        return snapshot
+    }
+
     func requestInteractiveAuthorization() {
         locationManager.checkLocationAuthorization(isActive: true)
         syncAuthorizationStatus()

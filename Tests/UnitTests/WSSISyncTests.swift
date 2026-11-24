@@ -5,6 +5,121 @@ import Testing
 
 @Suite
 struct WSSISyncTests {
+    @Test @MainActor func foregroundReadsAcceptedSlotsBeforeAndDuringFailedRefreshAfterReopen() async throws {
+        let fixture = SyncFixture()
+        let url = try temporaryStore()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let body = try fixture.manifest(advertised: 2, startingAt: 2)
+        try await seedForegroundStore(at: url, fixture: fixture, manifest: body)
+        let container = try container(url)
+        let gate = SyncGate()
+        let retry = SyncGate()
+        let http = SyncHTTP { _, index in
+            await (index == 0 ? gate : retry).suspend()
+            throw URLError(.notConnectedToInternet)
+        }
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1)
+        let foreground = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: container,
+            currentLocation: { location }
+        )
+        let reader: any WSSIAssessmentReading = foreground
+        let map: any WSSIGeometryReading = foreground
+        await foreground.offerRefresh()
+        #expect(try await reader.assessment(at: time) == nil)
+        #expect(await http.requests.isEmpty)
+
+        await foreground.setEnabled(true)
+        let cached = try #require(try await reader.assessment(at: time))
+        #expect(cached.periods.count == 15)
+        #expect(cached.periods[0].assessment.impact == .unavailable)
+        #expect(cached.periods[2].assessment.impact == .match(.minor))
+        #expect(cached.periods[3].assessment.impact == .match(.moderate))
+        #expect(cached.periods[3].coverage == .unknown)
+        #expect(cached.periods[3].assessment.revision?.revision == fixture.revisions[3])
+        let geometry = try #require(try await map.geometry(product: .snowAmount, day: 1,
+                                                           revision: fixture.revisions[3], at: time))
+        #expect(geometry.geometry.features.count == 1)
+        #expect(geometry.validity == .valid)
+        #expect(geometry.revision.issuedAt == time)
+        #expect(try await map.geometry(product: .snowAmount, day: 1, revision: fixture.revisions[3],
+                                       at: geometry.revision.validTo) == nil)
+        #expect(try await map.geometry(product: .snowAmount, day: 1, revision: UUID(), at: time) == nil)
+
+        await foreground.offerRefresh()
+        await gate.waitUntilSuspended()
+        await foreground.offerRefresh()
+        #expect(await http.requests.count == 1)
+        location = .init(point: .init(latitude: 10, longitude: 10), h3Cell: 2)
+        let moved = try #require(try await reader.assessment(at: time))
+        #expect(moved.location == location)
+        #expect(moved.periods[3].assessment.impact == .noMatchUnknownCoverage)
+
+        await foreground.setEnabled(false)
+        #expect(try await reader.assessment(at: time) == nil)
+        #expect(try await map.geometry(product: .snowAmount, day: 1,
+                                       revision: fixture.revisions[3], at: time) == nil)
+        await foreground.setEnabled(true)
+        await foreground.offerRefresh()
+        await gate.release()
+        await retry.waitUntilSuspended()
+        await retry.release()
+        await foreground.waitForRefresh()
+        #expect(await http.peakInFlight == 1)
+        #expect(try await reader.assessment(at: time)?.periods[3].assessment.impact == .noMatchUnknownCoverage)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func foregroundDropsAssessmentWhenLocationOrGateChangesDuringRead(toggleGate: Bool) async throws {
+        let hold = SyncGate()
+        let ready = AsyncStream<Void>.makeStream()
+        let store = try container(nil)
+        var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1)
+        var checks = 0
+        let foreground = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!,
+                                    http: SyncHTTP { _, _ in throw URLError(.notConnectedToInternet) }),
+            container: store,
+            currentLocation: {
+                checks += 1
+                if checks == 2 {
+                    ready.continuation.yield()
+                    await hold.suspend()
+                }
+                return location
+            }
+        )
+        await foreground.setEnabled(true)
+        let read = Task {
+            defer { ready.continuation.finish() }
+            return try await foreground.assessment(at: .now)
+        }
+        var readiness = ready.stream.makeAsyncIterator()
+        try #require(await readiness.next() != nil, "Assessment returned before rechecking its location")
+        await hold.waitUntilSuspended()
+        if toggleGate {
+            await foreground.setEnabled(false)
+            await foreground.setEnabled(true)
+        } else {
+            location = .init(point: .init(latitude: 10, longitude: 10), h3Cell: 2)
+        }
+        await hold.release()
+        #expect(try await read.value == nil)
+        #expect(try await foreground.assessment(at: .now)?.location == location)
+    }
+
+    private func seedForegroundStore(at url: URL, fixture: SyncFixture, manifest: Data) async throws {
+        let store = try reopen(url)
+        let http = SyncHTTP { request, _ in try fixture.response(for: request.path, manifest: manifest) }
+        let sync = makeSync(http, store: store)
+        let outcome = await HTTPExecutionMode.$current.withValue(.background) {
+            await sync.refresh(enabled: true)
+        }
+        _ = try reconciled(outcome, update: .updated)
+    }
+
     @Test func interruptedAcquisitionResumesOnlyMissingSlotsAfterReopenAnd304() async throws {
         let fixture = SyncFixture()
         let url = try temporaryStore()
@@ -326,7 +441,7 @@ struct WSSISyncTests {
     }
 }
 
-private actor SyncHTTP: HTTPClient {
+actor SyncHTTP: HTTPClient {
     static let manifestPath = "/v1/wssi/manifest"
 
     struct Request: Equatable, Sendable {
@@ -360,7 +475,7 @@ private actor SyncHTTP: HTTPClient {
     nonisolated func clearCache() {}
 }
 
-private actor SyncGate {
+actor SyncGate {
     private var releaseWork: CheckedContinuation<Void, Never>?
     private var waitingForWork: CheckedContinuation<Void, Never>?
 
@@ -383,13 +498,19 @@ private actor SyncGate {
     }
 }
 
-private struct SyncFixture: Sendable {
+struct SyncFixture: Sendable {
     private(set) var revisions = (0..<15).map { _ in UUID() }
     private var corrections: Set<Int> = []
 
     mutating func revise(_ index: Int) {
         revisions[index] = UUID()
         corrections.insert(index)
+    }
+
+    func replacingFirstSlot() -> Self {
+        var replacement = self
+        replacement.revise(0)
+        return replacement
     }
 
     var paths: [String] {
@@ -416,8 +537,9 @@ private struct SyncFixture: Sendable {
     func response(for path: String, manifest: Data) throws -> HTTPResponse {
         if path == SyncHTTP.manifestPath { return .init(status: 200, headers: ["ETag": #""original""#], data: manifest) }
         let index = try #require(paths.firstIndex(of: path))
+        let severity = corrections.contains(index) ? "Major" : (index == 3 ? "Moderate" : "Minor")
         let feature: [String: Any] = [
-            "type": "Feature", "id": 1, "properties": ["sourceObjectId": 1, "severity": "Minor"],
+            "type": "Feature", "id": 1, "properties": ["sourceObjectId": 1, "severity": severity],
             "geometry": ["type": "MultiPolygon", "coordinates": [[[[0, 0], [1, 0], [1, 1], [0, 0]]]]]
         ]
         let geometry: [String: Any] = ["type": "FeatureCollection", "features": [feature], "metadata": metadata(index)]

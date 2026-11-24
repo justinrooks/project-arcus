@@ -9,6 +9,174 @@ import ArcusCore
 @Suite("Home Refresh Pipeline", .serialized)
 @MainActor
 struct HomeRefreshPipelineTests {
+    @Test(arguments: [false, true])
+    func foregroundHomeCompletesWhileWSSIIsSuspended(atCommit: Bool) async throws {
+        let fixture = SyncFixture()
+        let replacement = fixture.replacingFirstSlot()
+        let body = try replacement.manifest(advertised: 1)
+        let release = DispatchSemaphore(value: 0)
+        let suspended = AsyncStream<Void>.makeStream()
+        let suspendWSSI: @Sendable () throws -> Void = {
+            suspended.continuation.yield()
+            guard release.wait(timeout: .now() + 15) == .success else {
+                Issue.record("Home did not finish while WSSI was suspended")
+                throw CancellationError()
+            }
+        }
+        let container = try TestStore.container(for: [
+            WSSIAcceptedSlot.self, WSSIStoredManifest.self, HomeProjection.self
+        ])
+        let context = makeContext(latitude: 0.25, longitude: 0.75)
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        let originalManifest = try fixture.manifest(advertised: 1)
+        let seed = WSSIAcceptedStore(modelContainer: container)
+        let manifest = try await seed.saveManifest(originalManifest, eTag: nil, replacing: nil)
+        let originalBody = try #require(try fixture.response(for: fixture.paths[0], manifest: originalManifest).data)
+        try await seed.acceptGeometry(originalBody, eTag: nil, product: .overallImpact, day: 1,
+                                      manifestGeneration: manifest.generation)
+        let http = SyncHTTP { request, _ in
+            if !atCommit {
+                try suspendWSSI()
+                throw URLError(.notConnectedToInternet)
+            }
+            return try replacement.response(for: request.path, manifest: body)
+        }
+        let wssi = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: container,
+            save: { modelContext in
+                if modelContext.insertedModelsArray.contains(where: { $0 is WSSIAcceptedSlot }) {
+                    #expect(!Thread.isMainThread)
+                    try suspendWSSI()
+                }
+                try modelContext.save()
+            },
+            currentLocation: { .init(context.snapshot) }
+        )
+        let watch = Watch.sampleWatchRows[0]
+        func makeHome(projections: HomeProjectionStore, feeds: FeedStateStore?) -> any HomeIngestionCoordinating {
+            makeCoordinator(
+                spc: FakeSpcProvider(), alerts: FakeAlertProvider(activeAlerts: [watch]),
+                weather: FakeWeatherClient(weather: sampleWeather()),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                homeProjectionStore: projections, feedStateStore: feeds, wssi: wssi
+            )
+        }
+        let control = makeHome(
+            projections: HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self])),
+            feeds: nil
+        )
+        let request = HomeIngestionRequest(trigger: .foregroundActivate, locationContext: context)
+        let disabled = try await control.enqueueAndWait(request)
+        #expect(disabled.alerts == [watch])
+        #expect(await http.requests.isEmpty)
+
+        await wssi.setEnabled(true)
+        _ = try await control.enqueueAndWait(.backgroundRefresh, locationContext: context)
+        _ = try await control.enqueueAndWait(.sessionTick, locationContext: context)
+        #expect(await http.requests.isEmpty)
+
+        let directory = try makeFeedStateDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let feeds = FeedStateStore(directoryURL: directory)
+        let coordinator = makeHome(projections: HomeProjectionStore(modelContainer: container), feeds: feeds)
+        let published = AsyncStream<HomeIngestionCorePublication>.makeStream()
+        let home = Task {
+            try await coordinator.enqueueAndWait(request, progress: nil) { event in
+                if case .core(let core) = event.stage { published.continuation.yield(core) }
+            }
+        }
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(15))
+            suspended.continuation.finish()
+        }
+        defer { timeout.cancel() }
+        var suspension = suspended.stream.makeAsyncIterator()
+        try #require(await suspension.next() != nil, "Home did not admit WSSI")
+        defer { release.signal() }
+        let enabled = try await home.value
+        published.continuation.finish()
+        var publications = published.stream.makeAsyncIterator()
+        #expect(await publications.next()?.alerts == [watch])
+        #expect(enabled.alerts == disabled.alerts)
+        #expect(enabled.locationContext == disabled.locationContext)
+        #expect(enabled.weather == disabled.weather)
+        let key = HomeProjection.projectionKey(for: context)
+        let hot = try #require(await feeds.record(for: "home.hot.\(key)"))
+        let weather = try #require(await feeds.record(for: "home.weather.\(key)"))
+        #expect(hot.generation == 1)
+        #expect(weather.generation == 1)
+        let hotFreshness = try #require(enabled.freshness.lastHotFeedSyncAt)
+        let durableHotFreshness = try #require(hot.lastCanonicalAcceptanceAt)
+        // FeedStateStore writes ISO 8601 dates at whole-second precision.
+        #expect(floor(hotFreshness.timeIntervalSince1970) == durableHotFreshness.timeIntervalSince1970)
+        #expect(weather.lastCanonicalAcceptanceAt != nil)
+        #expect(enabled.freshness.lastWeatherSyncAt == weather.lastCanonicalAcceptanceAt)
+
+        let cached = try #require(try await wssi.assessment(at: time))
+        #expect(cached.periods[0].assessment.impact == .match(.minor))
+        let old = try await wssi.geometry(product: .overallImpact, day: 1, revision: fixture.revisions[0], at: time)
+        #expect(old?.revision.revision == fixture.revisions[0])
+        #expect(try await wssi.geometry(product: .overallImpact, day: 1,
+                                       revision: replacement.revisions[0], at: time) == nil)
+        release.signal()
+        await wssi.waitForRefresh()
+        let current = try #require(try await wssi.assessment(at: time))
+        #expect(current.periods[0].assessment.impact == .match(atCommit ? .major : .minor))
+        #expect(current.periods[0].assessment.revision?.revision ==
+            (atCommit ? replacement.revisions[0] : fixture.revisions[0]))
+        if atCommit {
+            #expect(try await wssi.geometry(product: .overallImpact, day: 1,
+                                           revision: fixture.revisions[0], at: time) == nil)
+            let accepted = try await wssi.geometry(product: .overallImpact, day: 1,
+                                                  revision: replacement.revisions[0], at: time)
+            #expect(accepted?.geometry.features.first?.properties.severity == .major)
+        }
+    }
+
+    @Test func wssiUsesNewlyAcceptedPointWithoutNWSContext() async throws {
+        let fixture = SyncFixture()
+        let old = makeContext(latitude: 0.25, longitude: 0.75)
+        let new = makeContext(latitude: 10, longitude: 10, h3Cell: 2, timestamp: 200)
+        var observation = old.snapshot
+        let session = LocationSession(
+            locationClient: LocationClient(snapshot: { await MainActor.run { observation } },
+                                           updates: { AsyncStream { $0.finish() } }),
+            locationManager: LocationManager(manager: PresenceAuthorization(), onUpdate: { _ in .accepted }),
+            locationContextResolver: PresenceContextResolver(context: old, offline: true),
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
+        )
+        session.currentContext = old
+        let container = try TestStore.container(for: [WSSIAcceptedSlot.self, WSSIStoredManifest.self])
+        let store = WSSIAcceptedStore(modelContainer: container)
+        let manifest = try fixture.manifest(advertised: 1)
+        let saved = try await store.saveManifest(manifest, eTag: nil, replacing: nil)
+        let body = try #require(try fixture.response(for: fixture.paths[0], manifest: manifest).data)
+        try await store.acceptGeometry(body, eTag: nil, product: .overallImpact, day: 1,
+                                       manifestGeneration: saved.generation)
+        let wssi = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!,
+                                    http: SyncHTTP { _, _ in throw URLError(.notConnectedToInternet) }),
+            container: container,
+            currentLocation: { await session.acceptedPointObservation().flatMap(WSSIAcceptedAssessment.Location.init) }
+        )
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        await wssi.setEnabled(true)
+        #expect(try await wssi.assessment(at: time)?.periods[0].assessment.impact == .match(.minor))
+
+        observation = new.snapshot
+        _ = await session.prepareCurrentLocationContext(requiresFreshLocation: true, showsAuthorizationPrompt: false)
+        #expect(session.currentContext == nil)
+        await wssi.offerRefresh()
+        await wssi.waitForRefresh()
+        let moved = try #require(try await wssi.assessment(at: time))
+        #expect(moved.location == .init(point: .init(new.snapshot.coordinates), h3Cell: new.h3Cell))
+        #expect(moved.periods[0].assessment.impact == .noMatchUnknownCoverage)
+
+        session.accuracyAuthorization = .reducedAccuracy
+        #expect(try await wssi.assessment(at: time) == nil)
+    }
+
     private final class PresenceScenario {
         var now = Date()
     }
@@ -31,13 +199,19 @@ struct HomeRefreshPipelineTests {
 
     private struct PresenceContextResolver: LocationContextResolving {
         let context: LocationContext
+        var offline = false
+
         func prepareCurrentContext(requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool,
                                    authorizationTimeout: Double, locationTimeout: Double,
                                    maximumAcceptedLocationAge: TimeInterval, placemarkTimeout: Double, minimumObservationTimestamp: Date?) async throws -> LocationContext {
-            context
+            if offline { throw URLError(.notConnectedToInternet) }
+            return context
         }
         func resolveContext(from snapshot: LocationSnapshot, maximumAcceptedLocationAge: TimeInterval?,
-                            placemarkTimeout: Double) async throws -> LocationContext { context }
+                            placemarkTimeout: Double) async throws -> LocationContext {
+            if offline { throw URLError(.notConnectedToInternet) }
+            return context
+        }
     }
 
     @Test("same-cell presence refresh and admission retry do not duplicate Home ingestion")
@@ -5372,7 +5546,9 @@ struct HomeRefreshPipelineTests {
         alerts: FakeAlertProvider,
         weather: FakeWeatherClient,
         locationSession: FakeLocationSession,
-        homeProjectionStore: HomeProjectionStore?
+        homeProjectionStore: HomeProjectionStore?,
+        feedStateStore: FeedStateStore? = nil,
+        wssi: WSSIForeground? = nil
     ) -> any HomeIngestionCoordinating {
         let snapshotStore = HomeSnapshotStore(
             spcRisk: spc,
@@ -5389,7 +5565,9 @@ struct HomeRefreshPipelineTests {
                 locationSession: locationSession,
                 snapshotStore: snapshotStore,
                 projectionStore: homeProjectionStore,
-                widgetSnapshotRefresher: nil
+                feedStateStore: feedStateStore,
+                widgetSnapshotRefresher: nil,
+                wssi: wssi
             )
         )
         return HomeIngestionCoordinator(executor: executor)
