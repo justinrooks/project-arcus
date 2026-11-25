@@ -141,6 +141,119 @@ struct MorningNotificationTests {
         """)
     }
 
+    @Test("winter-only uses the strongest Overall day and earliest source window on a tie")
+    func winterOnlyUsesSelectedSourceWindow() throws {
+        let later = winterPeriod(1, impact: .match(.major), startsInHours: 40)
+        let earlier = winterPeriod(2, impact: .match(.major), startsInHours: 16)
+        let weaker = winterPeriod(3, impact: .match(.moderate), startsInHours: 0)
+        let context = winterContext([weaker, later, earlier])
+        let event = try #require(AmRangeLocalRule().evaluate(context))
+        let winter = try #require(event.payload["winterImpact"] as? MorningContext.WinterImpact)
+        #expect(winter.day == 2)
+        #expect(winter.severity == .major)
+        #expect(winter.sourceInterval.start == winterNow + 16 * 3600)
+        #expect(winter.sourceInterval.end == winterNow + 40 * 3600)
+
+        let message = MorningComposer().compose(event)
+        #expect(message.title == "Winter Impacts for Bennett, CO")
+        #expect(message.subtitle == "NOAA winter outlook")
+        var style = Date.IntervalFormatStyle().month(.abbreviated).day().hour().minute()
+        style.timeZone = centralTime
+        let expectedPeriod = ((winterNow + 16 * 3600)..<(winterNow + 40 * 3600)).formatted(style)
+        #expect(message.body == "Major winter impacts are forecast for Day 2 (\(expectedPeriod)).")
+    }
+
+    @Test("one accepted winter slot enriches a partial SPC summary")
+    func winterEnrichesPartialSPC() throws {
+        let overall = winterPeriod(3, impact: .match(.minor), startsInHours: 48)
+        let component = winterPeriod(1, product: .iceAccumulation, impact: .match(.extreme), startsInHours: 0)
+        let context = winterContext([component, overall], stormRisk: .allClear, convectiveIssue: winterNow - 7200)
+        let event = try #require(AmRangeLocalRule().evaluate(context))
+        let message = MorningComposer().compose(event)
+        let lines = message.body.split(separator: "\n")
+        #expect(message.subtitle.isEmpty)
+        #expect(lines.count == 2)
+        #expect(lines.first == "Storm Activity: \(StormRiskLevel.allClear.summary)")
+        #expect(lines.last?.hasPrefix("Minor winter impacts are forecast for Day 3 (") == true)
+        #expect(context.winterImpact?.localTimeZone == centralTime)
+    }
+
+    @Test("a convective issue time does not label a fire and winter summary")
+    func mixedFireAndWinterOmitsConvectiveSubtitle() throws {
+        let winter = winterPeriod(2, impact: .match(.moderate), startsInHours: 24)
+        let context = winterContext([winter], fireRisk: .clear, convectiveIssue: winterNow - 7200)
+        let event = try #require(AmRangeLocalRule().evaluate(context))
+        let message = MorningComposer().compose(event)
+        #expect(message.subtitle.isEmpty)
+        #expect(message.body.hasPrefix("Fire Risk: \(FireRiskLevel.clear.message)\nModerate winter impacts"))
+    }
+
+    @Test("winter without qualifying accepted local Overall impact cannot create a morning event")
+    func ineligibleWinterAddsNoContent() throws {
+        let minor = winterPeriod(1, impact: .match(.minor), startsInHours: 0)
+        let outsideLocation = WSSIAcceptedAssessment.Location(
+            point: .init(latitude: 40, longitude: -105), h3Cell: 2, observedAt: winterNow
+        )
+        let cases: [(String, [WSSIAcceptedAssessment.Period], Bool, WSSIAcceptedAssessment.Location)] = [
+            ("off", [minor], false, winterLocation),
+            ("off location", [minor], true, outsideLocation),
+            ("pending", [], true, winterLocation),
+            ("expired at end", [winterPeriod(1, impact: .match(.major), startsInHours: -24)], true, winterLocation),
+            ("unavailable", [winterPeriod(1, impact: .unavailable, startsInHours: 0)], true, winterLocation),
+            ("unknown coverage", [winterPeriod(1, impact: .noMatchUnknownCoverage, startsInHours: 0)], true, winterLocation),
+            ("weather area", [winterPeriod(1, impact: .match(.winterWeatherArea), startsInHours: 0)], true, winterLocation),
+            ("component only", [winterPeriod(1, product: .snowLoad, impact: .match(.extreme), startsInHours: 0)],
+             true, winterLocation)
+        ]
+        let rule = AmRangeLocalRule()
+        for (scenario, periods, enabled, location) in cases {
+            #expect(rule.evaluate(winterContext(periods, enabled: enabled, location: location)) == nil,
+                    "\(scenario)")
+            let partialSPC = winterContext(periods, enabled: enabled, location: location, stormRisk: .slight)
+            let event = try #require(rule.evaluate(partialSPC), "\(scenario)")
+            #expect(MorningComposer().compose(event).body == "Storm Activity: Chance for a few strong storms",
+                    "\(scenario)")
+        }
+    }
+
+    private var winterNow: Date {
+        makeDate(year: 2026, month: 1, day: 2, hour: 8, tz: centralTime)
+    }
+
+    private var winterLocation: WSSIAcceptedAssessment.Location {
+        .init(point: .init(latitude: 39, longitude: -105), h3Cell: 1, observedAt: winterNow)
+    }
+
+    private func winterContext(
+        _ periods: [WSSIAcceptedAssessment.Period], enabled: Bool = true,
+        location: WSSIAcceptedAssessment.Location? = nil, stormRisk: StormRiskLevel? = nil,
+        fireRisk: FireRiskLevel? = nil, convectiveIssue: Date? = nil,
+        riskProfileChange: RiskProfileChange? = nil
+    ) -> MorningContext {
+        .init(
+            now: winterNow, lastConvectiveIssue: convectiveIssue, localTZ: centralTime, quietHours: nil,
+            stormRisk: stormRisk, severeRisk: nil, fireRisk: fireRisk, placeMark: "Bennett, CO",
+            riskProfileChange: riskProfileChange,
+            acceptedWinterAssessment: .init(location: winterLocation, periods: periods, refreshStatus: .notAttempted),
+            currentWinterLocation: location ?? winterLocation, winterImpactsEnabled: enabled
+        )
+    }
+
+    private func winterPeriod(
+        _ day: Int, product: WSSIProduct = .overallImpact, impact: WSSIPointAssessment.Impact, startsInHours: Double
+    ) -> WSSIAcceptedAssessment.Period {
+        let start = winterNow + startsInHours * 3600
+        let revision = WSSIAcceptedRevision(
+            revision: UUID(), issuedAt: winterNow - 3600, validFrom: start, validTo: start + 24 * 3600,
+            gisFileDate: nil, gisIngestDate: nil, retrievedAt: winterNow, geometryPath: "/geometry"
+        )
+        return .init(assessment: .init(
+            product: product, day: day, point: winterLocation.point, revision: revision,
+            validity: start > winterNow ? .notYetValid : .valid, sourceStatus: .available,
+            pollHealth: .successful, impact: impact
+        ), coverage: .unknown)
+    }
+
     @Test("missing and synthetic location labels use the generic morning title",
           arguments: [nil, "", " \n\t ", "Unknown", " UNKNOWN ", "Ready", "ready"] as [String?])
     func composerUsesGenericTitle(place: String?) {
@@ -180,19 +293,13 @@ struct MorningNotificationTests {
                 occurrenceID: "morning-transition"
             )
         )
-        let message = MorningComposer().compose(
-            NotificationEvent(
-                kind: .morningOutlook,
-                key: "morning:2026-01-02",
-                payload: [
-                    "stormRisk": StormRiskLevel.enhanced,
-                    "severeRisk": SevereWeatherThreat.tornado(probability: 0.31),
-                    "fireRisk": FireRiskLevel.critical,
-                    "placeMark": "Oklahoma City, OK",
-                    "riskProfileChange": change
-                ]
-            )
+        let context = MorningContext(
+            now: winterNow, lastConvectiveIssue: nil, localTZ: centralTime, quietHours: nil,
+            stormRisk: .enhanced, severeRisk: .tornado(probability: 0.31), fireRisk: .critical,
+            placeMark: "Oklahoma City, OK", riskProfileChange: change
         )
+        let event = try #require(AmRangeLocalRule().evaluate(context))
+        let message = MorningComposer().compose(event)
 
         #expect(message.body == """
         Risk Update
@@ -204,6 +311,15 @@ struct MorningNotificationTests {
         Severe Activity: Tornadoes are possible
         Fire Risk: Dry fuels, strong winds, and very low humidity could allow any fire that starts to spread rapidly.
         """)
+
+        let winter = winterPeriod(1, impact: .match(.moderate), startsInHours: 0)
+        let winterOnly = winterContext([winter], riskProfileChange: change)
+        let winterEvent = try #require(AmRangeLocalRule().evaluate(winterOnly))
+        let sections = MorningComposer().compose(winterEvent).body.components(separatedBy: "\n\n")
+        #expect(sections.count == 2)
+        #expect(sections.first == message.body.components(separatedBy: "\n\n").first)
+        #expect(sections.last?.hasPrefix("Moderate winter impacts are forecast for Day 1 (") == true)
+        #expect(sections.last?.contains("\n") == false)
     }
 
     @Test("engine retries a scheduling failure and suppresses the successful occurrence")
