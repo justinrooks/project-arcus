@@ -5,6 +5,212 @@ import Testing
 
 @Suite
 struct WSSISyncTests {
+    @Test func backgroundSkipsDisabledAndExhaustedAdmission() async throws {
+        let http = SyncHTTP { _, _ in
+            Issue.record("WSSI made a request without admission")
+            throw URLError(.notConnectedToInternet)
+        }
+        let service = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(nil),
+            currentLocation: { nil }
+        )
+        _ = await backgroundLifecycle(service).run()
+        await service.setEnabled(true)
+        let expired = BackgroundRefreshBudget.standard(start: .now - BackgroundRefreshBudget.defaultTotalDuration)
+        _ = await backgroundLifecycle(service).run(budget: expired)
+        #expect(await http.requests.isEmpty)
+    }
+
+    @Test func backgroundAcceptsAllSlotsAndRevalidatesAfterReopen() async throws {
+        let fixture = SyncFixture()
+        let body = try fixture.manifest()
+        let http = SyncHTTP { request, index in
+            #expect(HTTPExecutionMode.current == .background)
+            #expect(BackgroundRefreshExecutionContext.current != nil)
+            if index == 16 {
+                #expect(request.validator == #""original""#)
+                return .init(status: 304, headers: [:], data: nil)
+            }
+            return try fixture.response(for: request.path, manifest: body)
+        }
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        let url = try temporaryStore()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        do {
+            let service = WSSIForeground(
+                client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+                container: try container(url),
+                enabled: true,
+                currentLocation: { nil }
+            )
+            _ = await backgroundLifecycle(service).run()
+        }
+
+        let reopened = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(url),
+            enabled: true,
+            currentLocation: {
+                .init(point: .init(latitude: 10, longitude: 10), h3Cell: 1, observedAt: time)
+            }
+        )
+        let assessment = try #require(try await reopened.assessment(at: time))
+        #expect(assessment.periods.compactMap { $0.assessment.revision?.revision } == fixture.revisions)
+        #expect(assessment.periods.allSatisfy { $0.assessment.impact == .noMatchUnknownCoverage })
+        _ = await backgroundLifecycle(reopened).run()
+        #expect(await http.requests.map(\.path) == [SyncHTTP.manifestPath] + fixture.paths + [SyncHTTP.manifestPath])
+    }
+
+    @Test func elapsedBackgroundDeadlineLeavesDurableManifestAndGeometryIntact() async throws {
+        let fixture = SyncFixture()
+        let revised = fixture.replacingFirstSlot()
+        let url = try temporaryStore()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = try reopen(url)
+        let originalBody = try fixture.manifest(advertised: 1)
+        let original = try await store.saveManifest(originalBody, eTag: #""original""#, replacing: nil)
+        let accepted = try #require(try fixture.response(for: fixture.paths[0], manifest: originalBody).data)
+        try await store.acceptGeometry(accepted, eTag: nil, product: .overallImpact, day: 1,
+                                       manifestGeneration: original.generation)
+        let replacementBody = try revised.manifest(advertised: 1)
+        let replacement = try await store.saveManifest(replacementBody, eTag: #""changed""#, replacing: original.generation)
+        let candidate = try #require(try revised.response(for: revised.paths[0], manifest: replacementBody).data)
+
+        let elapsed = BackgroundRefreshBudget.standard(start: .now - BackgroundRefreshBudget.defaultTotalDuration)
+        await BackgroundRefreshExecutionContext.$current.withValue(.init(budget: elapsed)) {
+            #expect(!Task.isCancelled)
+            await #expect(throws: CancellationError.self) {
+                try await store.saveManifest(originalBody, eTag: #""late""#, replacing: replacement.generation)
+            }
+            await #expect(throws: CancellationError.self) {
+                try await store.acceptGeometry(candidate, eTag: nil, product: .overallImpact, day: 1,
+                                               manifestGeneration: replacement.generation)
+            }
+        }
+
+        let reopened = try reopen(url)
+        #expect(try await reopened.manifest()?.generation == replacement.generation)
+        #expect(try await reopened.manifest()?.eTag == #""changed""#)
+        let retained = try #require(try await reopened.slot(product: .overallImpact, day: 1))
+        #expect(retained.revision.revision == fixture.revisions[0])
+        #expect(retained.geometry == accepted)
+    }
+
+    enum BackgroundInterruption: CaseIterable, Sendable {
+        case deadline, expiration, foreground
+    }
+
+    @Test(arguments: BackgroundInterruption.allCases)
+    func interruptedBackgroundPreservesCoreOutcomeAndResumesInForeground(_ interruption: BackgroundInterruption) async throws {
+        let fixture = SyncFixture()
+        let body = try fixture.manifest(advertised: 2)
+        let request = SyncGate()
+        let deadline = SyncGate()
+        let scheduled = BackgroundScheduleMarker()
+        let feed: Set<Feed> = [.outlookDay1, .warning]
+        let http = SyncHTTP { work, index in
+            #expect(await scheduled.recorded)
+            if index == 2 {
+                #expect(HTTPExecutionMode.current == .background)
+                await request.suspend()
+            }
+            if index >= 3 {
+                #expect(HTTPExecutionMode.current == .foreground)
+                #expect(BackgroundRefreshExecutionContext.current == nil)
+                if work.path == SyncHTTP.manifestPath {
+                    #expect(work.validator == #""original""#)
+                    return .init(status: 304, headers: [:], data: nil)
+                }
+            }
+            return try fixture.response(for: work.path, manifest: body)
+        }
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        let url = try temporaryStore()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let service = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(url),
+            enabled: true,
+            waitForBackgroundDeadline: { instant in
+                if interruption == .deadline {
+                    await deadline.suspend()
+                } else {
+                    try await ContinuousClock().sleep(until: instant)
+                }
+            },
+            currentLocation: {
+                .init(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: time)
+            }
+        )
+        let core = Outcome(next: .distantFuture, result: .success, didNotify: true, feedsChanged: feed)
+        let lifecycle = backgroundLifecycle(service, core: core, marker: scheduled)
+        let background = Task { await lifecycle.run() }
+        await request.waitUntilSuspended()
+        #expect(await scheduled.recorded)
+
+        switch interruption {
+        case .deadline:
+            await deadline.waitUntilSuspended()
+            await deadline.release()
+        case .expiration:
+            background.cancel()
+        case .foreground:
+            await service.offerRefresh()
+        }
+
+        let outcome = await background.value
+        #expect(outcome.result == core.result && outcome.didNotify && outcome.feedsChanged == feed)
+        let partial = try #require(try await service.assessment(at: time))
+        #expect(partial.periods[0].assessment.revision?.revision == fixture.revisions[0])
+        #expect(partial.periods[1].assessment.revision == nil)
+        await request.release()
+        if interruption != .foreground { await service.offerRefresh() }
+        await service.waitForRefresh()
+        #expect(await http.requests.map(\.path) == [SyncHTTP.manifestPath] + Array(fixture.paths.prefix(2))
+                + [SyncHTTP.manifestPath, fixture.paths[1]])
+        #expect(await http.peakInFlight == 1)
+        #expect(try await service.assessment(at: time)?.periods[1].assessment.revision?.revision == fixture.revisions[1])
+    }
+
+    @Test(arguments: [false, true])
+    func backgroundForgeFailureDoesNotChangeCoreOutcome(offline: Bool) async throws {
+        let http = SyncHTTP { _, _ in
+            if offline { throw URLError(.notConnectedToInternet) }
+            return .init(status: 503, headers: ["Retry-After": "120"], data: nil)
+        }
+        let service = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(nil),
+            enabled: true,
+            currentLocation: { nil }
+        )
+        let core = Outcome(next: .distantFuture, result: .success, didNotify: true, feedsChanged: [.meso])
+        let outcome = await backgroundLifecycle(service, core: core).run()
+        #expect(outcome.result == core.result && outcome.didNotify && outcome.feedsChanged == core.feedsChanged)
+        #expect(outcome.next == core.next)
+        #expect(await http.requests.count == 1)
+    }
+
+    private func backgroundLifecycle(
+        _ service: WSSIForeground,
+        core: Outcome = .init(next: .distantFuture, result: .success, didNotify: false, feedsChanged: []),
+        marker: BackgroundScheduleMarker? = nil
+    ) -> BackgroundRefreshLifecycle {
+        .init(
+            beginRun: {
+                .init(runId: UUID().uuidString, startedAt: .now) { phase, _ in
+                    if phase == .authoritative { await marker?.record() }
+                }
+            },
+            scheduleFallback: { .submitted },
+            runOrchestration: { _ in core },
+            scheduleAuthoritative: { _ in .submitted },
+            wssi: service
+        )
+    }
+
     @Test @MainActor func foregroundReadsAcceptedSlotsBeforeAndDuringFailedRefreshAfterReopen() async throws {
         let fixture = SyncFixture()
         let url = try temporaryStore()
@@ -439,6 +645,12 @@ struct WSSISyncTests {
         return try ModelContainer(for: schema, migrationPlan: SkyAwarePersistenceMigrationPlan.self,
                                   configurations: configuration)
     }
+}
+
+private actor BackgroundScheduleMarker {
+    private(set) var recorded = false
+
+    func record() { recorded = true }
 }
 
 actor SyncHTTP: HTTPClient {
