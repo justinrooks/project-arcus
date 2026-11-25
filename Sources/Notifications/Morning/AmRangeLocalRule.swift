@@ -36,6 +36,9 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
             logger.debug("Hour \(h, privacy: .public) not in window: \(window, privacy: .public); skipping")
             return nil
         }
+        guard ctx.stormRisk != nil || ctx.severeRisk != nil || ctx.fireRisk != nil || ctx.winterImpact != nil else {
+            return nil
+        }
         if let issue = ctx.lastConvectiveIssue, ctx.now.timeIntervalSince(issue) > maxIssueAge {
             logger.debug("Outlook issue is stale; skipping notification")
             return nil
@@ -45,17 +48,14 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
         let id = "morning:\(stamp)"
         logger.trace("Stamp generated: \(id)")
         
-        var payload: [String: Sendable] = [
-            "localDay": stamp,
-            "issue": ctx.lastConvectiveIssue as Sendable?,
-            "stormRisk": ctx.stormRisk,
-            "severeRisk": ctx.severeRisk,
-            "fireRisk": ctx.fireRisk,
-            "placeMark": ctx.placeMark
-        ]
-        if let riskProfileChange = ctx.riskProfileChange {
-            payload["riskProfileChange"] = riskProfileChange
-        }
+        var payload: [String: Sendable] = ["localDay": stamp]
+        payload["issue"] = ctx.lastConvectiveIssue
+        payload["stormRisk"] = ctx.stormRisk
+        payload["severeRisk"] = ctx.severeRisk
+        payload["fireRisk"] = ctx.fireRisk
+        payload["placeMark"] = ctx.placeMark
+        payload["riskProfileChange"] = ctx.riskProfileChange
+        payload["winterImpact"] = ctx.winterImpact
 
         return NotificationEvent(
             kind: .morningOutlook,

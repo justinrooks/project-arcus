@@ -5,50 +5,8 @@
 //  Created by Justin Rooks on 10/21/25.
 //
 
-import Foundation
-import OSLog
-
 struct SevenAmLocalRule: NotificationRuleEvaluating {
-    private let logger = Logger.notificationsMorningRule
-    
     func evaluate(_ ctx: MorningContext) -> NotificationEvent? {
-        logger.debug("Evaluating 7am local rule")
-        var cal = Calendar(identifier: .gregorian); cal.timeZone = ctx.localTZ
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: ctx.now)
-        let maxIssueAge: TimeInterval = 24 * 60 * 60
-        
-        guard let y = comps.year, let m = comps.month, let d = comps.day, let h = comps.hour else { return nil}
-        if let q = ctx.quietHours, q.contains(h) {
-            logger.debug("Observed quiet hours, no notification")
-            return nil
-        }
-        
-        guard h == 7 else { return nil } // 7:00 - 7:59 local time
-        if let issue = ctx.lastConvectiveIssue, ctx.now.timeIntervalSince(issue) > maxIssueAge {
-            logger.debug("Outlook issue is stale; skipping notification")
-            return nil
-        }
-        
-        let stamp = String(format: "%04d-%02d-%02d", y, m, d) // day stamp
-        let id = "morning:\(stamp)"
-        logger.trace("Stamp generated: \(id)")
-        
-        var payload: [String: Sendable] = [
-            "localDay": stamp,
-            "issue": ctx.lastConvectiveIssue as Sendable?,
-            "stormRisk": ctx.stormRisk,
-            "severeRisk": ctx.severeRisk,
-            "fireRisk": ctx.fireRisk,
-            "placeMark": ctx.placeMark
-        ]
-        if let riskProfileChange = ctx.riskProfileChange {
-            payload["riskProfileChange"] = riskProfileChange
-        }
-
-        return NotificationEvent(
-            kind: .morningOutlook,
-            key: id,
-            payload: payload
-        )
+        AmRangeLocalRule(window: 7..<8).evaluate(ctx)
     }
 }
