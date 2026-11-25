@@ -1890,6 +1890,7 @@ struct LocationSessionTests {
         let recoveryID = try #require(await resolver.pendingIDs(for: .resolve).first)
         await resolver.complete(id: recoveryID, with: .success(later))
         try #require(await waitUntilAsync { session.startupState == .ready })
+        try #require(await waitUntilAsync { await uploader.recordedEnqueueCount() > 0 })
         #expect(await uploader.recordedEnqueueCount() == 1)
         await session.publishCurrentContext(nil)
         #expect(session.contextInterruptionRevision == 1)
