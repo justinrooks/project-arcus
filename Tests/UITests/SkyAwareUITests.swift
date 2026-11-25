@@ -89,6 +89,68 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testWinterImpactsDetailOpensOnSelectedDayAndSwitchesProducts() {
+        for appearance in ["light", "dark"] {
+            verifyWinterImpactsDetail(appearance: appearance)
+        }
+    }
+
+    @MainActor
+    private func verifyWinterImpactsDetail(appearance: String) {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_DETAIL"] = "1"
+        app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = appearance
+        let offline = appearance == "dark"
+        if offline {
+            app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_OFFLINE"] = "1"
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
+        app.launch()
+
+        let entry = app.buttons["Open Day 2"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["Winter Impacts"].exists)
+
+        let picker = app.buttons["winter-forecast-day"]
+        let overall = app.staticTexts["winter-classification-Overall_Impact"]
+        let snow = app.staticTexts["winter-classification-Snow_Amount"]
+        XCTAssertEqual(overall.label, "Impact unknown")
+        XCTAssertTrue(app.staticTexts["Coverage is unverified."].exists)
+        let notice = app.staticTexts[
+            offline
+                ? "Offline. Showing saved forecast information."
+                : "A forecast update is unavailable. Showing saved information."
+        ]
+        XCTAssertTrue(notice.exists)
+        XCTAssertEqual(snow.label, "Major")
+        XCTAssertEqual(app.staticTexts["winter-classification-Snow_Load"].label, "No local impact")
+        XCTAssertTrue(app.staticTexts["Ice Accumulation"].exists)
+        XCTAssertTrue(app.staticTexts["Blowing Snow"].exists)
+        attachScreenshot(app, named: "winter-impacts-day2-\(appearance)")
+
+        picker.tap()
+        app.buttons["Day 1"].tap()
+        XCTAssertEqual(overall.label, "Moderate")
+        XCTAssertTrue(app.staticTexts["Daily routines may be disrupted, and travel may be hazardous."].exists)
+        XCTAssertEqual(app.staticTexts["winter-classification-Snow_Load"].label, "Winter Weather Area")
+        XCTAssertEqual(snow.label, "Impact unknown")
+
+        picker.tap()
+        app.buttons["Day 3"].tap()
+        XCTAssertEqual(overall.label, "Forecast period ended")
+        XCTAssertEqual(snow.label, "Impact unknown")
+        XCTAssertEqual(app.staticTexts["winter-classification-Blowing_Snow"].label, "Forecast period ended")
+        XCTAssertFalse(notice.exists)
+        XCTAssertFalse(app.buttons["View on Map"].exists)
+        app.terminate()
+    }
+
+    @MainActor
     func testOutlookDiscussionMapRoundTripRendersLatestDiscussionForEachDay() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

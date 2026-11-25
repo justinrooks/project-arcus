@@ -375,6 +375,19 @@ private extension SkyAwareApp {
 
     @ViewBuilder
     var currentHomeView: some View {
+#if DEBUG
+        if isUITestStaticHome && ProcessInfo.processInfo.environment["UI_TESTS_WINTER_IMPACTS_DETAIL"] == "1" {
+            WinterImpactsDetailFixture()
+        } else {
+            standardHomeView
+        }
+#else
+        standardHomeView
+#endif
+    }
+
+    @ViewBuilder
+    var standardHomeView: some View {
         if isUITestNoCacheResolving {
             HomeView()
         } else if isUITestStaticHome {
