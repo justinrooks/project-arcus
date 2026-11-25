@@ -17,6 +17,7 @@ final class Dependencies: Sendable {
     let appRefreshID: String
     let logger: Logger
     let wssi: WSSIForeground?
+    let winterImpactsPreference: WinterImpactsPreferenceController?
     let persistenceMode: SkyAwarePersistentStoreBootstrap.Mode
     let allowsBackgroundPersistence: @Sendable () async -> Bool
     
@@ -293,11 +294,13 @@ final class Dependencies: Sendable {
         orchestrator: BackgroundOrchestrator?,
         scheduler: BackgroundScheduler?,
         weatherClient: WeatherClient?,
-        wssi: WSSIForeground? = nil
+        wssi: WSSIForeground? = nil,
+        winterImpactsPreference: WinterImpactsPreferenceController? = nil
     ) {
         self.appRefreshID = appRefreshID
         self.logger = logger
         self.wssi = wssi
+        self.winterImpactsPreference = winterImpactsPreference
         self.persistenceMode = persistenceMode
         self.allowsBackgroundPersistence = allowsBackgroundPersistence
         self._modelContainer = modelContainer
@@ -557,15 +560,15 @@ final class Dependencies: Sendable {
             logger.error("Widget snapshot store unavailable; widget refresh writes are disabled")
             widgetSnapshotRefresher = nil
         }
-        let wssi = ArcusForgeConfiguration.configuredBaseURL().map { origin in
-            WSSIForeground(
-                client: ForgeWSSIClient(origin: origin),
-                container: container,
-                currentLocation: {
-                    await locationSession.acceptedPointObservation().flatMap(WSSIAcceptedAssessment.Location.init)
-                }
-            )
-        }
+        let winterImpacts = WinterImpactsRuntime(
+            defaults: UserDefaults.shared ?? .standard,
+            origin: ArcusForgeConfiguration.configuredBaseURL(),
+            container: container,
+            currentLocation: {
+                await locationSession.acceptedPointObservation().flatMap(WSSIAcceptedAssessment.Location.init)
+            }
+        )
+        let wssi = winterImpacts.service
         let homeIngestionExecutor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger.appHomeRefresh,
@@ -641,7 +644,8 @@ final class Dependencies: Sendable {
             orchestrator: orchestrator,
             scheduler: scheduler,
             weatherClient: weatherClient,
-            wssi: wssi
+            wssi: wssi,
+            winterImpactsPreference: winterImpacts.preference
         )
     }
     

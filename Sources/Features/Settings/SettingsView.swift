@@ -43,6 +43,7 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 struct SettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(LocationSession.self) private var locationSession
+    @Environment(\.dependencies) private var dependencies
     private let logger = Logger.uiSettings
     private let locationReliabilityLogger = Logger.uiLocationReliability
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
@@ -92,6 +93,7 @@ struct SettingsView: View {
     
     // MARK: Storm Setup
     @AppStorage("stormSetupEnabled", store: UserDefaults.shared) private var stormSetupEnabled: Bool = false
+    @AppStorage(WinterImpactsPreference.enabledKey, store: UserDefaults.shared) private var winterImpactsEnabled: Bool = false
     @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared) private var detailedIngredientsEnabled: Bool = false
     
     private var brevityBinding: Binding<BrevityLevel> {
@@ -215,6 +217,21 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                    }
+                }
+
+                sectionCard(title: "Winter Impacts", symbol: "snowflake", accent: .primary) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Winter Impacts", isOn: Binding(
+                            get: { winterImpactsEnabled },
+                            set: { dependencies.winterImpactsPreference?.setChoice($0) }
+                        ))
+                            .disabled(dependencies.winterImpactsPreference == nil)
+                            .accessibilityIdentifier("settings-winter-impacts-toggle")
+                            .frame(minHeight: 44, alignment: .leading)
+                        Text("Shows guidance about potential winter weather impacts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
