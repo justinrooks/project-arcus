@@ -148,13 +148,16 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     // Lazy initialization on this actor keeps SwiftData's serial executor off the main queue.
     private lazy var sync = WSSISync(
         client: client,
-        store: WSSIAcceptedStore(modelContainer: container, save: save)
+        store: WSSIAcceptedStore(modelContainer: container, save: save, onCommit: { [weak self] in
+            await self?.assessmentDidChange()
+        })
     )
     private var enabled: Bool
     private var appliedPreferenceRevision: UInt64 = 0
     private var admission = UUID()
     private var refreshStatus: WSSIAcceptedAssessment.RefreshStatus = .notAttempted
-    private var refreshOutcomeGeneration: UInt64 = 0
+    private var assessmentGeneration: UInt64 = 0
+    private var assessmentObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
     private var task: Task<Void, Never>?
     private var isBackgroundRefresh = false
     private var offeredWhileCancelling = false
@@ -181,6 +184,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
 
     func setEnabled(_ value: Bool, preferenceRevision: UInt64? = nil) {
         if let preferenceRevision { appliedPreferenceRevision = preferenceRevision }
+        invalidateAssessments()
         guard enabled != value else { return }
         enabled = value
         admission = UUID()
@@ -240,11 +244,13 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
             let withinBudget = context.map { ContinuousClock.now < $0.budget.workDeadline } ?? true
             if admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, !Task.isCancelled, withinBudget {
                 switch outcome {
-                case .reconciled(_, let slots): publishRefreshStatus(.reconciled(slots))
-                case .manifestFailed(let failure, _): publishRefreshStatus(.manifestFailed(failure))
+                case .reconciled(_, let slots): refreshStatus = .reconciled(slots)
+                case .manifestFailed(let failure, _): refreshStatus = .manifestFailed(failure)
                 case .disabled, .cancelled, .superseded: break
                 }
             }
+            // Report refresh completion independently of accepted-store commits.
+            assessmentDidChange()
             task = nil
             isBackgroundRefresh = false
             if offeredWhileCancelling {
@@ -256,9 +262,28 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         return refresh
     }
 
-    private func publishRefreshStatus(_ status: WSSIAcceptedAssessment.RefreshStatus) {
-        refreshStatus = status
-        refreshOutcomeGeneration &+= 1
+    private func assessmentDidChange() {
+        assessmentGeneration &+= 1
+        invalidateAssessments()
+    }
+
+    func assessmentUpdates() -> AsyncStream<Void> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        assessmentObservers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeAssessmentObserver(id) }
+        }
+        continuation.yield(())
+        return stream
+    }
+
+    private func removeAssessmentObserver(_ id: UUID) {
+        assessmentObservers[id] = nil
+    }
+
+    private func invalidateAssessments() {
+        for observer in assessmentObservers.values { observer.yield(()) }
     }
 
     private var preferenceIsCurrent: Bool {
@@ -280,12 +305,12 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         guard let location = await currentLocation(), admitted == admission,
               preferenceRevision == preferenceAdmission?.snapshot().revision else { return nil }
         let status = refreshStatus
-        let outcomeGeneration = refreshOutcomeGeneration
+        let generation = assessmentGeneration
         // Use a fresh context against the committed store. A suspended writer may hold uncommitted models.
         let reader = WSSIAcceptedStore(modelContainer: container)
         let periods = try await reader.assess(location.point, at: time)
         let latest = await currentLocation()
-        guard admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, latest == location, outcomeGeneration == refreshOutcomeGeneration else { return nil }
+        guard admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, latest == location, generation == assessmentGeneration else { return nil }
         try Task.checkCancellation()
         return .init(location: location, periods: periods, refreshStatus: status)
     }

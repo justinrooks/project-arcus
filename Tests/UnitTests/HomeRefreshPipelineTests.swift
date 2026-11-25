@@ -150,6 +150,9 @@ struct HomeRefreshPipelineTests {
             presenceNow: { clock.now }
         )
         session.currentContext = old
+        session.currentSnapshot = old.snapshot
+        #expect(session.acceptedCurrentPoint(at: clock.now - 1) == old.snapshot)
+        #expect(session.acceptedCurrentPoint(at: clock.now) == nil)
         let container = try TestStore.container(for: [WSSIAcceptedSlot.self, WSSIStoredManifest.self])
         let store = WSSIAcceptedStore(modelContainer: container)
         let manifest = try fixture.manifest(advertised: 1)
@@ -175,6 +178,8 @@ struct HomeRefreshPipelineTests {
         #expect(try await wssi.assessment(at: time) == nil)
 
         observation = new.snapshot
+        session.currentSnapshot = new.snapshot
+        #expect(session.acceptedCurrentPoint(at: clock.now) == new.snapshot)
         await wssi.offerRefresh()
         await wssi.waitForRefresh()
         let moved = try #require(try await wssi.assessment(at: time))
@@ -183,6 +188,7 @@ struct HomeRefreshPipelineTests {
         #expect(moved.periods[0].assessment.impact == .noMatchUnknownCoverage)
 
         session.accuracyAuthorization = .reducedAccuracy
+        #expect(session.acceptedCurrentPoint(at: clock.now) == nil)
         #expect(try await wssi.assessment(at: time) == nil)
     }
 

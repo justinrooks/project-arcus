@@ -52,6 +52,7 @@
         "SkyAwareUITests\/testUnavailableStorageShowsExplicitRetryInsteadOfConditionsLoading()",
         "SkyAwareUITests\/testWinterImpactsDiscoveryPersistsDismissalAndEnablement()",
         "SkyAwareUITests\/testWinterImpactsDetailOpensOnSelectedDayAndSwitchesProducts()",
+        "SkyAwareUITests\/testWinterImpactsRailOpensComponentOnlyDay()",
         "SkyAwareUITests\/testTodayLocalAlertsRefreshAndScrollingRemainUsableAtAccessibilityTextSize()"
       ],
       "target" : {

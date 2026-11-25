@@ -149,6 +149,66 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testWinterImpactsRailOpensComponentOnlyDay() {
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+            app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+            app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+            app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+            app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_DETAIL"] = "1"
+            app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_RAIL"] = "1"
+            app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = appearance
+            if appearance == "dark" {
+                app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+            }
+            app.launch()
+
+            let hero = app.buttons["summary-primary-awareness"]
+            XCTAssertTrue(hero.waitForExistence(timeout: 10))
+            XCTAssertTrue(hero.label.contains("Severe Thunderstorm Warning"))
+            let severe = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Severe Risk")).firstMatch
+            let fire = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Fire Risk")).firstMatch
+            XCTAssertTrue(severe.exists)
+            XCTAssertTrue(fire.exists)
+
+            let scroll = app.scrollViews["summary-scroll"]
+            let rail = app.buttons["summary-winter-impacts-rail"]
+            scrollUntilHittable(rail, in: scroll)
+            XCTAssertTrue(rail.isHittable)
+            XCTAssertGreaterThan(rail.frame.minY, fire.frame.maxY)
+            XCTAssertTrue(rail.label.contains("Day 2"))
+            XCTAssertTrue(rail.label.contains("Snow Amount"))
+            XCTAssertTrue(rail.label.contains("Major"))
+            if rail.frame.maxY > scroll.frame.maxY - 16 {
+                let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+                let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.38))
+                start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
+            }
+            XCTAssertTrue(rail.isHittable)
+            attachScreenshot(app, named: "winter-impacts-rail-\(appearance)")
+            rail.tap()
+
+            XCTAssertTrue(app.navigationBars["Winter Impacts"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["winter-classification-Overall_Impact"].label, "Impact unknown")
+            let snow = app.staticTexts["winter-classification-Snow_Amount"]
+            XCTAssertEqual(snow.label, "Major")
+            app.buttons["Accept updated forecast"].tap()
+            let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Minor"), object: snow)
+            XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 5), .completed)
+            app.buttons["Move outside forecast"].tap()
+            let moved = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", "Unavailable for this location"), object: snow
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [moved], timeout: 5), .completed)
+            app.navigationBars["Winter Impacts"].buttons.firstMatch.tap()
+            XCTAssertTrue(hero.waitForExistence(timeout: 5))
+            XCTAssertFalse(rail.exists)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     private func verifyWinterImpactsDetail(appearance: String) {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

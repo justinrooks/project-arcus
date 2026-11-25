@@ -144,12 +144,24 @@ final class LocationSession: Sendable {
 
     /// Read the accepted point for local spatial queries that do not need NWS enrichment.
     func acceptedPointObservation() async -> LocationSnapshot? {
-        guard let snapshot = await locationClient.snapshot(),
-              authorizationStatus.isLocationAuthorized, acceptsPrecisionEvidence(snapshot),
+        acceptedPoint(await locationClient.snapshot(), at: presenceNow())
+    }
+
+    func acceptedCurrentPoint(at time: Date) -> LocationSnapshot? {
+        guard let acceptedPointExpiresAt, time < acceptedPointExpiresAt else { return nil }
+        return acceptedPoint(currentSnapshot, at: time)
+    }
+
+    private func acceptedPoint(_ snapshot: LocationSnapshot?, at time: Date) -> LocationSnapshot? {
+        guard let snapshot, authorizationStatus.isLocationAuthorized, acceptsPrecisionEvidence(snapshot),
               snapshot.h3Cell != nil,
-              max(0, presenceNow().timeIntervalSince(snapshot.timestamp)) <= Self.foregroundMaximumAcceptedLocationAge
+              max(0, time.timeIntervalSince(snapshot.timestamp)) <= Self.foregroundMaximumAcceptedLocationAge
         else { return nil }
         return snapshot
+    }
+
+    var acceptedPointExpiresAt: Date? {
+        currentSnapshot?.timestamp.addingTimeInterval(Self.foregroundMaximumAcceptedLocationAge)
     }
 
     func requestInteractiveAuthorization() {
