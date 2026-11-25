@@ -9,7 +9,7 @@ final class WinterImpactsAdmission: Sendable {
     func snapshot() -> (enabled: Bool, revision: UInt64) { state.withLock { $0 } }
 }
 
-/// Shared choice state for Settings and future onboarding and discovery surfaces.
+/// Shared choice state for Settings, onboarding, and discovery.
 struct WinterImpactsPreference {
     static let enabledKey = "winterImpactsEnabled"
     static let discoveryDismissedKey = "winterImpactsDiscoveryDismissed"
@@ -21,6 +21,10 @@ struct WinterImpactsPreference {
     var choice: Bool? { defaults.object(forKey: Self.enabledKey) as? Bool }
     var isEnabled: Bool { choice ?? false }
     var discoveryDismissed: Bool { defaults.bool(forKey: Self.discoveryDismissedKey) }
+
+    static func offersDiscovery(onboardingComplete: Bool, choice: Bool?, dismissed: Bool) -> Bool {
+        onboardingComplete && choice == nil && !dismissed
+    }
 
     fileprivate func setChoice(_ enabled: Bool) { defaults.set(enabled, forKey: Self.enabledKey) }
     func dismissDiscovery() { defaults.set(true, forKey: Self.discoveryDismissedKey) }
