@@ -24,8 +24,16 @@ struct WSSIAcceptedAssessment: Sendable {
         let coverage: WSSICoverage
     }
 
+    enum RefreshStatus: Equatable, Sendable {
+        case notAttempted
+        case manifestFailed(WSSISync.Failure)
+        case reconciled([WSSISync.SlotResult])
+    }
+
     let location: Location
     let periods: [Period]
+    /// The latest completed local refresh in this admission, independent of the accepted store.
+    let refreshStatus: RefreshStatus
 }
 
 protocol WSSIAssessmentReading: Sendable {
@@ -56,6 +64,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     )
     private var enabled: Bool
     private var admission = UUID()
+    private var refreshStatus: WSSIAcceptedAssessment.RefreshStatus = .notAttempted
     private var task: Task<Void, Never>?
     private var isBackgroundRefresh = false
     private var offeredWhileCancelling = false
@@ -83,6 +92,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         enabled = value
         admission = UUID()
         if !value {
+            refreshStatus = .notAttempted
             offeredWhileCancelling = false
             task?.cancel()
         }
@@ -126,10 +136,19 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     @discardableResult
     private func startRefresh(background context: BackgroundRefreshExecutionContext?) -> Task<Void, Never> {
         isBackgroundRefresh = context != nil
+        let admitted = admission
         let refresh = Task {
-            await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            let outcome = await BackgroundRefreshExecutionContext.$current.withValue(context) {
                 await HTTPExecutionMode.$current.withValue(context == nil ? .foreground : .background) {
-                    _ = await sync.refresh(enabled: !Task.isCancelled)
+                    await sync.refresh(enabled: !Task.isCancelled)
+                }
+            }
+            let withinBudget = context.map { ContinuousClock.now < $0.budget.workDeadline } ?? true
+            if admitted == admission, !Task.isCancelled, withinBudget {
+                switch outcome {
+                case .reconciled(_, let slots): refreshStatus = .reconciled(slots)
+                case .manifestFailed(let failure, _): refreshStatus = .manifestFailed(failure)
+                case .disabled, .cancelled, .superseded: break
                 }
             }
             task = nil
@@ -151,13 +170,14 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         guard enabled else { return nil }
         let admitted = admission
         guard let location = await currentLocation(), admitted == admission else { return nil }
+        let status = refreshStatus
         // Use a fresh context against the committed store. A suspended writer may hold uncommitted models.
         let reader = WSSIAcceptedStore(modelContainer: container)
         let periods = try await reader.assess(location.point, at: time)
         let latest = await currentLocation()
         guard admitted == admission, latest == location else { return nil }
         try Task.checkCancellation()
-        return .init(location: location, periods: periods)
+        return .init(location: location, periods: periods, refreshStatus: status)
     }
 
     func geometry(

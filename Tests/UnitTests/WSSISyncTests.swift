@@ -163,6 +163,7 @@ struct WSSISyncTests {
         let outcome = await background.value
         #expect(outcome.result == core.result && outcome.didNotify && outcome.feedsChanged == feed)
         let partial = try #require(try await service.assessment(at: time))
+        #expect(partial.refreshStatus == .notAttempted)
         #expect(partial.periods[0].assessment.revision?.revision == fixture.revisions[0])
         #expect(partial.periods[1].assessment.revision == nil)
         await request.release()
@@ -221,8 +222,9 @@ struct WSSISyncTests {
         let gate = SyncGate()
         let retry = SyncGate()
         let http = SyncHTTP { _, index in
+            if index == 2 { return .init(status: 304, headers: [:], data: nil) }
             await (index == 0 ? gate : retry).suspend()
-            throw URLError(.notConnectedToInternet)
+            return .init(status: 503, headers: ["Retry-After": "2"], data: nil)
         }
         let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
         var location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: .distantPast)
@@ -239,6 +241,7 @@ struct WSSISyncTests {
 
         await foreground.setEnabled(true)
         let cached = try #require(try await reader.assessment(at: time))
+        #expect(cached.refreshStatus == .notAttempted)
         #expect(cached.periods.count == 15)
         #expect(cached.periods[0].assessment.impact == .unavailable)
         #expect(cached.periods[2].assessment.impact == .match(.minor))
@@ -271,10 +274,81 @@ struct WSSISyncTests {
         await foreground.offerRefresh()
         await gate.release()
         await retry.waitUntilSuspended()
+        #expect(try await reader.assessment(at: time)?.refreshStatus == .notAttempted)
         await retry.release()
         await foreground.waitForRefresh()
         #expect(await http.peakInFlight == 1)
-        #expect(try await reader.assessment(at: time)?.periods[3].assessment.impact == .noMatchUnknownCoverage)
+        let failed = try #require(try await reader.assessment(at: time))
+        #expect(failed.refreshStatus == .manifestFailed(.httpStatus(503, retryAfterSeconds: 2)))
+        let retained = failed.periods[3].assessment
+        #expect(retained.revision == cached.periods[3].assessment.revision)
+        #expect(retained.validity == .valid)
+        #expect(retained.sourceStatus == .available && retained.pollHealth == .successful)
+        #expect(retained.impact == .noMatchUnknownCoverage)
+
+        await foreground.offerRefresh()
+        await foreground.waitForRefresh()
+        let recovered = try #require(try await reader.assessment(at: time))
+        guard case .reconciled(let slots) = recovered.refreshStatus else {
+            Issue.record("Expected a completed reconciliation after manifest revalidation")
+            return
+        }
+        #expect(slots.count == 15)
+        #expect(slots.first { $0.product == .snowAmount && $0.day == 1 }?.outcome == .current(fixture.revisions[3]))
+        #expect(recovered.periods[3].assessment.revision == retained.revision)
+    }
+
+    @Test func foregroundReportsSlotFailureUntilReplacementSucceeds() async throws {
+        let original = SyncFixture()
+        var revised = original.replacingFirstSlot()
+        revised.revise(1)
+        let replacement = revised
+        let initial = try original.manifest(advertised: 3)
+        let changed = try replacement.manifest(advertised: 3)
+        let http = SyncHTTP { request, index in
+            switch index {
+            case 0..<4: return try original.response(for: request.path, manifest: initial)
+            case 4: return .init(status: 200, headers: ["ETag": #""changed""#], data: changed)
+            case 5: return .init(status: 503, headers: ["Retry-After": "2"], data: nil)
+            case 7: return .init(status: 304, headers: [:], data: nil)
+            default: return try replacement.response(for: request.path, manifest: changed)
+            }
+        }
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        let foreground = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(nil),
+            enabled: true,
+            currentLocation: {
+                .init(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: time)
+            }
+        )
+        let reader: any WSSIAssessmentReading = foreground
+
+        let expected: [([UUID], [WSSISync.SlotResult.Outcome])] = [
+            (Array(original.revisions.prefix(3)), original.revisions.prefix(3).map { .accepted($0) }),
+            ([original.revisions[0], replacement.revisions[1], original.revisions[2]], [
+                .failed(.httpStatus(503, retryAfterSeconds: 2), retainedRevision: original.revisions[0]),
+                .accepted(replacement.revisions[1]), .current(original.revisions[2])
+            ]),
+            (Array(replacement.revisions.prefix(3)), [
+                .accepted(replacement.revisions[0]), .current(replacement.revisions[1]), .current(original.revisions[2])
+            ])
+        ]
+        for (expectedRevisions, expectedOutcomes) in expected {
+            await foreground.offerRefresh()
+            await foreground.waitForRefresh()
+            let assessment = try #require(try await reader.assessment(at: time))
+            guard case .reconciled(let slots) = assessment.refreshStatus else {
+                Issue.record("Expected a completed reconciliation with independent slot outcomes")
+                return
+            }
+            #expect(slots.count == 15)
+            #expect(slots.prefix(3).allSatisfy { $0.product == .overallImpact })
+            #expect(slots.prefix(3).map(\.day) == [1, 2, 3])
+            #expect(Array(slots.prefix(3).map(\.outcome)) == expectedOutcomes)
+            #expect(assessment.periods.prefix(3).compactMap { $0.assessment.revision?.revision } == expectedRevisions)
+        }
     }
 
     @Test(arguments: [false, true])
