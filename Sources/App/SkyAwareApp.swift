@@ -34,6 +34,8 @@ struct SkyAwareApp: App {
     @State private var launchPresentation: LaunchPresentationState?
     @State private var onboardingLaunchContext = OnboardingLaunchContext()
     private let currentDisclaimerVersion = 1
+    // No physical-device run established a residual budget after core background work.
+    private nonisolated static let allowsWSSIBackgroundAcquisition = false
 
     private var isUITestStaticHome: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
@@ -139,6 +141,7 @@ struct SkyAwareApp: App {
                 .environment(runtimeConnectivityState)
         }
         .backgroundTask(.appRefresh(Dependencies.liveAppRefreshID)) {
+            let budget = BackgroundRefreshBudget.standard(start: .now)
             let attemptID = UUID().uuidString
             logger.notice("Background refresh invoked attempt=\(attemptID, privacy: .public)")
             guard let deps = await startup.retry() else {
@@ -177,9 +180,10 @@ struct SkyAwareApp: App {
                         scheduleAuthoritative: { nextRun in
                             await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: nextRun)
                         },
+                        wssi: Self.allowsWSSIBackgroundAcquisition ? deps.wssi : nil,
                         logger: logger
                     )
-                    _ = await lifecycle.run()
+                    _ = await lifecycle.run(budget: budget)
                 }
             )
         }

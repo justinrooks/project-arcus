@@ -137,7 +137,7 @@ actor WSSIAcceptedStore {
             (try? Self.usableManifest(from: row.body)).map { _ in row.generation }
         }
         guard usableGeneration == generation else { throw Rejection.supersededManifest }
-        try Task.checkCancellation()
+        try Self.checkAcceptanceCancellation()
         let row = WSSIStoredManifest(body: body, eTag: Self.validatedETag(eTag))
         let saved = Manifest(generation: row.generation, document: document, eTag: row.eTag)
         try transaction {
@@ -176,7 +176,7 @@ actor WSSIAcceptedStore {
                 throw Rejection.staleRevision
             }
         }
-        try Task.checkCancellation()
+        try Self.checkAcceptanceCancellation()
         try transaction {
             if let row { modelContext.delete(row) }
             modelContext.insert(WSSIAcceptedSlot(
@@ -189,6 +189,14 @@ actor WSSIAcceptedStore {
         var descriptor = FetchDescriptor<WSSIStoredManifest>()
         descriptor.fetchLimit = 1
         return try modelContext.fetch(descriptor).first
+    }
+
+    private static func checkAcceptanceCancellation() throws {
+        try Task.checkCancellation()
+        if let context = BackgroundRefreshExecutionContext.current,
+           ContinuousClock.now >= context.budget.workDeadline {
+            throw CancellationError()
+        }
     }
 
     private func slotRow(key: String) throws -> WSSIAcceptedSlot? {

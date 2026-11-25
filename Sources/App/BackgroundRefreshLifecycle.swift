@@ -31,6 +31,7 @@ struct BackgroundRefreshLifecycle: Sendable {
     private let scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome
     private let runOrchestration: @Sendable (BackgroundRefreshRun) async -> Outcome
     private let scheduleAuthoritative: @Sendable (Date) async -> BackgroundScheduler.SchedulingOutcome
+    private let wssi: WSSIForeground?
     private let logger: Logger
 
     init(
@@ -38,16 +39,18 @@ struct BackgroundRefreshLifecycle: Sendable {
         scheduleFallback: @escaping @Sendable () async -> BackgroundScheduler.SchedulingOutcome,
         runOrchestration: @escaping @Sendable (BackgroundRefreshRun) async -> Outcome,
         scheduleAuthoritative: @escaping @Sendable (Date) async -> BackgroundScheduler.SchedulingOutcome,
+        wssi: WSSIForeground? = nil,
         logger: Logger = .appMain
     ) {
         self.beginRun = beginRun
         self.scheduleFallback = scheduleFallback
         self.runOrchestration = runOrchestration
         self.scheduleAuthoritative = scheduleAuthoritative
+        self.wssi = wssi
         self.logger = logger
     }
 
-    func run() async -> Outcome {
+    func run(budget: BackgroundRefreshBudget = .standard(start: .now)) async -> Outcome {
         let run = await beginRun()
         let fallbackOutcome = await scheduleFallback()
         log(fallbackOutcome, action: "Fallback app refresh scheduling")
@@ -65,6 +68,10 @@ struct BackgroundRefreshLifecycle: Sendable {
             phase: .authoritative,
             outcome: diagnosticOutcome(for: authoritativeOutcome)
         )
+        // Core work and successor scheduling are terminal before optional work can start.
+        if result.result == .success || result.result == .skipped {
+            await wssi?.refreshInBackground(using: budget)
+        }
         return result
     }
 

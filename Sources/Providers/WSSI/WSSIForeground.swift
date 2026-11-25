@@ -47,27 +47,35 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     private let save: @Sendable (ModelContext) throws -> Void
     private let client: ForgeWSSIClient
     private let currentLocation: @MainActor @Sendable () async -> WSSIAcceptedAssessment.Location?
+    private let waitForBackgroundDeadline: @Sendable (ContinuousClock.Instant) async throws -> Void
 
     // Lazy initialization on this actor keeps SwiftData's serial executor off the main queue.
     private lazy var sync = WSSISync(
         client: client,
         store: WSSIAcceptedStore(modelContainer: container, save: save)
     )
-    private var enabled = false
+    private var enabled: Bool
     private var admission = UUID()
     private var task: Task<Void, Never>?
+    private var isBackgroundRefresh = false
     private var offeredWhileCancelling = false
 
     init(
         client: ForgeWSSIClient,
         container: ModelContainer,
+        enabled: Bool = false,
         save: @escaping @Sendable (ModelContext) throws -> Void = { try $0.save() },
+        waitForBackgroundDeadline: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        },
         currentLocation: @escaping @MainActor @Sendable () async -> WSSIAcceptedAssessment.Location?
     ) {
         self.client = client
         self.container = container
         self.save = save
+        self.enabled = enabled
         self.currentLocation = currentLocation
+        self.waitForBackgroundDeadline = waitForBackgroundDeadline
     }
 
     func setEnabled(_ value: Bool) {
@@ -83,19 +91,56 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     func offerRefresh() {
         guard enabled else { return }
         if let task {
+            if isBackgroundRefresh { task.cancel() }
             offeredWhileCancelling = task.isCancelled
             return
         }
-        task = Task {
-            _ = await HTTPExecutionMode.$current.withValue(.foreground) {
-                await sync.refresh(enabled: !Task.isCancelled)
+        startRefresh(background: nil)
+    }
+
+    func refreshInBackground(using budget: BackgroundRefreshBudget) async {
+        guard enabled, task == nil, !Task.isCancelled, ContinuousClock.now < budget.workDeadline else { return }
+        let context = BackgroundRefreshExecutionContext(budget: budget)
+        let refresh = startRefresh(background: context)
+        let waitForBackgroundDeadline = waitForBackgroundDeadline
+        await withTaskCancellationHandler {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await refresh.value }
+                group.addTask {
+                    do {
+                        try await waitForBackgroundDeadline(budget.workDeadline)
+                        try Task.checkCancellation()
+                        refresh.cancel()
+                    } catch {
+                        // The refresh or the enclosing BG task finished first.
+                    }
+                }
+                await group.next()
+                group.cancelAll()
+            }
+        } onCancel: {
+            refresh.cancel()
+        }
+    }
+
+    @discardableResult
+    private func startRefresh(background context: BackgroundRefreshExecutionContext?) -> Task<Void, Never> {
+        isBackgroundRefresh = context != nil
+        let refresh = Task {
+            await BackgroundRefreshExecutionContext.$current.withValue(context) {
+                await HTTPExecutionMode.$current.withValue(context == nil ? .foreground : .background) {
+                    _ = await sync.refresh(enabled: !Task.isCancelled)
+                }
             }
             task = nil
+            isBackgroundRefresh = false
             if offeredWhileCancelling {
                 offeredWhileCancelling = false
                 offerRefresh()
             }
         }
+        task = refresh
+        return refresh
     }
 
     #if DEBUG
