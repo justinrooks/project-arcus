@@ -288,7 +288,7 @@ struct SummaryView: View {
     }
 
     @ViewBuilder
-    private var riskSnapshotContent: some View {
+    private func riskSnapshotContent(winter: TodayWinterImpactsDisplay?) -> some View {
         VStack(spacing: 12) {
             PrimaryAwarenessPanel(
                 stormRisk: stormRisk,
@@ -299,7 +299,8 @@ struct SummaryView: View {
                 resolutionState: resolutionState,
                 showsOfflineToken: showsOfflineToken,
                 onOpenMapLayer: onOpenMapLayer,
-                onOpenAlerts: onOpenAlerts
+                onOpenAlerts: onOpenAlerts,
+                winter: winter
             )
         }
     }
@@ -424,11 +425,18 @@ struct SummaryView: View {
             )
 
         case .primaryAwareness:
-            TodayWinterImpactsRail {
+            TodayWinterImpactsSection { winter in
                 if isLocationUnavailable {
-                    locationUnavailableCard
+                    VStack(spacing: 16) {
+                        locationUnavailableCard
+                        if let winter {
+                            WinterImpactsRailButton(
+                                projection: winter.projection, winterOwnsHero: false, action: winter.openDetail
+                            )
+                        }
+                    }
                 } else {
-                    riskSnapshotContent
+                    riskSnapshotContent(winter: winter)
                 }
             }
 

@@ -22,6 +22,7 @@ struct PrimaryAwarenessPanel: View {
     let showsOfflineToken: Bool
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
+    var winter: TodayWinterImpactsDisplay? = nil
 
     private var primaryState: SummaryAwarenessPrimaryState {
         SummaryAwarenessPrimaryState.resolve(
@@ -33,19 +34,34 @@ struct PrimaryAwarenessPanel: View {
             isStormRiskResolving: resolutionState.isResolving(.stormRisk),
             isSevereRiskResolving: resolutionState.isResolving(.severeRisk),
             isFireRiskResolving: resolutionState.isResolving(.fireRisk),
-            isOffline: showsOfflineToken
+            isOffline: showsOfflineToken,
+            winter: winter?.projection
         )
     }
 
     var body: some View {
+        let primary = primaryState
+        return VStack(spacing: 16) {
+            awarenessCards(primary)
+            if let winter {
+                WinterImpactsRailButton(
+                    projection: winter.projection, winterOwnsHero: primary.source == .winterImpacts,
+                    action: winter.openDetail
+                )
+            }
+        }
+    }
+
+    private func awarenessCards(_ primary: SummaryAwarenessPrimaryState) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
             PrimaryAwarenessHeroView(
-                primary: primaryState,
-                action: primaryState.destination,
-                showsSemanticTint: primaryState != .quiet || (stormRisk != nil && severeRisk != nil && fireRisk != nil),
+                primary: primary,
+                action: primary.destination,
+                showsSemanticTint: primary != .quiet || (stormRisk != nil && severeRisk != nil && fireRisk != nil),
                 onOpenMapLayer: onOpenMapLayer,
-                onOpenAlerts: onOpenAlerts
+                onOpenAlerts: onOpenAlerts,
+                onOpenWinterDetail: { winter?.openDetail($0) }
             )
             VStack(spacing: 10) {
                 stormRow

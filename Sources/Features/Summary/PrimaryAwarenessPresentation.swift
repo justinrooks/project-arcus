@@ -11,6 +11,7 @@ import SwiftUI
 enum SummaryAwarenessDestination: Equatable, Sendable {
     case alerts
     case map(MapLayer)
+    case winterDetail(day: Int)
     case none
 
     var accessibilityHint: String? {
@@ -23,6 +24,8 @@ enum SummaryAwarenessDestination: Equatable, Sendable {
             }
 
             return "Opens the \(layer.title.lowercased()) map."
+        case .winterDetail:
+            return "Opens the winter forecast details."
         case .none:
             return nil
         }
@@ -40,9 +43,11 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
     case severe(SevereWeatherThreat)
     case storm(StormRiskLevel)
     case fire(FireRiskLevel)
+    case winter(day: Int, severity: WSSISeverity)
     case loading(title: String, detail: String, symbolName: String)
     case unavailable
     case quiet
+    case quietWithWinterForecast
 
     static func resolve(
         stormRisk: StormRiskLevel?,
@@ -53,10 +58,15 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         isStormRiskResolving: Bool,
         isSevereRiskResolving: Bool,
         isFireRiskResolving: Bool,
-        isOffline: Bool
+        isOffline: Bool,
+        winter: WinterImpactsPresentation? = nil
     ) -> SummaryAwarenessPrimaryState {
         if let alert = Self.activeAlert(from: alerts) {
             return .alert(title: alert.title, detail: alert.detail, timing: alert.timing, instruction: alert.instruction)
+        }
+
+        if let day = winter?.heroDay, let severity = day.overall.severity {
+            return .winter(day: day.number, severity: severity)
         }
 
         if let severeRisk, severeRisk != .allClear {
@@ -99,7 +109,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             return .unavailable
         }
 
-        return .quiet
+        return winter?.railDay(winterOwnsHero: false) == nil ? .quiet : .quietWithWinterForecast
     }
 
     var source: SummaryAwarenessSource {
@@ -112,11 +122,13 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             .stormRisk
         case .fire:
             .fireRisk
+        case .winter:
+            .winterImpacts
         case .loading:
             .loading
         case .unavailable:
             .unavailable
-        case .quiet:
+        case .quiet, .quietWithWinterForecast:
             .synthesizedQuietState
         }
     }
@@ -212,12 +224,16 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             level.message
         case let .fire(level):
             level.status == "Clear" ? "No Fire Risk" : "\(level.status) Fire Risk"
+        case .winter:
+            "Winter Impacts"
         case let .loading(title, _, _):
             title
         case .unavailable:
             "Risk Data Unavailable"
         case .quiet:
             "Quiet Weather"
+        case .quietWithWinterForecast:
+            "No Immediate Severe Threats"
         }
     }
 
@@ -231,6 +247,10 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             level.summary
         case let .fire(level):
             level.message
+        case let .winter(day, severity):
+            "\(severity.rawValue) overall impacts forecast for Day \(day)."
+        case .quietWithWinterForecast:
+            "See Winter Impacts for the forecast ahead."
         case let .loading(_, detail, _):
             detail
         case .unavailable:
@@ -250,11 +270,13 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             level.iconName
         case let .fire(level):
             level.symbol
+        case .winter:
+            "snowflake"
         case let .loading(_, _, symbolName):
             symbolName
         case .unavailable:
             "exclamationmark.circle"
-        case .quiet:
+        case .quiet, .quietWithWinterForecast:
             "checkmark.seal.fill"
         }
     }
@@ -285,7 +307,9 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
                 ? Color(red: 0.10, green: 0.13, blue: 0.18).opacity(0.88)
                 : Color(red: 0.81, green: 0.86, blue: 0.92)
             return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .quiet:
+        case .winter:
+            return accentColor.tileGradient(for: colorScheme)
+        case .quiet, .quietWithWinterForecast:
             return Color.riskAllClear.opacity(colorScheme == .dark ? 0.28 : 0.16)
                 .tileGradient(for: colorScheme)
         }
@@ -310,14 +334,16 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             .map(.categorical)
         case .fire:
             .map(.fire)
-        case .loading, .unavailable, .quiet:
+        case .winter(let day, _):
+            .winterDetail(day: day)
+        case .loading, .unavailable, .quiet, .quietWithWinterForecast:
             .none
         }
     }
 
     var isQuiet: Bool {
         switch self {
-        case .quiet:
+        case .quiet, .quietWithWinterForecast:
             true
         case let .storm(level):
             level == .allClear
@@ -325,7 +351,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             threat == .allClear
         case let .fire(level):
             level == .clear
-        case .alert, .loading, .unavailable:
+        case .alert, .winter, .loading, .unavailable:
             false
         }
     }
@@ -389,7 +415,9 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             .secondary
         case .unavailable:
             .secondary
-        case .quiet:
+        case .winter:
+            .blue
+        case .quiet, .quietWithWinterForecast:
             .riskAllClear
         }
     }
@@ -416,8 +444,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             title
         case .unavailable:
             "Risk Data Unavailable"
-        case .quiet:
-            "Quiet Weather"
+        case .quiet, .quietWithWinterForecast, .winter:
+            title
         }
     }
 
@@ -431,8 +459,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             detail
         case .unavailable:
             "One or more local risk assessments are unavailable."
-        case .quiet:
-            "No active severe threats nearby"
+        case .quiet, .quietWithWinterForecast, .winter:
+            detail
         }
     }
 
@@ -446,6 +474,7 @@ enum SummaryAwarenessSource: Equatable, Sendable {
     case severeRisk
     case stormRisk
     case fireRisk
+    case winterImpacts
     case synthesizedQuietState
     case loading
     case unavailable

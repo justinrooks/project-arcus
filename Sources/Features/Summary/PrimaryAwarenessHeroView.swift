@@ -21,6 +21,7 @@ struct PrimaryAwarenessHeroView: View {
     var showsSemanticTint: Bool = true
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
+    let onOpenWinterDetail: (Int) -> Void
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -194,6 +195,8 @@ struct PrimaryAwarenessHeroView: View {
             onOpenAlerts()
         case .map(let layer):
             onOpenMapLayer(layer)
+        case .winterDetail(let day):
+            onOpenWinterDetail(day)
         case .none:
             break
         }
