@@ -50,6 +50,7 @@
         "SkyAwareUITests\/testSummaryShowsTwoLocationRequiredBlocksWhenLocationIsRestricted()",
         "SkyAwareUITests\/testTabNavigationLoadsEachPrimaryView()",
         "SkyAwareUITests\/testUnavailableStorageShowsExplicitRetryInsteadOfConditionsLoading()",
+        "SkyAwareUITests\/testWinterImpactsDetailOpensOnSelectedDayAndSwitchesProducts()",
         "SkyAwareUITests\/testTodayLocalAlertsRefreshAndScrollingRemainUsableAtAccessibilityTextSize()"
       ],
       "target" : {
