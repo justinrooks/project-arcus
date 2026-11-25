@@ -6,6 +6,36 @@ import Testing
 
 @Suite
 struct WSSISyncTests {
+    @Test @MainActor func discoveryOnlyOffersForUnansweredReturningUsers() throws {
+        let suite = "WinterImpactsDiscoveryTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = WinterImpactsPreferenceController(defaults: defaults, service: nil)
+
+        func offersDiscovery(onboardingComplete: Bool = true) throws -> Bool {
+            let reopenedDefaults = try #require(UserDefaults(suiteName: suite))
+            let preference = WinterImpactsPreference(defaults: reopenedDefaults)
+            return WinterImpactsPreference.offersDiscovery(
+                onboardingComplete: onboardingComplete,
+                choice: preference.choice,
+                dismissed: preference.discoveryDismissed
+            )
+        }
+
+        #expect(try !offersDiscovery(onboardingComplete: false))
+        #expect(try offersDiscovery())
+
+        controller.setChoice(false)
+        #expect(try !offersDiscovery())
+        controller.setChoice(true)
+        #expect(try !offersDiscovery())
+
+        defaults.removeObject(forKey: WinterImpactsPreference.enabledKey)
+        controller.preference.dismissDiscovery()
+        #expect(try !offersDiscovery())
+        #expect(controller.preference.choice == nil)
+    }
+
     @Test @MainActor func settingsTogglePreservesUnansweredChoice() throws {
         let suite = "WinterImpactsSettingsTests.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))

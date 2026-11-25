@@ -89,6 +89,59 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testWinterImpactsDiscoveryPersistsDismissalAndEnablement() {
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+            app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
+            app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+            app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+            app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+            app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = appearance
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"]
+            app.launch()
+
+            let scroll = app.scrollViews["summary-scroll"]
+            XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+            let awareness = app.descendants(matching: .any)["summary-primary-awareness"].firstMatch
+            XCTAssertTrue(awareness.waitForExistence(timeout: 10))
+            let explore = app.buttons["winter-impacts-explore"]
+            for _ in 0..<12 where !explore.isHittable { scroll.swipeUp() }
+            XCTAssertTrue(explore.isHittable)
+            XCTAssertEqual(explore.label, "Explore Winter Impacts")
+            attachScreenshot(app, named: "winter-impacts-discovery-\(appearance)")
+            explore.tap()
+            let explanation = app.alerts["Winter Impacts"]
+            XCTAssertTrue(explanation.buttons["Turn On"].waitForExistence(timeout: 5))
+            explanation.buttons["Cancel"].tap()
+            XCTAssertTrue(explore.exists)
+
+            let shouldEnable = appearance == "dark"
+            if shouldEnable {
+                explore.tap()
+                explanation.buttons["Turn On"].tap()
+            } else {
+                let dismiss = app.buttons["winter-impacts-dismiss"]
+                if !dismiss.isHittable { scroll.swipeUp() }
+                XCTAssertEqual(dismiss.label, "Dismiss introduction")
+                dismiss.tap()
+            }
+            XCTAssertTrue(explore.waitForNonExistence(timeout: 5))
+
+            app.terminate()
+            app.launchEnvironment.removeValue(forKey: "UI_TESTS_RESET_ONBOARDING")
+            app.launch()
+            XCTAssertTrue(awareness.waitForExistence(timeout: 10))
+            XCTAssertFalse(explore.exists)
+            app.tabBars.buttons["Settings"].tap()
+            let toggle = app.switches["settings-winter-impacts-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+            XCTAssertEqual(toggle.value as? String, shouldEnable ? "1" : "0")
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testWinterImpactsDetailOpensOnSelectedDayAndSwitchesProducts() {
         for appearance in ["light", "dark"] {
             verifyWinterImpactsDetail(appearance: appearance)

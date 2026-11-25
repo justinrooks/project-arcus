@@ -145,6 +145,7 @@ struct SummaryView: View {
     let airQuality: AirQualityCurrentResponse?
     let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
+    @State private var hasRenderedTodayContent = false
     let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
@@ -335,6 +336,14 @@ struct SummaryView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 20)
+        .onChange(of: todayContentState, initial: true) {
+            switch todayContentState {
+            case .noCacheResolving, .unavailable:
+                break
+            case .current, .degraded, .cachedRefreshing, .quietRefreshing, .staleRefreshing, .refreshFailedWithCache:
+                hasRenderedTodayContent = true
+            }
+        }
     }
 
     private func recordPerformanceRenderIfNeeded() {
@@ -423,6 +432,9 @@ struct SummaryView: View {
 
         case .localAlerts:
             localAlertsSection
+            if hasRenderedTodayContent && !isLocationUnavailable {
+                WinterImpactsDiscoveryTip()
+            }
 
         case .stormSetup:
             Group {
@@ -713,5 +725,53 @@ private extension AnyTransition {
             active: SummaryContentEntranceModifier(blurRadius: SkyAwareMotion.resolvingBlur),
             identity: SummaryContentEntranceModifier(blurRadius: 0)
         )
+    }
+}
+
+private struct WinterImpactsDiscoveryTip: View {
+    @Environment(\.dependencies) private var dependencies
+    @AppStorage("onboardingComplete", store: UserDefaults.shared) private var onboardingComplete = false
+    @AppStorage(WinterImpactsPreference.enabledKey, store: UserDefaults.shared) private var choice: Bool?
+    @AppStorage(WinterImpactsPreference.discoveryDismissedKey, store: UserDefaults.shared) private var dismissed = false
+    @State private var showsExplanation = false
+
+    var body: some View {
+        Group {
+            if let controller = dependencies.winterImpactsPreference,
+               WinterImpactsPreference.offersDiscovery(
+                   onboardingComplete: onboardingComplete, choice: choice, dismissed: dismissed
+               ) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Winter weather on your radar?")
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Button {
+                        showsExplanation = true
+                    } label: {
+                        Text("Explore Winter Impacts")
+                            .underline()
+                            .foregroundStyle(Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("winter-impacts-explore")
+                    Button("Dismiss introduction") { controller.preference.dismissDiscovery() }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("winter-impacts-dismiss")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .cardBackground(cornerRadius: SkyAwareRadius.card)
+                .alert("Winter Impacts", isPresented: $showsExplanation) {
+                    Button("Turn On") { controller.setChoice(true) }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("See where snow, ice, and blowing snow could cause impacts, based on NOAA’s Winter Storm Severity Index. You can change this anytime in Settings.")
+                }
+            }
+        }
     }
 }
