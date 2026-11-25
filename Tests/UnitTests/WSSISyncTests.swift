@@ -293,12 +293,13 @@ struct WSSISyncTests {
         case deadline, expiration, foreground
     }
 
-    @Test(arguments: BackgroundInterruption.allCases)
+    @Test(.timeLimit(.minutes(1)), arguments: BackgroundInterruption.allCases)
     func interruptedBackgroundPreservesCoreOutcomeAndResumesInForeground(_ interruption: BackgroundInterruption) async throws {
         let fixture = SyncFixture()
         let body = try fixture.manifest(advertised: 2)
         let request = SyncGate()
         let deadline = SyncGate()
+        let foregroundManifest = SyncGate()
         let scheduled = BackgroundScheduleMarker()
         let feed: Set<Feed> = [.outlookDay1, .warning]
         let http = SyncHTTP { work, index in
@@ -311,6 +312,7 @@ struct WSSISyncTests {
                 #expect(HTTPExecutionMode.current == .foreground)
                 #expect(BackgroundRefreshExecutionContext.current == nil)
                 if work.path == SyncHTTP.manifestPath {
+                    await foregroundManifest.suspend()
                     #expect(work.validator == #""original""#)
                     return .init(status: 304, headers: [:], data: nil)
                 }
@@ -335,6 +337,9 @@ struct WSSISyncTests {
                 .init(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: time)
             }
         )
+        let updates = await service.assessmentUpdates()
+        #expect(await receivesSignal(from: updates))
+
         let core = Outcome(next: .distantFuture, result: .success, didNotify: true, feedsChanged: feed)
         let lifecycle = backgroundLifecycle(service, core: core, marker: scheduled)
         let background = Task { await lifecycle.run() }
@@ -358,12 +363,31 @@ struct WSSISyncTests {
         #expect(partial.periods[0].assessment.revision?.revision == fixture.revisions[0])
         #expect(partial.periods[1].assessment.revision == nil)
         await request.release()
+        #expect(await receivesSignal(from: updates))
         if interruption != .foreground { await service.offerRefresh() }
+        await foregroundManifest.waitUntilSuspended()
+        await foregroundManifest.release()
         await service.waitForRefresh()
         #expect(await http.requests.map(\.path) == [SyncHTTP.manifestPath] + Array(fixture.paths.prefix(2))
                 + [SyncHTTP.manifestPath, fixture.paths[1]])
         #expect(await http.peakInFlight == 1)
         #expect(try await service.assessment(at: time)?.periods[1].assessment.revision?.revision == fixture.revisions[1])
+    }
+
+    private func receivesSignal(from stream: AsyncStream<Void>) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                var events = stream.makeAsyncIterator()
+                return await events.next() != nil
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(5))
+                return false
+            }
+            let received = await group.next() ?? false
+            group.cancelAll()
+            return received
+        }
     }
 
     @Test(arguments: [false, true])

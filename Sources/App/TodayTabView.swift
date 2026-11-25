@@ -143,6 +143,7 @@ struct TodayTabView: View {
             }
         }
         .background(canvas.ignoresSafeArea())
+        .modifier(TodayWinterImpactsScope())
         .sheet(item: $selectedSummaryAlert) { alert in
             NavigationStack {
                 GeometryReader { geometry in

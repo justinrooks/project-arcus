@@ -1,10 +1,12 @@
+import ArcusCore
 import SwiftUI
 
 /// Push from a Today entry with its selected source day and the owner's live accepted inputs.
 struct WinterImpactsDetailView: View {
-    let accepted: WSSIAcceptedAssessment?
-    let currentLocation: WSSIAcceptedAssessment.Location?
-    let enabled: Bool
+    @Binding private var accepted: WSSIAcceptedAssessment?
+    private let locationAt: (Date) -> WSSIAcceptedAssessment.Location?
+    private let locationExpiry: () -> Date?
+    private let isEnabled: () -> Bool
     @Environment(RuntimeConnectivityState.self) private var connectivity: RuntimeConnectivityState?
     @State private var selectedDay: Int
 
@@ -14,19 +16,35 @@ struct WinterImpactsDetailView: View {
         currentLocation: WSSIAcceptedAssessment.Location?,
         enabled: Bool
     ) {
+        self.init(
+            initialDay: initialDay, accepted: .constant(accepted),
+            locationAt: { _ in currentLocation }, locationExpiry: { nil }, isEnabled: { enabled }
+        )
+    }
+
+    init(
+        initialDay: Int,
+        accepted: Binding<WSSIAcceptedAssessment?>,
+        locationAt: @escaping (Date) -> WSSIAcceptedAssessment.Location?,
+        locationExpiry: @escaping () -> Date?,
+        isEnabled: @escaping () -> Bool
+    ) {
         _selectedDay = State(initialValue: (1...3).contains(initialDay) ? initialDay : 1)
-        self.accepted = accepted
-        self.currentLocation = currentLocation
-        self.enabled = enabled
+        _accepted = accepted
+        self.locationAt = locationAt
+        self.locationExpiry = locationExpiry
+        self.isEnabled = isEnabled
     }
 
     var body: some View {
         let now = Date.now
         let boundaries = accepted?.periods.compactMap { $0.assessment.revision }
             .flatMap { [$0.validFrom, $0.validTo] } ?? []
-        TimelineView(.explicit([now] + Set(boundaries.filter { $0 > now }).sorted())) { context in
+        let dates = boundaries + [locationExpiry()].compactMap { $0 }
+        TimelineView(.explicit([now] + Set(dates.filter { $0 > now }).sorted())) { context in
+            let time = max(context.date, .now)
             let projection = WinterImpactsPresentation(
-                accepted: accepted, currentLocation: currentLocation, enabled: enabled, at: max(context.date, .now)
+                accepted: accepted, currentLocation: locationAt(time), enabled: isEnabled(), at: time
             )
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -196,6 +214,149 @@ extension WinterImpactsPresentation.Product {
     }
 }
 
+struct TodayWinterImpactsInputs {
+    let accepted: Binding<WSSIAcceptedAssessment?>
+    let locationAt: (Date) -> WSSIAcceptedAssessment.Location?
+    let locationExpiry: () -> Date?
+    let isEnabled: () -> Bool
+}
+
+extension EnvironmentValues {
+    @Entry var todayWinterImpacts: TodayWinterImpactsInputs? = nil
+}
+
+/// Owns the accepted assessment for the lifetime of Today's navigation stack.
+struct TodayWinterImpactsScope: ViewModifier {
+    @Environment(\.dependencies) private var dependencies
+    @Environment(LocationSession.self) private var locationSession: LocationSession?
+    @AppStorage(WinterImpactsPreference.enabledKey, store: UserDefaults.shared) private var choice: Bool?
+    @State private var accepted: WSSIAcceptedAssessment?
+
+    func body(content: Content) -> some View {
+        let point = currentLocation(at: .now)
+        content
+            .environment(\.todayWinterImpacts, TodayWinterImpactsInputs(
+                accepted: $accepted, locationAt: currentLocation(at:),
+                locationExpiry: { locationSession?.acceptedPointExpiresAt }, isEnabled: { choice == true }
+            ))
+            .task(id: point) {
+                guard !Task.isCancelled else { return }
+                guard let point, let service = dependencies.wssi else {
+                    accepted = nil
+                    return
+                }
+                for await _ in await service.assessmentUpdates() {
+                    let update = try? await service.assessment(at: .now)
+                    guard !Task.isCancelled else { return }
+                    if let update, update.location == point, currentLocation(at: .now) == point {
+                        accepted = update
+                    }
+                }
+            }
+    }
+
+    private func currentLocation(at time: Date) -> WSSIAcceptedAssessment.Location? {
+        guard choice == true else { return nil }
+        return locationSession?.acceptedCurrentPoint(at: time).flatMap(WSSIAcceptedAssessment.Location.init)
+    }
+}
+
+struct TodayWinterImpactsRail<Awareness: View>: View {
+    @Environment(\.todayWinterImpacts) private var inputs
+    @State private var selectedDay: Int?
+
+    var winterOwnsHero = false
+    @ViewBuilder let awareness: () -> Awareness
+
+    var body: some View {
+        if let inputs {
+            let now = Date.now
+            let accepted = inputs.accepted.wrappedValue
+            let boundaries = accepted?.periods.compactMap { $0.assessment.revision?.validTo } ?? []
+            let dates = boundaries + [inputs.locationExpiry()].compactMap { $0 }
+
+            TimelineView(.explicit([now] + Set(dates.filter { $0 > now }).sorted())) { context in
+                let time = max(context.date, .now)
+                let projection = WinterImpactsPresentation(
+                    accepted: inputs.accepted.wrappedValue, currentLocation: inputs.locationAt(time),
+                    enabled: inputs.isEnabled(), at: time
+                )
+                VStack(spacing: 16) {
+                    awareness()
+                    WinterImpactsRailButton(projection: projection, winterOwnsHero: winterOwnsHero) {
+                        selectedDay = $0
+                    }
+                }
+            }
+            .navigationDestination(item: $selectedDay) { day in
+                WinterImpactsDetailView(
+                    initialDay: day, accepted: inputs.accepted, locationAt: inputs.locationAt,
+                    locationExpiry: inputs.locationExpiry, isEnabled: inputs.isEnabled
+                )
+            }
+        } else {
+            awareness()
+        }
+    }
+}
+
+private struct WinterImpactsRailButton: View {
+    let projection: WinterImpactsPresentation
+    let winterOwnsHero: Bool
+    let action: (Int) -> Void
+
+    var body: some View {
+        if let day = projection.railDay(winterOwnsHero: winterOwnsHero), let product = day.railProduct {
+            let supportingProduct = winterOwnsHero ? day.components.first {
+                $0.severity != nil && $0.sourceInterval == product.sourceInterval
+            } : nil
+            button(for: day.number, product: supportingProduct ?? product)
+        }
+    }
+
+    private func button(for day: Int, product: WinterImpactsPresentation.Product) -> some View {
+        Button {
+            action(day)
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Label("Winter Impacts", systemImage: "snowflake")
+                    .font(.headline)
+                if product.product != .overallImpact {
+                    Text(product.detailTitle).font(.subheadline.weight(.semibold))
+                }
+                if !winterOwnsHero || product.product != .overallImpact {
+                    Text(product.detailClassification).font(.subheadline)
+                }
+                Text("Day \(day)")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary.opacity(0.72))
+                if let interval = product.sourceInterval {
+                    Text(interval)
+                        .font(.footnote)
+                        .foregroundStyle(.primary.opacity(0.72))
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(14)
+            .padding(.trailing, 16)
+            .overlay(alignment: .trailing) {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.72))
+                    .padding(.trailing, 14)
+                    .accessibilityHidden(true)
+            }
+            .todayCardBackground(cornerRadius: SkyAwareRadius.card)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the winter forecast details.")
+        .accessibilityIdentifier("summary-winter-impacts-rail")
+    }
+}
+
 #if DEBUG
 struct WinterImpactsDetailFixture: View {
     @State private var connectivity: RuntimeConnectivityState
@@ -212,26 +373,99 @@ struct WinterImpactsDetailFixture: View {
         self.offline = offline
     }
 
+    @State private var liveAssessment: WSSIAcceptedAssessment?
+    @State private var moved = false
+
     var body: some View {
-        NavigationStack {
-            NavigationLink("Open Day 2") {
-                WinterImpactsDetailView(
-                    initialDay: 2,
-                    accepted: .init(location: location, periods: [
-                        period(1, .overallImpact, .match(.moderate)),
-                        period(1, .snowLoad, .match(.winterWeatherArea)),
-                        period(2, .overallImpact, .noMatchUnknownCoverage),
-                        period(2, .snowAmount, .match(.major)),
-                        period(2, .snowLoad, .confirmedNoImpact),
-                        period(3, .overallImpact, .match(.major), expired: true),
-                        period(3, .blowingSnow, .match(.major), expired: true)
-                    ], refreshStatus: offline ? .notAttempted : .manifestFailed(.httpStatus(503, retryAfterSeconds: nil))),
-                    currentLocation: location,
-                    enabled: true
-                )
+        let railFixture = ProcessInfo.processInfo.environment["UI_TESTS_WINTER_IMPACTS_RAIL"] == "1"
+        let dayTwo = [
+            period(2, .overallImpact, .noMatchUnknownCoverage),
+            period(2, .snowAmount, .match(.major)),
+            period(2, .snowLoad, .confirmedNoImpact)
+        ]
+        let status: WSSIAcceptedAssessment.RefreshStatus = offline
+            ? .notAttempted : .manifestFailed(.httpStatus(503, retryAfterSeconds: nil))
+
+        Group {
+            if railFixture {
+                railToday
+                    .task {
+                        liveAssessment = .init(location: location, periods: dayTwo, refreshStatus: status)
+                    }
+            } else {
+                let accepted = WSSIAcceptedAssessment(location: location, periods: dayTwo + [
+                    period(1, .overallImpact, .match(.moderate)),
+                    period(1, .snowLoad, .match(.winterWeatherArea)),
+                    period(3, .overallImpact, .match(.major), expired: true),
+                    period(3, .blowingSnow, .match(.major), expired: true)
+                ], refreshStatus: status)
+                NavigationStack {
+                    NavigationLink("Open Day 2") {
+                        WinterImpactsDetailView(
+                            initialDay: 2, accepted: accepted, currentLocation: location, enabled: true
+                        )
+                    }
+                }
             }
         }
         .environment(connectivity)
+    }
+
+    private var railToday: some View {
+        VStack(spacing: 0) {
+            NavigationStack {
+                ScrollView {
+                    SummaryView(
+                        locationDisplayName: "Test area",
+                        stormRisk: .enhanced, severeRisk: .tornado(probability: 0.10), fireRisk: .elevated,
+                        alerts: [warning],
+                        todayContentState: .current,
+                        localAlertsDisplayState: .current(content: .populated, source: .cached),
+                        readinessState: .ready, resolutionState: .init(), showsOfflineToken: offline,
+                        onOpenMapLayer: { _ in }, onOpenAlerts: {}, onOpenOutlooks: {}
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                }
+                .accessibilityIdentifier("summary-scroll")
+            }
+            .environment(\.todayWinterImpacts, .init(
+                accepted: $liveAssessment,
+                locationAt: { _ in
+                    moved ? .init(point: .init(latitude: 38, longitude: -105), h3Cell: 2, observedAt: .now) : location
+                },
+                locationExpiry: { nil },
+                isEnabled: { true }
+            ))
+
+            HStack {
+                Button("Accept updated forecast") {
+                    liveAssessment = .init(
+                        location: location, periods: [period(2, .snowAmount, .match(.minor))],
+                        refreshStatus: .reconciled([])
+                    )
+                }
+                Button("Move outside forecast") { moved = true }
+            }
+            .font(.caption)
+            .dynamicTypeSize(.medium)
+            .padding(6)
+            .frame(maxWidth: .infinity)
+            .background(.background)
+        }
+    }
+
+    private var warning: AlertDTO {
+        AlertDTO(
+            id: "winter-rail-warning", messageId: "winter-rail-warning", currentRevisionSent: .now,
+            title: "Severe Thunderstorm Warning", headline: "A severe thunderstorm is nearby.",
+            issued: .now - 900, expires: .now + 3_600, ends: .now + 3_600,
+            messageType: "Alert", sender: "NWS Test Office", severity: "Extreme", urgency: "Immediate",
+            certainty: "Likely", description: "A severe thunderstorm is nearby.", instruction: "Seek shelter.",
+            response: "Execute", areaSummary: "Test area",
+            tornadoDetection: nil, tornadoDamageThreat: nil, maxWindGust: nil, maxHailSize: nil,
+            windThreat: nil, hailThreat: nil, thunderstormDamageThreat: nil,
+            flashFloodDetection: nil, flashFloodDamageThreat: nil
+        )
     }
 
     private func period(

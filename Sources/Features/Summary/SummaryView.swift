@@ -424,10 +424,12 @@ struct SummaryView: View {
             )
 
         case .primaryAwareness:
-            if isLocationUnavailable {
-                locationUnavailableCard
-            } else {
-                riskSnapshotContent
+            TodayWinterImpactsRail {
+                if isLocationUnavailable {
+                    locationUnavailableCard
+                } else {
+                    riskSnapshotContent
+                }
             }
 
         case .localAlerts:
