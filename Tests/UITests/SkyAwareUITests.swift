@@ -547,6 +547,8 @@ final class SkyAwareUITests: XCTestCase {
     @MainActor
     func testFirstLaunchOnboardingCompletesSuccessfully() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = "light"
         app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
         app.launch()
 
@@ -566,7 +568,19 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(notificationSkipButton.waitForExistence(timeout: 10), "Expected notification permission onboarding step.")
         notificationSkipButton.tap()
 
+        XCTAssertTrue(app.buttons["Enable Winter Impacts"].waitForExistence(timeout: 10))
+        let progress = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Optional Winter Impacts step. Required setup is complete.")
+        ).firstMatch
+        XCTAssertTrue(progress.exists)
+        attachScreenshot(app, named: "winter-impacts-light")
+        app.buttons["onboarding-winter-impacts-not-now"].tap()
+
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app home tabs after onboarding completion.")
+        app.tabBars.buttons["Settings"].tap()
+        let toggle = app.switches["settings-winter-impacts-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "0")
     }
 
     @MainActor
@@ -617,8 +631,11 @@ final class SkyAwareUITests: XCTestCase {
     func testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow() throws {
         resetReliabilityLedgerDefaults()
         let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = "dark"
         app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
 
         XCTAssertTrue(app.buttons["Get Started"].waitForExistence(timeout: 10), "Expected onboarding welcome screen.")
@@ -631,7 +648,7 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(enableLocationButton.waitForExistence(timeout: 10), "Expected location permission step.")
         enableLocationButton.tap()
 
-        let enableAlwaysButton = app.buttons["Enable Always"]
+        let enableAlwaysButton = app.buttons["Enable Background Location"]
         XCTAssertTrue(enableAlwaysButton.waitForExistence(timeout: 10), "Expected Always upgrade onboarding page.")
 
         let notNowButton = app.buttons["Not Now"]
@@ -642,8 +659,24 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(notificationSkipButton.waitForExistence(timeout: 10), "Expected notification permission onboarding step.")
         notificationSkipButton.tap()
 
+        let enableWinterImpacts = app.buttons["Enable Winter Impacts"]
+        XCTAssertTrue(enableWinterImpacts.waitForExistence(timeout: 10))
+        attachScreenshot(app, named: "winter-impacts-dark")
+        enableWinterImpacts.tap()
+
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app home tabs after onboarding completion.")
         assertReliabilityAskCountEquals(0)
+
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "UI_TESTS_RESET_ONBOARDING")
+        app.launchArguments = []
+        app.launch()
+        let settings = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.tap()
+        let toggle = app.switches["settings-winter-impacts-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "1")
     }
 
     @MainActor

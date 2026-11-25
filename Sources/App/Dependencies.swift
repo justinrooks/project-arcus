@@ -562,7 +562,7 @@ final class Dependencies: Sendable {
         }
         let winterImpacts = WinterImpactsRuntime(
             defaults: UserDefaults.shared ?? .standard,
-            origin: ArcusForgeConfiguration.configuredBaseURL(),
+            origin: isUITestStaticHome ? nil : ArcusForgeConfiguration.configuredBaseURL(),
             container: container,
             currentLocation: {
                 await locationSession.acceptedPointObservation().flatMap(WSSIAcceptedAssessment.Location.init)

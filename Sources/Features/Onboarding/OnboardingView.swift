@@ -15,6 +15,7 @@ struct OnboardingView: View {
     var onComplete: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
 
     private let logger = Logger.appMain
@@ -81,8 +82,10 @@ struct OnboardingView: View {
                 isWorking: notificationStepState.isWorking,
                 statusMessage: notificationStepState.statusMessage,
                 onEnable: requestNotificationPermission,
-                onSkip: completeOnboarding
+                onSkip: finishNotificationStep
             )
+        case .winterImpacts:
+            OnboardingWinterImpactsView(onChoice: completeOnboarding)
         }
     }
 
@@ -142,33 +145,32 @@ struct OnboardingView: View {
     private func requestNotificationPermission() {
         guard !notificationStepState.isWorking else { return }
 
+        notificationStepState = .working("Getting alerts ready...")
         Task { @MainActor in
-            await finalizeNotificationOnboarding()
+            await OnboardingRemoteSetupDecision.perform(
+                arcusSignalPushEnabled: isArcusSignalPushEnabled,
+                requestAuthorization: {
+                    let status = await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
+                    return status.isRemoteRegistrationEligible
+                },
+                waitForToken: {
+                    let receivedToken = await RemoteNotificationRegistrar.shared.waitForDeviceToken() != nil
+                    if !receivedToken {
+                        logger.notice("Continuing onboarding without APNs token; token not received before timeout")
+                    }
+                    return receivedToken
+                },
+                prepareLocation: prepareLocationForRemoteNotifications,
+                finish: {
+                    notificationStepState = .idle
+                    finishNotificationStep()
+                }
+            )
         }
     }
 
     @MainActor
-    private func finalizeNotificationOnboarding() async {
-        notificationStepState = .working("Getting alerts ready...")
-        let status = await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
-
-        guard OnboardingRemoteSetupDecision.shouldContinue(
-            remoteRegistrationEligible: status.isRemoteRegistrationEligible,
-            arcusSignalPushEnabled: isArcusSignalPushEnabled
-        ) else {
-            notificationStepState = .idle
-            completeOnboarding()
-            return
-        }
-
-        notificationStepState = .working("Getting alerts ready...")
-        guard await RemoteNotificationRegistrar.shared.waitForDeviceToken() != nil else {
-            logger.notice("Continuing onboarding without APNs token; token not received before timeout")
-            notificationStepState = .idle
-            completeOnboarding()
-            return
-        }
-
+    private func prepareLocationForRemoteNotifications() async {
         let canCaptureFreshSnapshot = locationSession.authorizationStatus.isAuthorizedForOnboardingLocation
         if canCaptureFreshSnapshot {
             notificationStepState = .working("Adding your approximate location for alerts...")
@@ -187,9 +189,6 @@ struct OnboardingView: View {
                 )
             }
         }
-
-        notificationStepState = .idle
-        completeOnboarding()
     }
 
     @MainActor
@@ -200,13 +199,55 @@ struct OnboardingView: View {
     }
 
     @MainActor
-    private func completeOnboarding() {
-        onComplete()
-        onboardingComplete = true
+    private func finishNotificationStep() {
+        guard currentStep == .notificationPermission,
+              let nextStep = currentStep.nextStep() else { return }
+        advance(to: nextStep)
+    }
+
+    @MainActor
+    private func completeOnboarding(enableWinterImpacts: Bool) {
+        guard currentStep == .winterImpacts, !onboardingComplete else { return }
+        OnboardingWinterImpactsChoice.complete(
+            enabled: enableWinterImpacts,
+            preference: dependencies.winterImpactsPreference
+        ) {
+            onComplete()
+            onboardingComplete = true
+        }
+    }
+}
+
+enum OnboardingWinterImpactsChoice {
+    @MainActor
+    static func complete(
+        enabled: Bool,
+        preference: WinterImpactsPreferenceController?,
+        finish: () -> Void
+    ) {
+        preference?.setChoice(enabled)
+        finish()
     }
 }
 
 enum OnboardingRemoteSetupDecision {
+    @MainActor
+    static func perform(
+        arcusSignalPushEnabled: Bool,
+        requestAuthorization: () async -> Bool,
+        waitForToken: () async -> Bool,
+        prepareLocation: () async -> Void,
+        finish: () -> Void
+    ) async {
+        defer { finish() }
+        let eligible = await requestAuthorization()
+        guard shouldContinue(
+            remoteRegistrationEligible: eligible,
+            arcusSignalPushEnabled: arcusSignalPushEnabled
+        ), await waitForToken() else { return }
+        await prepareLocation()
+    }
+
     static func shouldContinue(
         remoteRegistrationEligible: Bool,
         arcusSignalPushEnabled: Bool
@@ -233,6 +274,7 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
     case locationPermission
     case alwaysUpgrade
     case notificationPermission
+    case winterImpacts
 
     var id: Int { rawValue }
 
@@ -243,7 +285,7 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
         case .welcome: 1
         case .disclaimer: 2
         case .locationPermission, .alwaysUpgrade: 3
-        case .notificationPermission: 4
+        case .notificationPermission, .winterImpacts: 4
         }
     }
 
@@ -251,12 +293,18 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
         if self == .alwaysUpgrade {
             return "Optional step · Required setup: 3 of 4"
         }
+        if self == .winterImpacts {
+            return "Optional step · Winter Impacts"
+        }
         return "Step \(requiredStage) of \(Self.requiredStageCount)"
     }
 
     var progressAccessibilityLabel: String {
         if self == .alwaysUpgrade {
             return "Optional background awareness step. Required setup is 3 of 4 steps."
+        }
+        if self == .winterImpacts {
+            return "Optional Winter Impacts step. Required setup is complete."
         }
         return "Step \(requiredStage) of \(Self.requiredStageCount)"
     }
@@ -275,6 +323,8 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
         case .alwaysUpgrade:
             return .notificationPermission
         case .notificationPermission:
+            return .winterImpacts
+        case .winterImpacts:
             return nil
         }
     }
