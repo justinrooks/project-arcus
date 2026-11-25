@@ -261,12 +261,16 @@ struct TodayWinterImpactsScope: ViewModifier {
     }
 }
 
-struct TodayWinterImpactsRail<Awareness: View>: View {
+struct TodayWinterImpactsDisplay {
+    let projection: WinterImpactsPresentation
+    let openDetail: (Int) -> Void
+}
+
+struct TodayWinterImpactsSection<Awareness: View>: View {
     @Environment(\.todayWinterImpacts) private var inputs
     @State private var selectedDay: Int?
 
-    var winterOwnsHero = false
-    @ViewBuilder let awareness: () -> Awareness
+    @ViewBuilder let awareness: (TodayWinterImpactsDisplay?) -> Awareness
 
     var body: some View {
         if let inputs {
@@ -281,12 +285,7 @@ struct TodayWinterImpactsRail<Awareness: View>: View {
                     accepted: inputs.accepted.wrappedValue, currentLocation: inputs.locationAt(time),
                     enabled: inputs.isEnabled(), at: time
                 )
-                VStack(spacing: 16) {
-                    awareness()
-                    WinterImpactsRailButton(projection: projection, winterOwnsHero: winterOwnsHero) {
-                        selectedDay = $0
-                    }
-                }
+                awareness(.init(projection: projection) { selectedDay = $0 })
             }
             .navigationDestination(item: $selectedDay) { day in
                 WinterImpactsDetailView(
@@ -295,12 +294,12 @@ struct TodayWinterImpactsRail<Awareness: View>: View {
                 )
             }
         } else {
-            awareness()
+            awareness(nil)
         }
     }
 }
 
-private struct WinterImpactsRailButton: View {
+struct WinterImpactsRailButton: View {
     let projection: WinterImpactsPresentation
     let winterOwnsHero: Bool
     let action: (Int) -> Void
@@ -375,6 +374,14 @@ struct WinterImpactsDetailFixture: View {
 
     @State private var liveAssessment: WSSIAcceptedAssessment?
     @State private var moved = false
+    @State private var alertCount = 2
+    @State private var missingRegionContext = false
+    @State private var calmForecast = false
+    @State private var hasFireAssessment = true
+
+    private var heroDay: Int? {
+        ProcessInfo.processInfo.environment["UI_TESTS_WINTER_IMPACTS_HERO_DAY"].flatMap(Int.init)
+    }
 
     var body: some View {
         let railFixture = ProcessInfo.processInfo.environment["UI_TESTS_WINTER_IMPACTS_RAIL"] == "1"
@@ -390,7 +397,14 @@ struct WinterImpactsDetailFixture: View {
             if railFixture {
                 railToday
                     .task {
-                        liveAssessment = .init(location: location, periods: dayTwo, refreshStatus: status)
+                        let periods = heroDay.map { day in
+                            let now = Date.now
+                            return [
+                                period(day, .overallImpact, .match(day == 1 ? .moderate : .major), now: now),
+                                period(day, .snowAmount, .match(.minor), now: now)
+                            ]
+                        } ?? dayTwo
+                        liveAssessment = .init(location: location, periods: periods, refreshStatus: status)
                     }
             } else {
                 let accepted = WSSIAcceptedAssessment(location: location, periods: dayTwo + [
@@ -417,11 +431,14 @@ struct WinterImpactsDetailFixture: View {
                 ScrollView {
                     SummaryView(
                         locationDisplayName: "Test area",
-                        stormRisk: .enhanced, severeRisk: .tornado(probability: 0.10), fireRisk: .elevated,
-                        alerts: [warning],
+                        stormRisk: calmForecast ? .allClear : .enhanced,
+                        severeRisk: calmForecast ? .allClear : .tornado(probability: 0.10),
+                        fireRisk: hasFireAssessment ? (calmForecast ? .clear : .elevated) : nil,
+                        alerts: heroDay == nil ? [warning] : Array([watch, warning].prefix(alertCount)),
                         todayContentState: .current,
                         localAlertsDisplayState: .current(content: .populated, source: .cached),
-                        readinessState: .ready, resolutionState: .init(), showsOfflineToken: offline,
+                        readinessState: missingRegionContext ? .locationUnavailable : .ready,
+                        resolutionState: .init(), showsOfflineToken: offline,
                         onOpenMapLayer: { _ in }, onOpenAlerts: {}, onOpenOutlooks: {}
                     )
                     .toolbar(.hidden, for: .navigationBar)
@@ -438,7 +455,13 @@ struct WinterImpactsDetailFixture: View {
             ))
 
             HStack {
+                if heroDay != nil {
+                    Button("Remove highest alert") { alertCount = max(0, alertCount - 1) }
+                    Button("Toggle regional context") { missingRegionContext.toggle() }
+                }
                 Button("Accept updated forecast") {
+                    if calmForecast { hasFireAssessment = false }
+                    calmForecast = heroDay != nil
                     liveAssessment = .init(
                         location: location, periods: [period(2, .snowAmount, .match(.minor))],
                         refreshStatus: .reconciled([])
@@ -454,10 +477,13 @@ struct WinterImpactsDetailFixture: View {
         }
     }
 
-    private var warning: AlertDTO {
+    private var warning: AlertDTO { alert(title: "Severe Thunderstorm Warning") }
+    private var watch: AlertDTO { alert(title: "Tornado Watch") }
+
+    private func alert(title: String) -> AlertDTO {
         AlertDTO(
-            id: "winter-rail-warning", messageId: "winter-rail-warning", currentRevisionSent: .now,
-            title: "Severe Thunderstorm Warning", headline: "A severe thunderstorm is nearby.",
+            id: title, messageId: title, currentRevisionSent: .now,
+            title: title, headline: "A severe thunderstorm is nearby.",
             issued: .now - 900, expires: .now + 3_600, ends: .now + 3_600,
             messageType: "Alert", sender: "NWS Test Office", severity: "Extreme", urgency: "Immediate",
             certainty: "Likely", description: "A severe thunderstorm is nearby.", instruction: "Seek shelter.",
@@ -469,9 +495,10 @@ struct WinterImpactsDetailFixture: View {
     }
 
     private func period(
-        _ day: Int, _ product: WSSIProduct, _ impact: WSSIPointAssessment.Impact, expired: Bool = false
+        _ day: Int, _ product: WSSIProduct, _ impact: WSSIPointAssessment.Impact,
+        expired: Bool = false, now: Date = .now
     ) -> WSSIAcceptedAssessment.Period {
-        let start = expired ? Date.now - 172_800 : Date.now + Double(day - 1) * 86_400 - 3_600
+        let start = expired ? now - 172_800 : now + Double(day - 1) * 86_400 - 3_600
         return .init(assessment: .init(
             product: product, day: day, point: location.point,
             revision: .init(revision: UUID(), issuedAt: .now, validFrom: start, validTo: start + 86_400,

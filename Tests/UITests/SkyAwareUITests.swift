@@ -205,7 +205,71 @@ final class SkyAwareUITests: XCTestCase {
             XCTAssertTrue(hero.waitForExistence(timeout: 5))
             XCTAssertFalse(rail.exists)
             app.terminate()
+
+            verifyWinterImpactsHero(appearance: appearance, day: appearance == "light" ? 1 : 2)
         }
+    }
+
+    @MainActor
+    private func verifyWinterImpactsHero(appearance: String, day: Int) {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_DETAIL"] = "1"
+        app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_RAIL"] = "1"
+        app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = appearance
+        app.launchEnvironment["UI_TESTS_WINTER_IMPACTS_HERO_DAY"] = String(day)
+        app.launch()
+
+        let hero = app.buttons["summary-primary-awareness"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 10))
+        XCTAssertEqual(hero.label, "Severe Thunderstorm Warning")
+        app.buttons["Remove highest alert"].tap()
+        XCTAssertEqual(hero.label, "Tornado Watch")
+        app.buttons["Remove highest alert"].tap()
+        XCTAssertEqual(hero.label, "Winter Impacts")
+        let severity = day == 1 ? "Moderate" : "Major"
+        XCTAssertEqual(hero.value as? String, "\(severity) overall impacts forecast for Day \(day).")
+
+        let rail = app.buttons["summary-winter-impacts-rail"]
+        XCTAssertTrue(rail.label.contains("Day \(day)"))
+        XCTAssertTrue(rail.label.contains("Snow Amount"))
+        let scroll = app.scrollViews["summary-scroll"]
+        scrollUntilHittable(hero, in: scroll)
+        attachScreenshot(app, named: "winter-impacts-hero-day\(day)-\(appearance)")
+        hero.tap()
+
+        XCTAssertTrue(app.navigationBars["Winter Impacts"].waitForExistence(timeout: 5))
+        let detail = app.navigationBars["Winter Impacts"]
+        XCTAssertEqual(app.staticTexts["winter-classification-Overall_Impact"].label, severity)
+        app.buttons["Toggle regional context"].tap()
+        detail.buttons.firstMatch.tap()
+        XCTAssertFalse(hero.exists)
+        scrollUntilHittable(rail, in: scroll)
+        XCTAssertTrue(rail.isHittable)
+        rail.tap()
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["winter-classification-Overall_Impact"].label, severity)
+        app.buttons["Toggle regional context"].tap()
+        detail.buttons.firstMatch.tap()
+        app.buttons["Accept updated forecast"].tap()
+        let heroElement = app.descendants(matching: .any).matching(identifier: "summary-primary-awareness").firstMatch
+        XCTAssertEqual(heroElement.label, "No Immediate Severe Threats")
+        XCTAssertFalse(hero.exists)
+        app.buttons["Accept updated forecast"].tap()
+        XCTAssertEqual(heroElement.label, "Risk Data Unavailable")
+        scrollUntilHittable(rail, in: scroll)
+        XCTAssertTrue(rail.isHittable)
+        rail.tap()
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        app.buttons["Move outside forecast"].tap()
+        XCTAssertEqual(app.staticTexts["winter-classification-Overall_Impact"].label, "Unavailable for this location")
+        detail.buttons.firstMatch.tap()
+        XCTAssertEqual(heroElement.label, "Risk Data Unavailable")
+        XCTAssertFalse(rail.exists)
+        app.terminate()
     }
 
     @MainActor
