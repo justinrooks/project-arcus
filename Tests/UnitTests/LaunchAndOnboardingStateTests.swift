@@ -293,20 +293,39 @@ struct OnboardingStepTests {
         )
     }
 
-    @Test("always upgrade and notification complete the flow")
+    @Test("notification setup leads to the optional winter choice before completion")
     func terminalStepsCompleteTheFlow() {
         #expect(OnboardingStep.alwaysUpgrade.nextStep() == .notificationPermission)
-        #expect(OnboardingStep.notificationPermission.nextStep() == nil)
+        #expect(OnboardingStep.notificationPermission.nextStep() == .winterImpacts)
+        #expect(OnboardingStep.winterImpacts.nextStep() == nil)
     }
 
-    @Test("optional Always access is disclosed without inflating required progress")
-    func optionalAlwaysAccessDoesNotCountAsRequiredProgress() {
+    @Test("optional steps are disclosed without inflating required progress")
+    func optionalStepsDoNotCountAsRequiredProgress() {
         #expect(OnboardingStep.requiredStageCount == 4)
         #expect(OnboardingStep.locationPermission.requiredStage == 3)
         #expect(OnboardingStep.alwaysUpgrade.requiredStage == 3)
         #expect(OnboardingStep.notificationPermission.requiredStage == 4)
+        #expect(OnboardingStep.winterImpacts.requiredStage == 4)
+        #expect(OnboardingStep.winterImpacts.progressAccessibilityLabel.contains("Optional Winter Impacts"))
         #expect(OnboardingStep.alwaysUpgrade.progressTitle.contains("Optional step"))
         #expect(OnboardingStep.alwaysUpgrade.progressAccessibilityLabel.contains("Optional background awareness"))
+    }
+
+    @Test("winter choice is recorded before onboarding completes", arguments: [false, true])
+    @MainActor
+    func winterChoiceIsRecordedBeforeCompletion(enabled: Bool) throws {
+        let suite = "OnboardingWinterImpactsChoiceTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = WinterImpactsPreferenceController(defaults: defaults, service: nil)
+
+        var completed = false
+        OnboardingWinterImpactsChoice.complete(enabled: enabled, preference: controller) {
+            #expect(WinterImpactsPreference(defaults: defaults).choice == enabled)
+            completed = true
+        }
+        #expect(completed)
     }
 
     @Test("Always access is only inserted after When In Use authorization")
@@ -366,34 +385,35 @@ struct OnboardingAlwaysUpgradeActionTests {
 
 @Suite("Onboarding remote setup availability")
 struct OnboardingRemoteSetupDecisionTests {
-    @Test("ineligible notification authorization does not continue into remote setup")
-    func ineligibleNotificationAuthorizationDoesNotContinue() {
-        #expect(
-            OnboardingRemoteSetupDecision.shouldContinue(
-                remoteRegistrationEligible: false,
-                arcusSignalPushEnabled: true
-            ) == false
-        )
+    enum Outcome: CaseIterable {
+        case denied, unavailable, tokenTimeout, registered
     }
 
-    @Test("unavailable Arcus configuration does not continue into remote setup")
-    func unavailableArcusConfigurationDoesNotContinue() {
-        #expect(
-            OnboardingRemoteSetupDecision.shouldContinue(
-                remoteRegistrationEligible: true,
-                arcusSignalPushEnabled: false
-            ) == false
+    @Test("notification setup always hands off after its applicable work", arguments: Outcome.allCases)
+    @MainActor
+    func allNotificationOutcomesHandOff(outcome: Outcome) async {
+        var calls: [String] = []
+        await OnboardingRemoteSetupDecision.perform(
+            arcusSignalPushEnabled: outcome != .unavailable,
+            requestAuthorization: {
+                calls.append("authorization")
+                return outcome != .denied
+            },
+            waitForToken: {
+                calls.append("token")
+                return outcome == .registered
+            },
+            prepareLocation: { calls.append("location") },
+            finish: { calls.append("finish") }
         )
-    }
-
-    @Test("eligible authorization with Arcus configuration continues into remote setup")
-    func eligibleAuthorizationWithConfigurationContinues() {
-        #expect(
-            OnboardingRemoteSetupDecision.shouldContinue(
-                remoteRegistrationEligible: true,
-                arcusSignalPushEnabled: true
-            )
-        )
+        switch outcome {
+        case .denied, .unavailable:
+            #expect(calls == ["authorization", "finish"])
+        case .tokenTimeout:
+            #expect(calls == ["authorization", "token", "finish"])
+        case .registered:
+            #expect(calls == ["authorization", "token", "location", "finish"])
+        }
     }
 }
 
