@@ -65,6 +65,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     private var enabled: Bool
     private var admission = UUID()
     private var refreshStatus: WSSIAcceptedAssessment.RefreshStatus = .notAttempted
+    private var refreshOutcomeGeneration: UInt64 = 0
     private var task: Task<Void, Never>?
     private var isBackgroundRefresh = false
     private var offeredWhileCancelling = false
@@ -146,8 +147,8 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
             let withinBudget = context.map { ContinuousClock.now < $0.budget.workDeadline } ?? true
             if admitted == admission, !Task.isCancelled, withinBudget {
                 switch outcome {
-                case .reconciled(_, let slots): refreshStatus = .reconciled(slots)
-                case .manifestFailed(let failure, _): refreshStatus = .manifestFailed(failure)
+                case .reconciled(_, let slots): publishRefreshStatus(.reconciled(slots))
+                case .manifestFailed(let failure, _): publishRefreshStatus(.manifestFailed(failure))
                 case .disabled, .cancelled, .superseded: break
                 }
             }
@@ -162,6 +163,11 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         return refresh
     }
 
+    private func publishRefreshStatus(_ status: WSSIAcceptedAssessment.RefreshStatus) {
+        refreshStatus = status
+        refreshOutcomeGeneration &+= 1
+    }
+
     #if DEBUG
     func waitForRefresh() async { await task?.value }
     #endif
@@ -171,11 +177,12 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         let admitted = admission
         guard let location = await currentLocation(), admitted == admission else { return nil }
         let status = refreshStatus
+        let outcomeGeneration = refreshOutcomeGeneration
         // Use a fresh context against the committed store. A suspended writer may hold uncommitted models.
         let reader = WSSIAcceptedStore(modelContainer: container)
         let periods = try await reader.assess(location.point, at: time)
         let latest = await currentLocation()
-        guard admitted == admission, latest == location else { return nil }
+        guard admitted == admission, latest == location, outcomeGeneration == refreshOutcomeGeneration else { return nil }
         try Task.checkCancellation()
         return .init(location: location, periods: periods, refreshStatus: status)
     }

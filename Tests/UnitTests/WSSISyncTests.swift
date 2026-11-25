@@ -351,6 +351,59 @@ struct WSSISyncTests {
         }
     }
 
+    @Test @MainActor func foregroundDropsAssessmentWhenRecoveryPublishesDuringRead() async throws {
+        let hold = SyncGate()
+        let ready = AsyncStream<Void>.makeStream()
+        let fixture = SyncFixture()
+        let manifest = try fixture.manifest(advertised: 1)
+        let http = SyncHTTP { request, index in
+            if index == 0 { return .init(status: 503, headers: [:], data: nil) }
+            return try fixture.response(for: request.path, manifest: manifest)
+        }
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        let location = WSSIAcceptedAssessment.Location(
+            point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: time
+        )
+        var checks = 0
+        let foreground = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(nil),
+            enabled: true,
+            currentLocation: {
+                checks += 1
+                if checks == 4 {
+                    ready.continuation.yield()
+                    await hold.suspend()
+                }
+                return location
+            }
+        )
+        await foreground.offerRefresh()
+        await foreground.waitForRefresh()
+        let failed = try #require(try await foreground.assessment(at: time))
+        #expect(failed.refreshStatus == .manifestFailed(.httpStatus(503, retryAfterSeconds: nil)))
+
+        let read = Task {
+            defer { ready.continuation.finish() }
+            return try await foreground.assessment(at: time)
+        }
+        var readiness = ready.stream.makeAsyncIterator()
+        try #require(await readiness.next() != nil, "Assessment returned before rechecking its location")
+        await hold.waitUntilSuspended()
+        await foreground.offerRefresh()
+        await foreground.waitForRefresh()
+        await hold.release()
+        #expect(try await read.value == nil)
+
+        let recovered = try #require(try await foreground.assessment(at: time))
+        guard case .reconciled(let slots) = recovered.refreshStatus else {
+            Issue.record("Expected a completed reconciliation after recovery")
+            return
+        }
+        #expect(slots.first?.outcome == .accepted(fixture.revisions[0]))
+        #expect(recovered.periods.first?.assessment.revision?.revision == fixture.revisions[0])
+    }
+
     @Test(arguments: [false, true])
     @MainActor func foregroundDropsAssessmentWhenLocationOrGateChangesDuringRead(toggleGate: Bool) async throws {
         let hold = SyncGate()
