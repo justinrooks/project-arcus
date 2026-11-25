@@ -74,12 +74,19 @@ final class WSSIStoredManifest {
 actor WSSIAcceptedStore {
     private var save: @Sendable (ModelContext) throws -> Void = { try $0.save() }
 
-    init(modelContainer: ModelContainer, save: @escaping @Sendable (ModelContext) throws -> Void) {
+    private var onCommit: (@Sendable () async -> Void)?
+
+    init(
+        modelContainer: ModelContainer,
+        save: @escaping @Sendable (ModelContext) throws -> Void,
+        onCommit: (@Sendable () async -> Void)? = nil
+    ) {
         let context = ModelContext(modelContainer)
         context.autosaveEnabled = false
         modelExecutor = DefaultSerialModelExecutor(modelContext: context)
         self.modelContainer = modelContainer
         self.save = save
+        self.onCommit = onCommit
     }
 
     struct Manifest: Sendable {
@@ -130,7 +137,7 @@ actor WSSIAcceptedStore {
 
     /// A 304 leaves this representation in place. Its entries still need comparison with local slots.
     @discardableResult
-    func saveManifest(_ body: Data, eTag: String?, replacing generation: UUID?) throws -> Manifest {
+    func saveManifest(_ body: Data, eTag: String?, replacing generation: UUID?) async throws -> Manifest {
         let document = try Self.usableManifest(from: body)
         let previous = try manifestRow()
         let usableGeneration = previous.flatMap { row in
@@ -140,7 +147,7 @@ actor WSSIAcceptedStore {
         try Self.checkAcceptanceCancellation()
         let row = WSSIStoredManifest(body: body, eTag: Self.validatedETag(eTag))
         let saved = Manifest(generation: row.generation, document: document, eTag: row.eTag)
-        try transaction {
+        try await transaction {
             if let previous { modelContext.delete(previous) }
             modelContext.insert(row)
         }
@@ -151,7 +158,7 @@ actor WSSIAcceptedStore {
     /// Revalidating the same immutable revision leaves the accepted row intact.
     func acceptGeometry(
         _ geometry: Data, eTag: String?, product: WSSIProduct, day: Int, manifestGeneration: UUID
-    ) throws {
+    ) async throws {
         guard let manifest = try manifest(), manifest.generation == manifestGeneration else {
             throw Rejection.supersededManifest
         }
@@ -177,7 +184,7 @@ actor WSSIAcceptedStore {
             }
         }
         try Self.checkAcceptanceCancellation()
-        try transaction {
+        try await transaction {
             if let row { modelContext.delete(row) }
             modelContext.insert(WSSIAcceptedSlot(
                 key: key, entry: entry, accepted: candidate, geometry: geometry, eTag: Self.validatedETag(eTag)
@@ -221,7 +228,7 @@ actor WSSIAcceptedStore {
         eTag.flatMap { HTTPETag.opaqueValue($0) == nil ? nil : $0 }
     }
 
-    private func transaction(_ change: () -> Void) throws {
+    private func transaction(_ change: () -> Void) async throws {
         modelContext.autosaveEnabled = false
         do {
             change()
@@ -230,5 +237,7 @@ actor WSSIAcceptedStore {
             modelContext.rollback()
             throw error
         }
+        // Manifest metadata and geometry are both inputs to the accepted assessment.
+        await onCommit?()
     }
 }

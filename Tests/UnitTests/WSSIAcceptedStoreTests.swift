@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import Synchronization
 import Testing
 @testable import SkyAware
 
@@ -173,7 +174,12 @@ struct WSSIAcceptedStoreTests {
         }
 
         do {
-            let store = WSSIAcceptedStore(modelContainer: try reopen(url), save: { _ in throw SaveFailure.injected })
+            let notifications = Mutex(0)
+            let store = WSSIAcceptedStore(
+                modelContainer: try reopen(url),
+                save: { _ in throw SaveFailure.injected },
+                onCommit: { notifications.withLock { $0 += 1 } }
+            )
             let current = try #require(try await store.manifest())
             let next = current.document.datasets[1]
             #expect(current.eTag == #""m2""#)
@@ -182,6 +188,10 @@ struct WSSIAcceptedStoreTests {
                 try await store.acceptGeometry(pending, eTag: nil, product: next.product, day: next.day,
                                                manifestGeneration: current.generation)
             }
+            await #expect(throws: SaveFailure.injected) {
+                try await store.saveManifest(revisedBody, eTag: nil, replacing: current.generation)
+            }
+            #expect(notifications.withLock { $0 } == 0)
             let prior = try #require(try await store.slot(product: next.product, day: next.day))
             #expect(prior.revision == original.datasets[1].accepted)
         }

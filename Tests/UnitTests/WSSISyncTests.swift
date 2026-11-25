@@ -345,6 +345,7 @@ struct WSSISyncTests {
         let background = Task { await lifecycle.run() }
         await request.waitUntilSuspended()
         #expect(await scheduled.recorded)
+        #expect(await receivesSignal(from: updates), "The committed slot should publish before cancellation.")
 
         switch interruption {
         case .deadline:
@@ -362,8 +363,8 @@ struct WSSISyncTests {
         #expect(partial.refreshStatus == .notAttempted)
         #expect(partial.periods[0].assessment.revision?.revision == fixture.revisions[0])
         #expect(partial.periods[1].assessment.revision == nil)
+        #expect(await receivesSignal(from: updates), "Refresh termination should publish separately.")
         await request.release()
-        #expect(await receivesSignal(from: updates))
         if interruption != .foreground { await service.offerRefresh() }
         await foregroundManifest.waitUntilSuspended()
         await foregroundManifest.release()
@@ -511,6 +512,56 @@ struct WSSISyncTests {
         #expect(slots.count == 15)
         #expect(slots.first { $0.product == .snowAmount && $0.day == 1 }?.outcome == .current(fixture.revisions[3]))
         #expect(recovered.periods[3].assessment.revision == retained.revision)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func foregroundPublishesAcceptedOverallBeforeReconciliationFinishes() async throws {
+        let original = SyncFixture()
+        var revised = original.replacingFirstSlot()
+        revised.revise(1)
+        let replacement = revised
+        let initial = try original.manifest(advertised: 2)
+        let updated = try replacement.manifest(advertised: 2)
+        let url = try temporaryStore()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await seedForegroundStore(at: url, fixture: original, manifest: initial)
+
+        let overallGeometry = SyncGate()
+        let subsequentGeometry = SyncGate()
+        let http = SyncHTTP { request, _ in
+            if request.path == replacement.paths[0] { await overallGeometry.suspend() }
+            if request.path == replacement.paths[1] { await subsequentGeometry.suspend() }
+            return try replacement.response(for: request.path, manifest: updated)
+        }
+        let time = try Date.ISO8601FormatStyle().parse("2026-11-24T00:00:00Z")
+        let foreground = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(url),
+            enabled: true,
+            currentLocation: {
+                .init(point: .init(latitude: 0.25, longitude: 0.75), h3Cell: 1, observedAt: time)
+            }
+        )
+        let updates = await foreground.assessmentUpdates()
+        #expect(await receivesSignal(from: updates))
+        #expect(try await foreground.assessment(at: time)?.periods[0].assessment.revision?.revision == original.revisions[0])
+
+        await foreground.offerRefresh()
+        await overallGeometry.waitUntilSuspended()
+        #expect(await receivesSignal(from: updates), "A manifest commit should wake subscribers before geometry arrives.")
+        #expect((try? await foreground.assessment(at: time))?.periods[0].assessment.revision?.revision == original.revisions[0])
+        await overallGeometry.release()
+        await subsequentGeometry.waitUntilSuspended()
+        let signaled = await receivesSignal(from: updates)
+        let partial = try? await foreground.assessment(at: time)
+        await subsequentGeometry.release()
+        await foreground.waitForRefresh()
+
+        #expect(signaled, "A durable geometry commit should wake subscribers before reconciliation finishes.")
+        let assessment = try #require(partial)
+        #expect(assessment.periods[0].assessment.revision?.revision == replacement.revisions[0])
+        #expect(assessment.periods[0].assessment.impact == .match(.major))
+        #expect(assessment.refreshStatus == .notAttempted)
     }
 
     @Test func foregroundReportsSlotFailureUntilReplacementSucceeds() async throws {

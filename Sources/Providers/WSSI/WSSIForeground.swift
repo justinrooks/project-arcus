@@ -148,19 +148,15 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     // Lazy initialization on this actor keeps SwiftData's serial executor off the main queue.
     private lazy var sync = WSSISync(
         client: client,
-        store: WSSIAcceptedStore(modelContainer: container, save: { [save, weak self] context in
-            try save(context)
-            // A canceled waiter can return before a transaction already inside save commits.
-            if Task.isCancelled {
-                Task { await self?.assessmentDidChange() }
-            }
+        store: WSSIAcceptedStore(modelContainer: container, save: save, onCommit: { [weak self] in
+            await self?.assessmentDidChange()
         })
     )
     private var enabled: Bool
     private var appliedPreferenceRevision: UInt64 = 0
     private var admission = UUID()
     private var refreshStatus: WSSIAcceptedAssessment.RefreshStatus = .notAttempted
-    private var refreshOutcomeGeneration: UInt64 = 0
+    private var assessmentGeneration: UInt64 = 0
     private var assessmentObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
     private var task: Task<Void, Never>?
     private var isBackgroundRefresh = false
@@ -253,7 +249,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
                 case .disabled, .cancelled, .superseded: break
                 }
             }
-            // A cancelled pass can still have committed individual slots.
+            // Report refresh completion independently of accepted-store commits.
             assessmentDidChange()
             task = nil
             isBackgroundRefresh = false
@@ -267,7 +263,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     }
 
     private func assessmentDidChange() {
-        refreshOutcomeGeneration &+= 1
+        assessmentGeneration &+= 1
         invalidateAssessments()
     }
 
@@ -309,12 +305,12 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         guard let location = await currentLocation(), admitted == admission,
               preferenceRevision == preferenceAdmission?.snapshot().revision else { return nil }
         let status = refreshStatus
-        let outcomeGeneration = refreshOutcomeGeneration
+        let generation = assessmentGeneration
         // Use a fresh context against the committed store. A suspended writer may hold uncommitted models.
         let reader = WSSIAcceptedStore(modelContainer: container)
         let periods = try await reader.assess(location.point, at: time)
         let latest = await currentLocation()
-        guard admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, latest == location, outcomeGeneration == refreshOutcomeGeneration else { return nil }
+        guard admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, latest == location, generation == assessmentGeneration else { return nil }
         try Task.checkCancellation()
         return .init(location: location, periods: periods, refreshStatus: status)
     }
