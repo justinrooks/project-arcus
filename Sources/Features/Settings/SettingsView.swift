@@ -93,7 +93,6 @@ struct SettingsView: View {
     
     // MARK: Storm Setup
     @AppStorage("stormSetupEnabled", store: UserDefaults.shared) private var stormSetupEnabled: Bool = false
-    @AppStorage(WinterImpactsPreference.enabledKey, store: UserDefaults.shared) private var winterImpactsEnabled: Bool = false
     @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared) private var detailedIngredientsEnabled: Bool = false
     
     private var brevityBinding: Binding<BrevityLevel> {
@@ -222,13 +221,7 @@ struct SettingsView: View {
 
                 sectionCard(title: "Winter Impacts", symbol: "snowflake", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Winter Impacts", isOn: Binding(
-                            get: { winterImpactsEnabled },
-                            set: { dependencies.winterImpactsPreference?.setChoice($0) }
-                        ))
-                            .disabled(dependencies.winterImpactsPreference == nil)
-                            .accessibilityIdentifier("settings-winter-impacts-toggle")
-                            .frame(minHeight: 44, alignment: .leading)
+                        WinterImpactsSettingsToggle(controller: dependencies.winterImpactsPreference)
                         Text("Shows guidance about potential winter weather impacts.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -391,6 +384,27 @@ struct SettingsView: View {
         .font(.subheadline)
     }
 
+}
+
+struct WinterImpactsSettingsToggle: View {
+    @AppStorage private var choice: Bool?
+    let controller: WinterImpactsPreferenceController?
+
+    init(defaults: UserDefaults? = UserDefaults.shared, controller: WinterImpactsPreferenceController?) {
+        _choice = AppStorage(WinterImpactsPreference.enabledKey, store: defaults)
+        self.controller = controller
+    }
+
+    var binding: Binding<Bool> {
+        Binding(get: { choice ?? false }, set: { controller?.setChoice($0) })
+    }
+
+    var body: some View {
+        Toggle("Winter Impacts", isOn: binding)
+            .disabled(controller == nil)
+            .accessibilityIdentifier("settings-winter-impacts-toggle")
+            .frame(minHeight: 44, alignment: .leading)
+    }
 }
 
 extension SettingsView {

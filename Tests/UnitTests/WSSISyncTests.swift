@@ -1,10 +1,25 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import SkyAware
 
 @Suite
 struct WSSISyncTests {
+    @Test @MainActor func settingsTogglePreservesUnansweredChoice() throws {
+        let suite = "WinterImpactsSettingsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = WinterImpactsPreferenceController(defaults: defaults, service: nil)
+        let toggle = WinterImpactsSettingsToggle(defaults: defaults, controller: controller)
+        #expect(ImageRenderer(content: toggle).uiImage != nil)
+        #expect(controller.preference.choice == nil)
+        #expect(toggle.binding.wrappedValue == false)
+        toggle.binding.wrappedValue = false
+        #expect(controller.preference.choice == false)
+        toggle.binding.wrappedValue = true
+        #expect(controller.preference.choice == true)
+    }
     @Test @MainActor func preferenceRevisionFencesSuspendedAssessment() async throws {
         let hold = SyncGate()
         let gate = WinterImpactsAdmission(enabled: true)
