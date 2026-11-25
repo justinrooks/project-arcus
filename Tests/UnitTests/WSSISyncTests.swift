@@ -1,10 +1,171 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import SkyAware
 
 @Suite
 struct WSSISyncTests {
+    @Test @MainActor func settingsTogglePreservesUnansweredChoice() throws {
+        let suite = "WinterImpactsSettingsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = WinterImpactsPreferenceController(defaults: defaults, service: nil)
+        let toggle = WinterImpactsSettingsToggle(defaults: defaults, controller: controller)
+        #expect(ImageRenderer(content: toggle).uiImage != nil)
+        #expect(controller.preference.choice == nil)
+        #expect(toggle.binding.wrappedValue == false)
+        toggle.binding.wrappedValue = false
+        #expect(controller.preference.choice == false)
+        toggle.binding.wrappedValue = true
+        #expect(controller.preference.choice == true)
+    }
+    @Test @MainActor func preferenceRevisionFencesSuspendedAssessment() async throws {
+        let hold = SyncGate()
+        let gate = WinterImpactsAdmission(enabled: true)
+        var checks = 0
+        let location = WSSIAcceptedAssessment.Location(point: .init(latitude: 0, longitude: 0), h3Cell: 1, observedAt: .now)
+        let foreground = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!,
+                                    http: SyncHTTP { _, _ in throw URLError(.notConnectedToInternet) }),
+            container: try container(nil), enabled: true, preferenceAdmission: gate,
+            currentLocation: {
+                checks += 1
+                if checks == 1 { await hold.suspend() }
+                return location
+            }
+        )
+        let read = Task { try await foreground.assessment(at: .now) }
+        await hold.waitUntilSuspended()
+        gate.update(false)
+        gate.update(true)
+        await hold.release()
+        #expect(try await read.value == nil)
+    }
+    @Test @MainActor func disabledPreferenceFencesQueuedOffer() async throws {
+        let suite = "WinterImpactsFenceTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: WinterImpactsPreference.enabledKey)
+        let http = SyncHTTP { _, _ in
+            Issue.record("Disabled preference admitted a request")
+            throw URLError(.notConnectedToInternet)
+        }
+        let gate = WinterImpactsAdmission(enabled: true)
+        let service = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(nil), enabled: true, preferenceAdmission: gate, currentLocation: { nil }
+        )
+        gate.update(false)
+        await service.offerRefresh()
+        await service.waitForRefresh()
+        #expect(await http.requests.isEmpty)
+    }
+    @Test @MainActor func preferencePersistsChoicesAndPreservesOtherSettings() throws {
+        let suite = "WinterImpactsPreferenceTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "stormSetupEnabled")
+        let controller = WinterImpactsPreferenceController(defaults: defaults, service: nil)
+        #expect(controller.preference.choice == nil)
+        #expect(!controller.preference.isEnabled)
+        controller.setChoice(false)
+        #expect(WinterImpactsPreference(defaults: defaults).choice == false)
+        controller.setChoice(true)
+        #expect(WinterImpactsPreference(defaults: defaults).isEnabled)
+        controller.preference.dismissDiscovery()
+        #expect(WinterImpactsPreference(defaults: defaults).discoveryDismissed)
+        #expect(defaults.bool(forKey: "stormSetupEnabled"))
+    }
+
+    @Test @MainActor func rapidPreferenceChangesCancelOldRefresh() async throws {
+        let suite = "WinterImpactsAdmissionTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: WinterImpactsPreference.enabledKey)
+        let gate = SyncGate()
+        let http = SyncHTTP { _, index in
+            if index == 0 { await gate.suspend() }
+            return .init(status: 503, headers: [:], data: nil)
+        }
+        let runtime = WinterImpactsRuntime(
+            defaults: defaults, origin: URL(string: "https://wssi.example.test")!, container: try container(nil),
+            makeClient: { ForgeWSSIClient(origin: $0, http: http) }, currentLocation: { nil }
+        )
+        let service = try #require(runtime.service)
+        let controller = runtime.preference
+        await service.offerRefresh()
+        await gate.waitUntilSuspended()
+        controller.setChoice(false)
+        controller.setChoice(true)
+        await controller.waitForPendingChanges()
+        await gate.release()
+        await service.waitForRefresh()
+        #expect(await http.requests.count == 2)
+        #expect(await http.peakInFlight == 1)
+        #expect(WinterImpactsPreference(defaults: defaults).isEnabled)
+    }
+
+    @Test @MainActor func runtimeRestoresChoiceAndSkipsSupersededEnable() async throws {
+        let suite = "WinterImpactsRuntimeTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "stormSetupEnabled")
+        let http = SyncHTTP { _, _ in .init(status: 503, headers: [:], data: nil) }
+        let modelContainer = try container(nil)
+        let origin = URL(string: "https://wssi.example.test")!
+        func runtime(_ origin: URL?) -> WinterImpactsRuntime {
+            WinterImpactsRuntime(defaults: defaults, origin: origin, container: modelContainer,
+                                 makeClient: { ForgeWSSIClient(origin: $0, http: http) }, currentLocation: { nil })
+        }
+        let fresh = runtime(origin)
+        await fresh.service?.offerRefresh()
+        await fresh.service?.waitForRefresh()
+        #expect(await http.requests.isEmpty)
+        fresh.preference.setChoice(true)
+        fresh.preference.setChoice(false)
+        await fresh.preference.waitForPendingChanges()
+        #expect(await http.requests.isEmpty)
+        let disabled = runtime(origin)
+        await disabled.service?.offerRefresh()
+        await disabled.service?.waitForRefresh()
+        #expect(await http.requests.isEmpty)
+        disabled.preference.setChoice(true)
+        await disabled.preference.waitForPendingChanges()
+        await disabled.service?.waitForRefresh()
+        let count = await http.requests.count
+        #expect(count == 1)
+        let restored = runtime(origin)
+        await restored.service?.offerRefresh()
+        await restored.service?.waitForRefresh()
+        #expect(await http.requests.count == count + 1)
+        let unavailable = runtime(nil)
+        #expect(unavailable.service == nil)
+        unavailable.preference.setChoice(false)
+        await unavailable.preference.waitForPendingChanges()
+        #expect(WinterImpactsPreference(defaults: defaults).choice == false)
+        #expect(defaults.bool(forKey: "stormSetupEnabled"))
+    }
+
+    @Test func initialPreferenceControlsForegroundAdmission() async throws {
+        let http = SyncHTTP { _, _ in
+            .init(status: 503, headers: [:], data: nil)
+        }
+        let service = WSSIForeground(
+            client: ForgeWSSIClient(origin: URL(string: "https://wssi.example.test")!, http: http),
+            container: try container(nil),
+            enabled: true,
+            currentLocation: { nil }
+        )
+        await service.offerRefresh()
+        await service.waitForRefresh()
+        #expect(await http.requests.count > 0)
+        await service.setEnabled(false)
+        let count = await http.requests.count
+        await service.offerRefresh()
+        #expect(await http.requests.count == count)
+    }
+
     @Test func backgroundSkipsDisabledAndExhaustedAdmission() async throws {
         let http = SyncHTTP { _, _ in
             Issue.record("WSSI made a request without admission")

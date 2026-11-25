@@ -1,5 +1,88 @@
 import Foundation
 import SwiftData
+import Synchronization
+
+final class WinterImpactsAdmission: Sendable {
+    private let state: Mutex<(enabled: Bool, revision: UInt64)>
+    init(enabled: Bool) { state = Mutex((enabled, 0)) }
+    func update(_ enabled: Bool) { state.withLock { $0 = (enabled, $0.revision &+ 1) } }
+    func snapshot() -> (enabled: Bool, revision: UInt64) { state.withLock { $0 } }
+}
+
+/// Shared choice state for Settings and future onboarding and discovery surfaces.
+struct WinterImpactsPreference {
+    static let enabledKey = "winterImpactsEnabled"
+    static let discoveryDismissedKey = "winterImpactsDiscoveryDismissed"
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults) { self.defaults = defaults }
+
+    var choice: Bool? { defaults.object(forKey: Self.enabledKey) as? Bool }
+    var isEnabled: Bool { choice ?? false }
+    var discoveryDismissed: Bool { defaults.bool(forKey: Self.discoveryDismissedKey) }
+
+    fileprivate func setChoice(_ enabled: Bool) { defaults.set(enabled, forKey: Self.enabledKey) }
+    func dismissDiscovery() { defaults.set(true, forKey: Self.discoveryDismissedKey) }
+}
+
+@MainActor
+struct WinterImpactsRuntime {
+    let service: WSSIForeground?
+    let preference: WinterImpactsPreferenceController
+
+    init(
+        defaults: UserDefaults,
+        origin: URL?,
+        container: ModelContainer,
+        makeClient: (URL) -> ForgeWSSIClient = { ForgeWSSIClient(origin: $0) },
+        currentLocation: @escaping @MainActor @Sendable () async -> WSSIAcceptedAssessment.Location?
+    ) {
+        let enabled = WinterImpactsPreference(defaults: defaults).isEnabled
+        let admission = WinterImpactsAdmission(enabled: enabled)
+        let service = origin.map {
+            WSSIForeground(client: makeClient($0), container: container, enabled: enabled, preferenceAdmission: admission, currentLocation: currentLocation)
+        }
+        self.service = service
+        preference = WinterImpactsPreferenceController(defaults: defaults, service: service, admission: admission)
+    }
+}
+
+/// Serializes explicit user choices so a rapid disable cannot be lost.
+@MainActor
+final class WinterImpactsPreferenceController {
+    let preference: WinterImpactsPreference
+    private let service: WSSIForeground?
+    private var pending: Task<Void, Never>?
+    private var generation: UInt64 = 0
+    private let admission: WinterImpactsAdmission?
+
+    init(defaults: UserDefaults, service: WSSIForeground?, admission: WinterImpactsAdmission? = nil) {
+        preference = WinterImpactsPreference(defaults: defaults)
+        self.service = service
+        self.admission = admission
+    }
+
+    func setChoice(_ enabled: Bool) {
+        let changed = preference.isEnabled != enabled
+        preference.setChoice(enabled)
+        guard changed else { return }
+        admission?.update(enabled)
+        let revision = admission?.snapshot().revision
+        generation &+= 1
+        let command = generation
+        let previous = pending
+        let service = service
+        pending = Task {
+            await previous?.value
+            if enabled && command != generation { return }
+            await service?.setEnabled(enabled, preferenceRevision: revision)
+            if enabled && command == generation { await service?.offerRefresh() }
+        }
+    }
+
+    func waitForPendingChanges() async { await pending?.value }
+}
 
 struct WSSIAcceptedAssessment: Sendable {
     struct Location: Equatable, Sendable {
@@ -54,6 +137,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     private let container: ModelContainer
     private let save: @Sendable (ModelContext) throws -> Void
     private let client: ForgeWSSIClient
+    private let preferenceAdmission: WinterImpactsAdmission?
     private let currentLocation: @MainActor @Sendable () async -> WSSIAcceptedAssessment.Location?
     private let waitForBackgroundDeadline: @Sendable (ContinuousClock.Instant) async throws -> Void
 
@@ -63,6 +147,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         store: WSSIAcceptedStore(modelContainer: container, save: save)
     )
     private var enabled: Bool
+    private var appliedPreferenceRevision: UInt64 = 0
     private var admission = UUID()
     private var refreshStatus: WSSIAcceptedAssessment.RefreshStatus = .notAttempted
     private var refreshOutcomeGeneration: UInt64 = 0
@@ -74,6 +159,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         client: ForgeWSSIClient,
         container: ModelContainer,
         enabled: Bool = false,
+        preferenceAdmission: WinterImpactsAdmission? = nil,
         save: @escaping @Sendable (ModelContext) throws -> Void = { try $0.save() },
         waitForBackgroundDeadline: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
             try await ContinuousClock().sleep(until: $0)
@@ -84,11 +170,13 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         self.container = container
         self.save = save
         self.enabled = enabled
+        self.preferenceAdmission = preferenceAdmission
         self.currentLocation = currentLocation
         self.waitForBackgroundDeadline = waitForBackgroundDeadline
     }
 
-    func setEnabled(_ value: Bool) {
+    func setEnabled(_ value: Bool, preferenceRevision: UInt64? = nil) {
+        if let preferenceRevision { appliedPreferenceRevision = preferenceRevision }
         guard enabled != value else { return }
         enabled = value
         admission = UUID()
@@ -100,7 +188,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     }
 
     func offerRefresh() {
-        guard enabled else { return }
+        guard enabled, preferenceIsCurrent else { return }
         if let task {
             if isBackgroundRefresh { task.cancel() }
             offeredWhileCancelling = task.isCancelled
@@ -110,7 +198,7 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     }
 
     func refreshInBackground(using budget: BackgroundRefreshBudget) async {
-        guard enabled, task == nil, !Task.isCancelled, ContinuousClock.now < budget.workDeadline else { return }
+        guard enabled, preferenceIsCurrent, task == nil, !Task.isCancelled, ContinuousClock.now < budget.workDeadline else { return }
         let context = BackgroundRefreshExecutionContext(budget: budget)
         let refresh = startRefresh(background: context)
         let waitForBackgroundDeadline = waitForBackgroundDeadline
@@ -138,14 +226,15 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     private func startRefresh(background context: BackgroundRefreshExecutionContext?) -> Task<Void, Never> {
         isBackgroundRefresh = context != nil
         let admitted = admission
+        let preferenceRevision = preferenceAdmission?.snapshot().revision
         let refresh = Task {
             let outcome = await BackgroundRefreshExecutionContext.$current.withValue(context) {
                 await HTTPExecutionMode.$current.withValue(context == nil ? .foreground : .background) {
-                    await sync.refresh(enabled: !Task.isCancelled)
+                    await sync.refresh(enabled: !Task.isCancelled && preferenceIsCurrent && preferenceRevision == preferenceAdmission?.snapshot().revision)
                 }
             }
             let withinBudget = context.map { ContinuousClock.now < $0.budget.workDeadline } ?? true
-            if admitted == admission, !Task.isCancelled, withinBudget {
+            if admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, !Task.isCancelled, withinBudget {
                 switch outcome {
                 case .reconciled(_, let slots): publishRefreshStatus(.reconciled(slots))
                 case .manifestFailed(let failure, _): publishRefreshStatus(.manifestFailed(failure))
@@ -168,21 +257,31 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
         refreshOutcomeGeneration &+= 1
     }
 
+    private var preferenceIsCurrent: Bool {
+        guard let state = preferenceAdmission?.snapshot() else { return true }
+        return state.enabled && state.revision == appliedPreferenceRevision
+    }
+
     #if DEBUG
-    func waitForRefresh() async { await task?.value }
+    func waitForRefresh() async {
+        while let task { await task.value }
+    }
     #endif
 
     func assessment(at time: Date) async throws -> WSSIAcceptedAssessment? {
-        guard enabled else { return nil }
+        let preferenceSnapshot = preferenceAdmission?.snapshot()
+        guard enabled, preferenceSnapshot.map({ $0.enabled && $0.revision == appliedPreferenceRevision }) ?? true else { return nil }
         let admitted = admission
-        guard let location = await currentLocation(), admitted == admission else { return nil }
+        let preferenceRevision = preferenceSnapshot?.revision
+        guard let location = await currentLocation(), admitted == admission,
+              preferenceRevision == preferenceAdmission?.snapshot().revision else { return nil }
         let status = refreshStatus
         let outcomeGeneration = refreshOutcomeGeneration
         // Use a fresh context against the committed store. A suspended writer may hold uncommitted models.
         let reader = WSSIAcceptedStore(modelContainer: container)
         let periods = try await reader.assess(location.point, at: time)
         let latest = await currentLocation()
-        guard admitted == admission, latest == location, outcomeGeneration == refreshOutcomeGeneration else { return nil }
+        guard admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision, latest == location, outcomeGeneration == refreshOutcomeGeneration else { return nil }
         try Task.checkCancellation()
         return .init(location: location, periods: periods, refreshStatus: status)
     }
@@ -190,11 +289,13 @@ actor WSSIForeground: WSSIAssessmentReading, WSSIGeometryReading {
     func geometry(
         product: WSSIProduct, day: Int, revision: UUID, at time: Date
     ) async throws -> WSSIAcceptedGeometry? {
-        guard enabled else { return nil }
+        let preferenceSnapshot = preferenceAdmission?.snapshot()
+        guard enabled, preferenceSnapshot.map({ $0.enabled && $0.revision == appliedPreferenceRevision }) ?? true else { return nil }
         let admitted = admission
+        let preferenceRevision = preferenceSnapshot?.revision
         let reader = WSSIAcceptedStore(modelContainer: container)
         let result = try await reader.geometry(product: product, day: day, revision: revision, at: time)
-        guard admitted == admission else { return nil }
+        guard admitted == admission, preferenceRevision == preferenceAdmission?.snapshot().revision else { return nil }
         try Task.checkCancellation()
         return result
     }

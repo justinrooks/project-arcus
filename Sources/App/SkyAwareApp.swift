@@ -50,7 +50,7 @@ struct SkyAwareApp: App {
         "onboardingComplete",
         store: UserDefaults.shared
     ) private var onboardingComplete: Bool = false
-    
+
     @AppStorage(
         "disclaimerAcceptedVersion",
         store: UserDefaults.shared
