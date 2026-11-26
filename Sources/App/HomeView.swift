@@ -73,7 +73,8 @@ struct HomeView: View {
 
     private var homeProjectionObservation: some View {
         HomeProjectionObservation(
-            projectionKey: currentProjectionKey
+            projectionKey: currentProjectionKey,
+            acceptedPointH3Cell: locationSession.acceptedCurrentPoint(at: .now)?.h3Cell
         ) { visibleRevision, startup in
             let presentation = Self.presentationSnapshot(
                 now: Date(),
@@ -709,13 +710,16 @@ struct HomeProjectionObservation: View {
     @State private var acceptedRevision: HomeVisibleRevision?
 
     private let projectionKey: String?
+    private let acceptedPointH3Cell: Int64?
     private let content: (HomeVisibleRevision?, HomeProjectionRecord?) -> AnyView
 
     init<Content: View>(
         projectionKey: String?,
+        acceptedPointH3Cell: Int64? = nil,
         @ViewBuilder content: @escaping (HomeVisibleRevision?, HomeProjectionRecord?) -> Content
     ) {
         self.projectionKey = projectionKey
+        self.acceptedPointH3Cell = acceptedPointH3Cell
         self.content = { revision, startup in
             AnyView(content(revision, startup))
         }
@@ -739,7 +743,9 @@ struct HomeProjectionObservation: View {
         HomeVisibleRevision.derive(
             previous: acceptedRevision,
             observed: projectionKey == nil ? snapshot.latestObserved : snapshot.current,
-            projectionKey: projectionKey ?? snapshot.latestObserved?.projectionKey
+            projectionKey: projectionKey ?? snapshot.latestObserved?.projectionKey,
+            allowsAlertOnlyPresentation: projectionKey != nil,
+            acceptedPointH3Cell: acceptedPointH3Cell
         )
     }
 

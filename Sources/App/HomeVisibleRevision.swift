@@ -9,13 +9,15 @@ struct HomeVisibleRevision: Sendable, Equatable {
     let enrichment: HomeProjectionRecord?
     // Display metadata advances independently; core observation and assessment evidence stay immutable.
     var locationDisplay: HomeProjectionRecord? = nil
+    // A persisted collection can outlive an individual alert's CAP validity window.
+    var presentedAlerts: [AlertDTO]? = nil
 
     var projectionKey: String { core.projectionKey }
     var weather: SummaryWeather? { core.weather }
     var stormRisk: StormRiskLevel? { core.stormRisk }
     var severeRisk: SevereWeatherThreat? { core.severeRisk }
     var fireRisk: FireRiskLevel? { core.fireRisk }
-    var activeAlerts: [AlertDTO] { (alerts ?? core).activeAlerts }
+    var activeAlerts: [AlertDTO] { presentedAlerts ?? (alerts ?? core).activeAlerts }
     var activeMesos: [MdDTO] { (alerts ?? core).activeMesos }
     var airQuality: AirQualityCurrentResponse? { (enrichment ?? core).airQuality }
     var stormSetup: StormSetupDTO? { (enrichment ?? core).stormSetup }
@@ -31,20 +33,39 @@ struct HomeVisibleRevision: Sendable, Equatable {
         activeAlerts.isEmpty && activeMesos.isEmpty
     }
 
-    /// Derive the visible value from accepted persistence only. A hot-alert or enrichment write
-    /// can update its own section without promoting the core weather/risk revision.
+    /// Derive the visible value from accepted persistence only. Applicable alerts can be visible
+    /// before weather or risk data exists. Only accepted weather/risk writes advance the core.
     static func derive(
         previous: HomeVisibleRevision?,
         observed: HomeProjectionRecord?,
-        projectionKey: String?
+        projectionKey: String?,
+        allowsAlertOnlyPresentation: Bool = true,
+        acceptedPointH3Cell: Int64? = nil,
+        now: Date = .now
     ) -> HomeVisibleRevision? {
         let previous = previous.flatMap { $0.projectionKey == projectionKey ? $0 : nil }
-        guard let observed, observed.projectionKey == projectionKey else { return previous }
-        let hasCoreAcceptance = observed.lastWeatherLoadAt != nil || observed.lastSlowProductsLoadAt != nil
-        guard hasCoreAcceptance || previous != nil else { return nil }
+        let observed = observed.flatMap { $0.projectionKey == projectionKey ? $0 : nil }
+        let hasCoreAcceptance = observed?.lastWeatherLoadAt != nil || observed?.lastSlowProductsLoadAt != nil
+        let previousCore = previous.flatMap {
+            $0.core.lastWeatherLoadAt != nil || $0.core.lastSlowProductsLoadAt != nil ? $0 : nil
+        }
+        if !hasCoreAcceptance && previousCore == nil {
+            guard allowsAlertOnlyPresentation else { return nil }
+            let prior = previous?.alerts
+            let newest = observed.flatMap { record in
+                record.lastHotAlertsLoadAt != nil && record.updatedAt >= (prior?.updatedAt ?? .distantPast) ? record : nil
+            }
+            guard let record = newest ?? prior,
+                  acceptedPointH3Cell.map({ $0 == record.h3Cell }) ?? true else { return nil }
+            let active = record.activeAlerts.filter { now < min($0.expires, $0.ends) }
+            guard !active.isEmpty else { return nil }
+            let alertRecord = alertOnlyRecord(record, activeAlerts: active)
+            return HomeVisibleRevision(core: alertRecord, alerts: alertRecord, enrichment: nil)
+        }
 
+        guard let observed else { return previousCore?.filteringExpiredAlerts(at: now) }
         let core: HomeProjectionRecord
-        if let previous {
+        if let previous = previousCore {
             let newerWeather = observed.lastWeatherLoadAt.map { $0 > (previous.core.lastWeatherLoadAt ?? .distantPast) } ?? false
             let newerRisks = observed.lastSlowProductsLoadAt.map { $0 > (previous.core.lastSlowProductsLoadAt ?? .distantPast) } ?? false
             core = (newerWeather || newerRisks) && observed.updatedAt >= previous.core.updatedAt
@@ -69,6 +90,29 @@ struct HomeVisibleRevision: Sendable, Equatable {
             observed.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? observed : priorDisplay
         return HomeVisibleRevision(core: core, alerts: alerts, enrichment: enrichment, locationDisplay: display)
+            .filteringExpiredAlerts(at: now)
+    }
+
+    private func filteringExpiredAlerts(at now: Date) -> Self {
+        let stored = (alerts ?? core).activeAlerts
+        let active = stored.filter { now < min($0.expires, $0.ends) }
+        var revision = self
+        revision.presentedAlerts = active.count == stored.count ? nil : active
+        return revision
+    }
+
+    private static func alertOnlyRecord(_ record: HomeProjectionRecord, activeAlerts: [AlertDTO]) -> HomeProjectionRecord {
+        // An alert observation can share a row with partially accepted forecast data.
+        // Keep the location and alerts visible while the weather/risk acceptance gate is closed.
+        HomeProjectionRecord(
+            id: record.id, projectionKey: record.projectionKey, latitude: record.latitude, longitude: record.longitude,
+            h3Cell: record.h3Cell, countyCode: record.countyCode, forecastZone: record.forecastZone, fireZone: record.fireZone,
+            placemarkSummary: record.placemarkSummary, timeZoneId: record.timeZoneId, locationTimestamp: record.locationTimestamp,
+            createdAt: record.createdAt, updatedAt: record.updatedAt, lastViewedAt: record.lastViewedAt,
+            weather: nil, stormRisk: nil, severeRisk: nil, fireRisk: nil,
+            activeAlerts: activeAlerts, activeMesos: record.activeMesos, lastHotAlertsLoadAt: record.lastHotAlertsLoadAt,
+            lastSlowProductsLoadAt: nil, lastWeatherLoadAt: nil
+        )
     }
 }
 

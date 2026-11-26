@@ -3374,7 +3374,8 @@ struct HomeRefreshPipelineTests {
         let primeCore = try #require(await primePublications.firstCore())
         let warm = HomeVisibleRevision.derive(previous: nil, observed: cached, projectionKey: cached.projectionKey)
         let afterAlerts = HomeVisibleRevision.derive(
-            previous: warm, observed: afterPrime, projectionKey: cached.projectionKey
+            previous: warm, observed: afterPrime, projectionKey: cached.projectionKey,
+            now: Watch.sampleWatchRows[1].issued
         )
         #expect(primeCore.hasAcceptedCoreSnapshot == false)
         #expect(afterPrime.lastSlowProductsLoadAt == cached.lastSlowProductsLoadAt)
@@ -5556,9 +5557,9 @@ struct HomeRefreshPipelineTests {
         return plan
     }
 
-    private func makeCoordinator(
+    fileprivate func makeCoordinator(
         spc: FakeSpcProvider,
-        alerts: FakeAlertProvider,
+        alerts: any ArcusAlertSyncing & ArcusAlertQuerying,
         weather: FakeWeatherClient,
         locationSession: FakeLocationSession,
         homeProjectionStore: HomeProjectionStore?,
@@ -5588,7 +5589,7 @@ struct HomeRefreshPipelineTests {
         return HomeIngestionCoordinator(executor: executor)
     }
 
-    private func makeContext(
+    fileprivate func makeContext(
         latitude: Double = 39.75,
         longitude: Double = -104.44,
         h3Cell: Int64 = 123_456,
@@ -6650,4 +6651,262 @@ struct StubHomeMesoQuery: ArcusMesoQuerying {
     }
 
     func getMeso(productID: String) async throws -> ArcusMesoQueryResponse<MesoscaleDiscussionPayload>? { nil }
+}
+
+@Suite("Signal Alert Hero")
+@MainActor
+struct SignalAlertHeroTests {
+    private let fixtureTime = Date.now
+
+    @Test("Signal watch and warning events reach Primary Awareness without forecast acceptance", arguments: [
+        "Blizzard Warning", "Snow Squall Warning", "Winter Storm Warning", "Winter Storm Watch",
+        "Ice Storm Warning", "Lake Effect Snow Warning", "Tornado Warning", "Severe Thunderstorm Warning",
+        "Tornado Watch", "Severe Thunderstorm Watch", "Flash Flood Warning", "Flood Warning",
+        "Flash Flood Watch", "Flood Watch", "Extreme Wind Warning", "High Wind Warning", "High Wind Watch",
+        "Fire Warning", "Red Flag Warning", "Fire Weather Watch", "Blowing Dust Warning", "Dust Storm Warning",
+        "Ashfall Warning", "Earthquake Warning", "Volcano Warning", "Nuclear Power Plant Warning",
+        "Future Hazard Watch"
+    ])
+    func signalAlertOwnsHero(event: String) async throws {
+        let fixture = try makeSignalHeroFixture()
+        let geometry = event == "Snow Squall Warning"
+        let onset: TimeInterval? = event == "Winter Storm Watch" ? 1_800 : nil
+        let published = try await fixture.refresh(signalAlert(event, onset: onset, polygon: geometry), nil)
+        let alert = try #require(published.alerts.first)
+        #expect(published.alerts.count == 1)
+        #expect(alert.title == event)
+        #expect((alert.geometry != nil) == geometry)
+        let projection = try #require(await fixture.store.projection(for: fixture.context))
+        #expect(projection.lastWeatherLoadAt == nil)
+        #expect(projection.lastSlowProductsLoadAt == nil)
+        let revision = try #require(HomeVisibleRevision.derive(
+            previous: nil, observed: projection, projectionKey: projection.projectionKey
+        ))
+        let alerts = homeAlerts(from: revision, context: fixture.context)
+        #expect(alerts == [alert])
+        #expect(published.hasAcceptedCoreSnapshot == false)
+        let hero = alertHero(alerts)
+        #expect(hero.title == event)
+        #expect(hero.destination == .alerts)
+        #expect(hero.accessibilityContract.value.contains("Follow instructions from your local officials."))
+        let timing = event.hasSuffix("Watch") ? "In effect until " : "Until "
+        #expect(hero.accessibilityContract.value.contains(timing))
+    }
+
+    @Test("accepted winter revisions, matching, expiration and cancellation govern hero eligibility")
+    func signalWinterAlertLifecycle() async throws {
+        let fixture = try makeSignalHeroFixture()
+        let first = try await fixture.refresh(signalAlert("Winter Storm Watch", onset: 1_800), nil)
+        let watch = try #require(first.alerts.first)
+        _ = try await fixture.store.commitCore(.init(
+            slowProducts: (nil, nil, .critical), updatesConvectiveRisk: false, updatesFireRisk: true,
+            fireSource: .acceptedAllClear(at: fixtureTime)
+        ), for: fixture.context)
+        let baseline = try #require(await fixture.store.projection(for: fixture.context))
+        #expect(baseline.fireRisk == .critical)
+        #expect(baseline.lastSlowProductsLoadAt == nil)
+        #expect(HomeVisibleRevision.derive(
+            previous: nil, observed: baseline, projectionKey: baseline.projectionKey,
+            allowsAlertOnlyPresentation: false
+        ) == nil)
+        let visible = try #require(HomeVisibleRevision.derive(
+            previous: nil, observed: baseline, projectionKey: baseline.projectionKey
+        ))
+
+        #expect(visible.fireRisk == nil)
+        #expect(alertHero(visible.activeAlerts).title == "Winter Storm Watch")
+        #expect(HomeVisibleRevision.derive(
+            previous: visible, observed: baseline, projectionKey: baseline.projectionKey,
+            acceptedPointH3Cell: 654_321
+        ) == nil)
+        let fallback = try await fixture.refresh(Data("invalid response".utf8), nil)
+        #expect(alertHero(fallback.alerts).title == "Winter Storm Watch")
+        let unrelated = try await fixture.repo.active(
+            countyCode: "COC001", fireZone: "COZ001", forecastZone: "COZ002", cell: 654_321
+        )
+        #expect(unrelated.isEmpty)
+        #expect(HomeVisibleRevision.derive(
+            previous: nil, observed: baseline, projectionKey: baseline.projectionKey, now: watch.expires
+        ) == nil)
+        // Geometry requires H3 even when the destination shares the same UGC codes.
+        let warningPayload = try signalAlert(
+            "Winter Storm Warning", revisionOffset: 1, messageType: "Update", polygon: true
+        )
+        let updated = try await fixture.refresh(warningPayload, nil)
+        let warning = try #require(updated.alerts.first)
+        let watchRevision = try #require(watch.currentRevisionSent)
+        #expect(warning.currentRevisionSent == watchRevision + 1)
+        #expect(warning.id == watch.id)
+        #expect(alertHero(updated.alerts).title == "Winter Storm Warning")
+        let movedContext = HomeRefreshPipelineTests().makeContext(h3Cell: 654_321)
+        let moved = try await fixture.refresh(warningPayload, movedContext)
+        #expect(moved.alerts.isEmpty)
+        #expect(HomeVisibleRevision.derive(
+            previous: visible, observed: nil, projectionKey: HomeProjection.projectionKey(for: movedContext)
+        ) == nil)
+        let expired = try await fixture.repo.active(
+            countyCode: "COC005", fireZone: "COZ214", forecastZone: "COZ038",
+            cell: fixture.context.h3Cell, on: watch.expires
+        )
+        #expect(expired.isEmpty)
+
+        let cancelled = try await fixture.refresh(signalAlert(
+            "Winter Storm Warning", revisionOffset: 2, messageType: "Cancel", state: "cancelled"
+        ), nil)
+        #expect(cancelled.alerts.isEmpty)
+        let retired = try #require(await fixture.store.projection(for: fixture.context))
+        #expect(HomeVisibleRevision.derive(
+            previous: visible, observed: retired, projectionKey: retired.projectionKey
+        ) == nil)
+    }
+
+    @Test("warning and watch precedence is independent of available forecast guidance")
+    func signalHeroPrecedence() async throws {
+        let fixture = try makeSignalHeroFixture()
+        let events = ["Winter Storm Watch", "Winter Storm Warning", "Winter Weather Advisory",
+                      "Special Weather Statement", "Snow Squall Warning", "High Wind Watch"]
+        for (index, event) in events.enumerated() {
+            _ = try await fixture.refresh(
+                signalAlert(event, id: UUID().uuidString, duration: 3_600 - Double(index) * 60), nil
+            )
+        }
+        let projection = try #require(await fixture.store.projection(for: fixture.context))
+        let alerts = projection.activeAlerts
+        #expect(Set(alerts.map(\.title)) == Set(events))
+        let earliestWarningEnd = try #require(alerts.first { $0.title == "Snow Squall Warning" }?.ends)
+        let warningEnd = try #require(alerts.first { $0.title == "Winter Storm Warning" }?.ends)
+        let before = try #require(HomeVisibleRevision.derive(
+            previous: nil, observed: projection, projectionKey: projection.projectionKey, now: earliestWarningEnd - 1
+        ))
+        #expect(alertHero(before.activeAlerts).title == "Snow Squall Warning")
+        let after = try #require(HomeVisibleRevision.derive(
+            previous: before, observed: projection, projectionKey: projection.projectionKey, now: earliestWarningEnd
+        ))
+        #expect(alertHero(after.activeAlerts).title == "Winter Storm Warning")
+        #expect(Set(homeAlerts(from: after, context: fixture.context).map(\.title)) == Set(["Winter Storm Warning", "Winter Storm Watch",
+                                                            "Winter Weather Advisory", "Special Weather Statement"]))
+        let remaining = try #require(HomeVisibleRevision.derive(
+            previous: after, observed: nil, projectionKey: projection.projectionKey, now: warningEnd
+        ))
+        #expect(alertHero(remaining.activeAlerts).title == "Winter Storm Watch")
+        let forecast = try await fixture.store.commitCore(.init(weather: .some(nil)), for: fixture.context)
+        let acceptedForecast = try #require(HomeVisibleRevision.derive(
+            previous: remaining, observed: forecast.record, projectionKey: projection.projectionKey,
+            now: warningEnd
+        ))
+        #expect(acceptedForecast.core.lastWeatherLoadAt != nil)
+        #expect(alertHero(acceptedForecast.activeAlerts).title == "Winter Storm Watch")
+        #expect(homeAlerts(from: acceptedForecast, context: fixture.context).map(\.title) == ["Winter Storm Watch"])
+        let now = Date.now
+        let location = try #require(WSSIAcceptedAssessment.Location(fixture.context.snapshot))
+        let revision = WSSIAcceptedRevision(
+            revision: UUID(), issuedAt: now - 1_800, validFrom: now - 60, validTo: now + 3_600,
+            gisFileDate: nil, gisIngestDate: nil, retrievedAt: now, geometryPath: "/geometry"
+        )
+        let assessment = WSSIAcceptedAssessment(location: location, periods: [.init(assessment: .init(
+            product: .overallImpact, day: 1, point: location.point, revision: revision,
+            validity: .valid, sourceStatus: .available, pollHealth: .successful, impact: .match(.major)
+        ), coverage: .unknown)], refreshStatus: .notAttempted)
+
+        func resolve(_ alerts: [AlertDTO], winter: WinterImpactsPresentation) -> SummaryAwarenessPrimaryState {
+            .resolve(
+                stormRisk: .high, severeRisk: .tornado(probability: 0.10), fireRisk: .extreme,
+                alerts: alerts, todayContentState: .cachedRefreshing, isStormRiskResolving: false,
+                isSevereRiskResolving: false, isFireRiskResolving: false, isOffline: false, winter: winter
+            )
+        }
+        let advisories = alerts.filter { $0.title.hasSuffix("Advisory") || $0.title.hasSuffix("Statement") }
+        let watches = alerts.filter { $0.title.hasSuffix("Watch") }
+        for (enabled, date) in [(true, now), (false, now), (true, now + 3_600)] {
+            let winter = WinterImpactsPresentation(accepted: assessment, currentLocation: location, enabled: enabled, at: date)
+            let expectedFallback: SummaryAwarenessSource = enabled && date == now ? .winterImpacts : .severeRisk
+            #expect(resolve(advisories, winter: winter).source == expectedFallback)
+            #expect(resolve(advisories + watches, winter: winter).title == "High Wind Watch")
+            #expect(resolve(alerts, winter: winter).title == "Snow Squall Warning")
+        }
+    }
+
+    private func homeAlerts(from revision: HomeVisibleRevision, context: LocationContext) -> [AlertDTO] {
+        HomeView.HomePresentationSnapshot(
+            visibleRevision: revision, newestStartupProjection: revision.core, currentContext: context,
+            pipelineSnap: nil, pipelineStormRisk: nil, pipelineSevereRisk: nil, pipelineFireRisk: nil,
+            pipelineWeather: nil, pipelineAirQuality: nil, pipelineMesos: [], pipelineAlerts: [],
+            resolvedLocationScopedRefreshKey: context.refreshKey, alertSnapshotRefreshKey: context.refreshKey,
+            pipelineStormSetup: nil, pipelineStormSetupCurrentResponse: nil, stormSetupRefreshKey: nil,
+            isUITestStaticMode: false, now: fixtureTime
+        ).alerts
+    }
+
+    private func alertHero(_ alerts: [AlertDTO]) -> SummaryAwarenessPrimaryState {
+        .resolve(
+            stormRisk: nil, severeRisk: nil, fireRisk: nil, alerts: alerts,
+            todayContentState: .refreshFailedWithCache, isStormRiskResolving: true,
+            isSevereRiskResolving: true, isFireRiskResolving: true, isOffline: false
+        )
+    }
+
+    private func makeSignalHeroFixture() throws -> (
+        context: LocationContext, repo: AlertRepo, store: HomeProjectionStore,
+        refresh: (Data, LocationContext?) async throws -> HomeIngestionCorePublication
+    ) {
+        let container = try TestStore.container(for: [Watch.self, HomeProjection.self])
+        let repo = AlertRepo(modelContainer: container)
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = HomeRefreshPipelineTests().makeContext()
+        return (context, repo, store, { payload, override in
+            let current = override ?? context
+            let coordinator = HomeRefreshPipelineTests().makeCoordinator(
+                spc: FakeSpcProvider(activeMesos: [], mapSyncOutcome: .failed),
+                alerts: ArcusAlertProvider(alertRepo: repo, client: HeroSignalClient(payload: payload)),
+                weather: FakeWeatherClient(result: .failure),
+                locationSession: FakeLocationSession(currentContext: current, preparedContext: current),
+                homeProjectionStore: store
+            )
+            let publications = PipelinePublicationRecorder()
+            _ = try await coordinator.enqueueAndWait(
+                .init(trigger: .manualRefresh, locationContext: current), progress: nil
+            ) { await publications.append($0) }
+            return try #require(await publications.firstCore())
+        })
+    }
+
+    private func signalAlert(
+        _ event: String, onset: TimeInterval? = nil, revisionOffset: TimeInterval = 0,
+        messageType: String = "Alert", state: String = "active", polygon: Bool = false,
+        id: String = "123e4567-e89b-12d3-a456-426614174090", duration: TimeInterval = 3_600
+    ) throws -> Data {
+        func time(_ offset: TimeInterval) -> TimeInterval { fixtureTime.timeIntervalSinceReferenceDate + offset }
+        var payload: [String: Any] = [
+            "id": id, "event": event,
+            "currentRevisionUrn": "urn:alert:hero-\(Int(revisionOffset))",
+            "currentRevisionSent": time(-120 + revisionOffset), "messageType": messageType,
+            "state": state, "created": time(-120), "updated": time(-120 + revisionOffset),
+            "lastSeenActive": time(-120), "sent": time(-120), "effective": time(-120),
+            "expires": time(duration), "ends": time(duration), "severity": "Severe",
+            "urgency": "Expected", "certainty": "Likely", "areaDesc": "Arapahoe County",
+            "senderName": "NWS Test", "headline": event, "description": "Official test alert.",
+            "instructions": "Follow instructions from your local officials.",
+            "response": "Monitor", "ugc": ["COC005"], "h3Cells": polygon ? [123_456] : []
+        ]
+        if let onset { payload["onset"] = time(onset) }
+        if polygon {
+            payload["geometry"] = [
+                "type": "Polygon",
+                "coordinates": [[[-105, 39], [-104, 39], [-104, 40], [-105, 39]]]
+            ]
+        }
+        return try JSONSerialization.data(withJSONObject: [payload])
+    }
+}
+
+private struct HeroSignalClient: ArcusClient {
+    let payload: Data
+
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
+        payload
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        throw URLError(.notConnectedToInternet)
+    }
 }
