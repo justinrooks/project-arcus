@@ -19,12 +19,22 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
     init(window: Range<Int> = 7..<11) {
         self.window = window
     }
+
+    static func acceptsSPC(issue: Date?, at now: Date) -> Bool {
+        guard let issue else { return true }
+        return now.timeIntervalSince(issue) <= 24 * 60 * 60
+    }
+
+    func isInDeliveryWindow(at time: Date, localTZ: TimeZone) -> Bool {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = localTZ
+        return window.contains(calendar.component(.hour, from: time))
+    }
     
     func evaluate(_ ctx: MorningContext) -> NotificationEvent? {
         logger.debug("Evaluating AM 7 to 11 local rule")
         var cal = Calendar(identifier: .gregorian); cal.timeZone = ctx.localTZ
         let comps = cal.dateComponents([.year, .month, .day, .hour], from: ctx.now)
-        let maxIssueAge: TimeInterval = 24 * 60 * 60
         
         guard let y = comps.year, let m = comps.month, let d = comps.day, let h = comps.hour else { return nil}
         if let q = ctx.quietHours, q.contains(h) {
@@ -36,11 +46,9 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
             logger.debug("Hour \(h, privacy: .public) not in window: \(window, privacy: .public); skipping")
             return nil
         }
-        guard ctx.stormRisk != nil || ctx.severeRisk != nil || ctx.fireRisk != nil || ctx.winterImpact != nil else {
-            return nil
-        }
-        if let issue = ctx.lastConvectiveIssue, ctx.now.timeIntervalSince(issue) > maxIssueAge {
-            logger.debug("Outlook issue is stale; skipping notification")
+        let hasSPC = Self.acceptsSPC(issue: ctx.lastConvectiveIssue, at: ctx.now)
+            && (ctx.stormRisk != nil || ctx.severeRisk != nil || ctx.fireRisk != nil)
+        guard hasSPC || ctx.winterImpact != nil else {
             return nil
         }
 
@@ -49,10 +57,12 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
         logger.trace("Stamp generated: \(id)")
         
         var payload: [String: Sendable] = ["localDay": stamp]
-        payload["issue"] = ctx.lastConvectiveIssue
-        payload["stormRisk"] = ctx.stormRisk
-        payload["severeRisk"] = ctx.severeRisk
-        payload["fireRisk"] = ctx.fireRisk
+        if hasSPC {
+            payload["issue"] = ctx.lastConvectiveIssue
+            payload["stormRisk"] = ctx.stormRisk
+            payload["severeRisk"] = ctx.severeRisk
+            payload["fireRisk"] = ctx.fireRisk
+        }
         payload["placeMark"] = ctx.placeMark
         payload["riskProfileChange"] = ctx.riskProfileChange
         payload["winterImpact"] = ctx.winterImpact

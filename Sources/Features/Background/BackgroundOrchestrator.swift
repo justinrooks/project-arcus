@@ -7,6 +7,7 @@
 
 import Foundation
 import OSLog
+import Synchronization
 
 enum Feed: String, CaseIterable { case outlookDay1, meso, watch, warning }
 
@@ -23,17 +24,20 @@ struct NotificationSettings: Sendable {
     let mesoNotificationsEnabled: Bool
     let riskChangeNotificationsEnabled: Bool
     let serverOwnsMesoNotificationDelivery: Bool
+    let winterImpactsEnabled: Bool
 
     init(
         morningSummariesEnabled: Bool,
         mesoNotificationsEnabled: Bool,
         riskChangeNotificationsEnabled: Bool = true,
-        serverOwnsMesoNotificationDelivery: Bool = false
+        serverOwnsMesoNotificationDelivery: Bool = false,
+        winterImpactsEnabled: Bool = false
     ) {
         self.morningSummariesEnabled = morningSummariesEnabled
         self.mesoNotificationsEnabled = mesoNotificationsEnabled
         self.riskChangeNotificationsEnabled = riskChangeNotificationsEnabled
         self.serverOwnsMesoNotificationDelivery = serverOwnsMesoNotificationDelivery
+        self.winterImpactsEnabled = winterImpactsEnabled
     }
 }
 
@@ -42,6 +46,15 @@ protocol NotificationSettingsProviding: Sendable {
 }
 
 actor BackgroundOrchestrator {
+    typealias WinterAssessmentLoader = @Sendable (
+        Date, @Sendable (WSSIAcceptedAssessment?) -> Void
+    ) async -> Void
+
+    struct WinterAssessmentSource: Sendable {
+        let load: WinterAssessmentLoader
+        let currentLocation: @Sendable () async -> WSSIAcceptedAssessment.Location?
+    }
+
     private let logger = Logger.backgroundOrchestrator
     private let signposter:OSSignposter
     private let coordinator: any HomeIngestionCoordinating
@@ -53,6 +66,8 @@ actor BackgroundOrchestrator {
     private let cadence: CadencePolicy
     private let notificationSettingsProvider: NotificationSettingsProviding
     private let pendingUploadDrainer: any PendingLocationUploadDraining
+    private let winterAssessmentSource: WinterAssessmentSource?
+    private let morningNow: @Sendable () -> Date
     private let executionContextFactory: @Sendable (ContinuousClock.Instant) -> BackgroundRefreshExecutionContext
     private let workDeadlineWaiter: @Sendable (ContinuousClock.Instant) async throws -> Void
     
@@ -70,6 +85,8 @@ actor BackgroundOrchestrator {
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding,
         pendingUploadDrainer: any PendingLocationUploadDraining,
+        winterAssessmentSource: WinterAssessmentSource? = nil,
+        morningNow: @escaping @Sendable () -> Date = { .now },
         executionContextFactory: @escaping @Sendable (ContinuousClock.Instant) -> BackgroundRefreshExecutionContext = {
             BackgroundRefreshExecutionContext(budget: .standard(start: $0))
         },
@@ -86,6 +103,8 @@ actor BackgroundOrchestrator {
         self.riskChangeEngine = riskChangeEngine
         self.notificationSettingsProvider = notificationSettingsProvider
         self.pendingUploadDrainer = pendingUploadDrainer
+        self.winterAssessmentSource = winterAssessmentSource
+        self.morningNow = morningNow
         self.executionContextFactory = executionContextFactory
         self.workDeadlineWaiter = workDeadlineWaiter
         signposter = OSSignposter(logger: logger)
@@ -286,12 +305,81 @@ actor BackgroundOrchestrator {
         let morningEngine = morningEngine
         let mesoEngine = mesoEngine
         let riskChangeEngine = riskChangeEngine
+        let winterAssessmentSource = winterAssessmentSource
+        let morningNow = morningNow
         let cadence = cadence
         return try await withThrowingTaskGroup(of: BackgroundWorkEvaluation?.self) { group in
             group.addTask {
                 try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
                     let settings = await notificationSettingsProvider.current()
                     try Task.checkCancellation()
+                    let localTZ = TimeZone.current
+                    let startedAt = morningNow()
+                    let preparedWinter = Mutex<WSSIAcceptedAssessment?>(nil)
+                    // A committed local assessment may enrich SPC if it is ready after ingestion.
+                    // Never join this task on the SPC delivery path.
+                    let winterRead: Task<Void, Never>? = if settings.morningSummariesEnabled,
+                       settings.winterImpactsEnabled, let winterAssessmentSource,
+                       morningEngine.rule.isInDeliveryWindow(at: startedAt, localTZ: localTZ) {
+                        Task {
+                            await winterAssessmentSource.load(startedAt) { assessment in
+                                preparedWinter.withLock {
+                                    if !Task.isCancelled { $0 = assessment }
+                                }
+                            }
+                        }
+                    } else {
+                        nil
+                    }
+                    defer { winterRead?.cancel() }
+
+                    @Sendable func winterStillApplies(
+                        _ impact: MorningContext.WinterImpact, at location: WSSIAcceptedAssessment.Location?
+                    ) async -> Bool {
+                        guard let winterAssessmentSource, let location,
+                              await winterAssessmentSource.currentLocation() == location else { return false }
+                        let latest = await notificationSettingsProvider.current()
+                        let time = morningNow()
+                        return latest.morningSummariesEnabled && latest.winterImpactsEnabled
+                            && clock.now < workDeadline && time < impact.sourceInterval.end
+                            && morningEngine.rule.isInDeliveryWindow(at: time, localTZ: localTZ)
+                    }
+
+                    func attemptWinterOnly(at locationSnapshot: LocationSnapshot?) async throws -> Bool {
+                        let time = morningNow()
+                        guard settings.morningSummariesEnabled, settings.winterImpactsEnabled,
+                              let winterAssessmentSource, clock.now < workDeadline,
+                              morningEngine.rule.isInDeliveryWindow(at: time, localTZ: localTZ),
+                              let location = await winterAssessmentSource.currentLocation()
+                        else { return false }
+
+                        let latest = await notificationSettingsProvider.current()
+                        try Task.checkCancellation()
+                        guard latest.morningSummariesEnabled, latest.winterImpactsEnabled else { return false }
+                        let prepared = preparedWinter.withLock { $0 }
+                        let assessment: WSSIAcceptedAssessment?
+                        if prepared?.location == location {
+                            assessment = prepared
+                        } else {
+                            // Give the local lookup one second and leave time for delivery and finalization.
+                            guard executionContext.budget.remainingWork(at: clock.now) >= .seconds(2) else { return false }
+                            winterRead?.cancel()
+                            assessment = await Self.readWinterAssessment(from: winterAssessmentSource, at: morningNow())
+                        }
+                        try Task.checkCancellation()
+                        guard let assessment, clock.now < workDeadline else { return false }
+
+                        let snapshotLocation = locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init)
+                        signposter.emitEvent("Morning Summary Notification")
+                        return await morningEngine.run(ctx: .init(
+                            now: morningNow(), lastConvectiveIssue: nil, localTZ: localTZ, quietHours: nil,
+                            stormRisk: nil, severeRisk: nil, fireRisk: nil,
+                            placeMark: snapshotLocation == location ? locationSnapshot?.placemarkSummary : nil,
+                            acceptedWinterAssessment: assessment,
+                            currentWinterLocation: location, winterImpactsEnabled: true
+                        )) { await winterStillApplies($0, at: location) }
+                    }
+
                     let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
                     let ingestionStart = clock.now
                     let snapshot: HomeSnapshot
@@ -333,22 +421,17 @@ actor BackgroundOrchestrator {
 
                     guard let locationSnapshot = snapshot.locationSnapshot else {
                         logger.info("No current location snapshot available; rechecking in 20m")
+                        // The current accepted point can be usable before NWS enrichment is available.
+                        let didNotify = try await attemptWinterOnly(at: nil)
+                        try Task.checkCancellation()
                         return .init(
                             result: .skipped,
-                            didNotify: false,
-                            notificationReason: "No location snapshot available. Rechecking in 20m",
+                            didNotify: didNotify,
+                            notificationReason: didNotify ? nil : "No location snapshot available. Rechecking in 20m",
                             cadence: .short,
                             cadenceReason: "Early exit",
                             feedsChanged: []
                         )
-                    }
-
-                    guard
-                        let stormRisk = snapshot.stormRisk,
-                        let severeRisk = snapshot.severeRisk,
-                        let fireRisk = snapshot.fireRisk
-                    else {
-                        throw BackgroundOrchestratorError.missingLocationScopedSnapshot
                     }
 
                     var feedsChanged: Set<Feed> = []
@@ -362,7 +445,6 @@ actor BackgroundOrchestrator {
                         feedsChanged.insert(.watch)
                     }
 
-                    let outlook = snapshot.latestOutlook
                     let activeMesos = snapshot.mesos
                     let activeAlerts = snapshot.alerts
                     let inMeso = activeMesos.isEmpty == false
@@ -371,29 +453,47 @@ actor BackgroundOrchestrator {
                     var didMesoNotify = false
                     var didRiskChangeNotify = false
                     var noNotifyReasons: [String] = []
+                    let issue = snapshot.latestOutlook?.published
+                    let stormRisk = snapshot.severeRisk != nil && snapshot.fireRisk != nil ? snapshot.stormRisk : nil
+                    let winterLocation = WSSIAcceptedAssessment.Location(locationSnapshot)
+                    let readyWinter = preparedWinter.withLock { $0 }
+                    let morningSettings = readyWinter == nil ? settings : await notificationSettingsProvider.current()
+                    try Task.checkCancellation()
+                    let acceptedWinter: WSSIAcceptedAssessment? = if morningSettings.winterImpactsEnabled,
+                       let readyWinter, readyWinter.location == winterLocation, let winterAssessmentSource,
+                       await winterAssessmentSource.currentLocation() == readyWinter.location {
+                        readyWinter
+                    } else {
+                        nil
+                    }
+                    let now = morningNow()
+                    let hasSPC = stormRisk != nil && AmRangeLocalRule.acceptsSPC(issue: issue, at: now)
+                    // A projection can independently acknowledge a risk transition even when the SPC summary is absent.
+                    let morningRiskChange = morningSettings.riskChangeNotificationsEnabled ? snapshot.riskProfileChange : nil
 
-                    if settings.morningSummariesEnabled {
+                    if morningSettings.morningSummariesEnabled && (hasSPC || acceptedWinter != nil) {
                         signposter.emitEvent("Morning Summary Notification")
                         didMorningNotify = await morningEngine.run(
                             ctx: .init(
-                                now: .now,
-                                lastConvectiveIssue: outlook?.published,
-                                localTZ: .current,
+                                now: now,
+                                lastConvectiveIssue: hasSPC ? issue : nil,
+                                localTZ: localTZ,
                                 quietHours: nil,
-                                stormRisk: stormRisk,
-                                severeRisk: severeRisk,
-                                fireRisk: fireRisk,
+                                stormRisk: hasSPC ? snapshot.stormRisk : nil,
+                                severeRisk: hasSPC ? snapshot.severeRisk : nil,
+                                fireRisk: hasSPC ? snapshot.fireRisk : nil,
                                 placeMark: locationSnapshot.placemarkSummary,
-                                riskProfileChange: settings.riskChangeNotificationsEnabled ? snapshot.riskProfileChange : nil
+                                riskProfileChange: morningRiskChange,
+                                acceptedWinterAssessment: acceptedWinter,
+                                currentWinterLocation: winterLocation,
+                                winterImpactsEnabled: morningSettings.winterImpactsEnabled
                             )
-                        )
-                        if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
-                    } else { noNotifyReasons.append("Morning summary disabled") }
+                        ) { await winterStillApplies($0, at: winterLocation) }
+                    }
+                    if hasSPC || acceptedWinter != nil { winterRead?.cancel() }
 
-                    let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
-                        && didMorningNotify
-                        && snapshot.riskProfileChange != nil
-                    if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
+                    let coalescedCurrentRiskChange = didMorningNotify && morningRiskChange != nil
+                    if coalescedCurrentRiskChange, let riskProfileChange = morningRiskChange {
                         await riskChangeEngine.coalesce(change: riskProfileChange)
                     }
                     try Task.checkCancellation()
@@ -440,9 +540,21 @@ actor BackgroundOrchestrator {
                         noNotifyReasons.append("Risk change notifications disabled")
                     }
 
-                    let cadenceResult = cadence.decide(
-                        for: .init(categorical: stormRisk, inMeso: inMeso, inAlert: inAlert)
-                    )
+                    // A later local assessment can still supply a winter-only summary. Independent
+                    // notifications have already had their delivery opportunity in this grant.
+                    if !hasSPC, acceptedWinter == nil {
+                        didMorningNotify = try await attemptWinterOnly(at: locationSnapshot)
+                    }
+                    if !didMorningNotify {
+                        noNotifyReasons.append(
+                            morningSettings.morningSummariesEnabled ? "Morning summary skipped" : "Morning summary disabled"
+                        )
+                    }
+                    try Task.checkCancellation()
+
+                    let cadenceResult = stormRisk.map {
+                        cadence.decide(for: .init(categorical: $0, inMeso: inMeso, inAlert: inAlert))
+                    } ?? .init(cadence: .short, reason: "Incomplete location-scoped SPC snapshot")
                     let didNotify = didMorningNotify || didMesoNotify || didRiskChangeNotify
                     return .init(
                         result: .success,
@@ -475,6 +587,25 @@ actor BackgroundOrchestrator {
                 throw CancellationError()
             }
             return snapshot
+        }
+    }
+
+    nonisolated private static func readWinterAssessment(
+        from source: WinterAssessmentSource, at time: Date
+    ) async -> WSSIAcceptedAssessment? {
+        let (results, continuation) = AsyncStream.makeStream(of: WSSIAcceptedAssessment?.self)
+        let read = Task {
+            await source.load(time) { _ = continuation.yield($0) }
+            continuation.finish()
+        }
+        defer {
+            read.cancel()
+            continuation.finish()
+        }
+        // Race the result stream so cancellation never waits for a synchronous store read to unwind.
+        return try? await withTimeout(timeout: 1) {
+            var iterator = results.makeAsyncIterator()
+            return await iterator.next() ?? nil
         }
     }
 
@@ -535,10 +666,6 @@ actor BackgroundOrchestrator {
         case .expired: .expired
         }
     }
-}
-
-private enum BackgroundOrchestratorError: Error {
-    case missingLocationScopedSnapshot
 }
 
 private struct BackgroundWorkEvaluation: Sendable {

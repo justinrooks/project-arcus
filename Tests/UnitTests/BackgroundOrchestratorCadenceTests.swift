@@ -614,6 +614,253 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(await deadlineState.exceeded())
     }
 
+    enum MorningSources: CaseIterable {
+        case incompleteSPC, staleSPC, both, moved, movedWithCurrentWinter, withoutSPCLocation
+    }
+
+    @Test("Morning delivery uses current accepted sources and shares a single daily claim",
+          arguments: MorningSources.allCases)
+    func winterMorningClaimsTheDay(scenario: MorningSources) async throws {
+        let sender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
+        let change = makeRiskChange(
+            previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+        )
+        let now = Self.morningTestTime
+        let spc = Self.makeRiskSnapshot(change: nil, at: now)
+        let location = try #require(spc.locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init))
+        var snapshot = spc
+        switch scenario {
+        case .incompleteSPC, .moved:
+            snapshot.severeRisk = nil
+        case .movedWithCurrentWinter:
+            snapshot.severeRisk = nil
+            snapshot.riskProfileChange = change
+        case .staleSPC:
+            snapshot.riskProfileChange = change
+            snapshot.latestOutlook = Self.staleMorningOutlook(at: now)
+        case .withoutSPCLocation:
+            snapshot = .empty
+        case .both:
+            break
+        }
+
+        let engine = makeMorningEngine(sender: sender, gate: MorningGate(store: InMemoryMorningStore()), window: 7..<11)
+        let ingestionGate = AsyncGate()
+        let published = CompletionFlag()
+        let acceptedPoint = await WinterMorningPoint(location)
+        let winter = Self.makeWinterAssessment(location)
+        let system = try await makeRiskSystem(
+            coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot, runGate: ingestionGate),
+            morningEngine: engine,
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: StaticSettingsProvider(settings: Self.winterMorningSettings),
+            winterAssessmentSource: .init(
+                load: { _, publish in
+                    if scenario == .movedWithCurrentWinter {
+                        let point = await acceptedPoint.current
+                        publish(Self.makeWinterAssessment(point))
+                    } else {
+                        publish(winter)
+                    }
+                    await published.markFinished()
+                },
+                currentLocation: { await acceptedPoint.current }
+            ),
+            morningNow: { now }
+        )
+
+        let run = Task { await system.orchestrator.run() }
+        #expect(await waitUntil { await published.isFinished() })
+        if scenario == .moved || scenario == .movedWithCurrentWinter {
+            await acceptedPoint.update(.init(
+                point: .init(latitude: 40, longitude: -105), h3Cell: 2, observedAt: now
+            ))
+        }
+        await ingestionGate.open()
+        let first = await run.value
+        #expect(first.didNotify == (scenario != .moved))
+
+        let retry = try await makeRiskSystem(
+            snapshot: spc, morningEngine: engine,
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: StaticSettingsProvider(settings: .init(
+                morningSummariesEnabled: true, mesoNotificationsEnabled: false
+            )),
+            morningNow: { now }
+        )
+        #expect(await retry.orchestrator.run().didNotify == (scenario == .moved))
+        let messages = await sender.sent()
+        #expect(messages.count == 1)
+        let message = try #require(messages.first)
+        if scenario == .moved {
+            #expect(message.title == "Today's Outlook for Denver, CO")
+            #expect(!message.body.contains("winter impacts"))
+            #expect(first.result == .success)
+            #expect(try await system.recordedCadences() == [Cadence.short.minutes])
+        } else if scenario == .both {
+            #expect(message.title == "Today's Outlook for Denver, CO")
+            #expect(message.body.contains("Storm Activity"))
+            #expect(message.body.contains("Minor winter impacts are forecast for Day 1 ("))
+        } else {
+            let genericTitle = scenario == .withoutSPCLocation || scenario == .movedWithCurrentWinter
+            let title = genericTitle ? "Winter Impacts" : "Winter Impacts for Denver, CO"
+            #expect(message.title == title)
+            let sections = message.body.components(separatedBy: "\n\n")
+            #expect(sections.last?.hasPrefix("Minor winter impacts are forecast for Day 1 (") == true)
+            #expect(sections.last?.contains("\n") == false)
+            if scenario == .staleSPC {
+                #expect(sections.first == "Risk Update\nStorm Risk: Marginal Risk → Enhanced Risk")
+            }
+            #expect(sections.count == (scenario == .staleSPC ? 2 : 1))
+        }
+        #expect(await riskSender.sent().count == (scenario == .movedWithCurrentWinter ? 1 : 0))
+    }
+
+    @Test("Opting out while acquiring the morning claim removes only winter content", arguments: [false, true])
+    func winterOptOutDuringMorningClaim(hasSPC: Bool) async throws {
+        let now = Self.morningTestTime
+        let spc = Self.makeRiskSnapshot(change: nil, at: now)
+        let point = try #require(spc.locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init))
+        let snapshot = hasSPC ? spc : HomeSnapshot(locationSnapshot: spc.locationSnapshot)
+        let store = PausingMorningStampStore()
+        let sender = RecordingRiskSender()
+        let engine = makeMorningEngine(sender: sender, gate: MorningGate(store: store), window: 7..<11)
+        let settings = MutableSettingsProvider(settings: Self.winterMorningSettings)
+        let ingestion = AsyncGate()
+        let loaded = CompletionFlag()
+        let winter = Self.makeWinterAssessment(point)
+        let source = BackgroundOrchestrator.WinterAssessmentSource(load: { _, publish in
+            publish(winter)
+            await loaded.markFinished()
+        }, currentLocation: { point })
+        let system = try await makeRiskSystem(
+            coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot, runGate: ingestion),
+            morningEngine: engine, riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: settings,
+            winterAssessmentSource: source, morningNow: { now }
+        )
+        let run = Task { await system.orchestrator.run() }
+        #expect(await waitUntil { await loaded.isFinished() })
+        await ingestion.open()
+        var claims = store.loadStarted.makeAsyncIterator()
+        _ = await claims.next()
+        await settings.update(.init(morningSummariesEnabled: true, mesoNotificationsEnabled: false))
+        await store.releaseLoad()
+        #expect(await run.value.didNotify == hasSPC)
+        #expect(await sender.sent().allSatisfy { !$0.body.contains("winter impacts") })
+        #expect(await sender.sent().count == (hasSPC ? 1 : 0))
+
+        if !hasSPC {
+            await settings.update(Self.winterMorningSettings)
+            let retry = try await makeRiskSystem(
+                snapshot: snapshot, morningEngine: engine,
+                riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+                settingsProvider: settings, winterAssessmentSource: source, morningNow: { now }
+            )
+            #expect(await retry.orchestrator.run().didNotify)
+            #expect(await sender.sent().first?.body.contains("winter impacts") == true)
+        }
+    }
+
+    @Test("A pending WSSI cache read cannot postpone ordinary SPC delivery")
+    func pendingWinterReadDoesNotBlockSPC() async throws {
+        let sender = RecordingRiskSender()
+        let reader = BlockingWinterMorningReader()
+        let ingestionGate = AsyncGate()
+        let now = Self.morningTestTime
+        let snapshot = Self.makeRiskSnapshot(change: nil, at: now)
+        let location = try #require(snapshot.locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init))
+        let system = try await makeRiskSystem(
+            coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot, runGate: ingestionGate),
+            morningEngine: makeMorningEngine(sender: sender, window: 7..<11),
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: StaticSettingsProvider(settings: Self.winterMorningSettings),
+            winterAssessmentSource: reader.source(at: location), morningNow: { now }
+        )
+        let run = Task { await system.orchestrator.run() }
+        #expect(await waitUntil { await reader.readCount() == 1 })
+        await ingestionGate.open()
+        #expect(await waitUntil { await sender.sent().count == 1 })
+        #expect(await run.value.result == .success)
+        let message = try #require(await sender.sent().first)
+        #expect(message.body.contains("Storm Activity"))
+        #expect(!message.body.contains("winter impacts"))
+    }
+
+    @Test("Cold WSSI timeout preserves accepted risk delivery and its evaluated cadence")
+    func winterReadTimeoutPreservesCoreOutcome() async throws {
+        let releaseColdRead = AsyncGate()
+        let reader = BlockingWinterMorningReader(coldReadGate: releaseColdRead)
+        let morningSender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
+        let now = Self.morningTestTime
+        let change = makeRiskChange(
+            previous: makeRiskProfile(storm: .allClear, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .allClear, severe: .allClear, fire: .critical)
+        )
+        var snapshot = Self.makeRiskSnapshot(change: change, at: now)
+        snapshot.latestOutlook = Self.staleMorningOutlook(at: now)
+        let location = try #require(snapshot.locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init))
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            morningEngine: makeMorningEngine(sender: morningSender, window: 7..<11),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: StaticSettingsProvider(settings: Self.winterMorningSettings),
+            winterAssessmentSource: reader.source(at: location), morningNow: { now }
+        )
+
+        let finished = CompletionFlag()
+        let run = Task {
+            let result = await system.orchestrator.run()
+            await finished.markFinished()
+            return result
+        }
+        #expect(await waitUntil { await reader.readCount() == 2 })
+        #expect(await riskSender.sent().count == 1)
+        #expect(await waitUntil(timeout: .seconds(3)) { await finished.isFinished() })
+        await releaseColdRead.open()
+        let outcome = await run.value
+        #expect(outcome.result == .success)
+        #expect(outcome.didNotify)
+        #expect(try await system.recordedCadences() == [Cadence.long.minutes])
+        #expect(await morningSender.sent().isEmpty)
+    }
+
+    @Test("Interrupted winter-only evaluation leaves the morning claim available")
+    func interruptionLeavesWinterMorningClaimAvailable() async throws {
+        let sender = RecordingRiskSender()
+        let reader = BlockingWinterMorningReader()
+        let morning = makeMorningEngine(sender: sender, gate: MorningGate(store: InMemoryMorningStore()), window: 7..<11)
+        let settings = StaticSettingsProvider(settings: Self.winterMorningSettings)
+        let now = Self.morningTestTime
+        let spc = Self.makeRiskSnapshot(change: nil, at: now)
+        let location = try #require(spc.locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init))
+        let winterOnly = HomeSnapshot(locationSnapshot: spc.locationSnapshot)
+        let system = try await makeRiskSystem(
+            snapshot: winterOnly, morningEngine: morning,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: settings, winterAssessmentSource: reader.source(at: location), morningNow: { now }
+        )
+        let run = Task { await system.orchestrator.run() }
+        #expect(await waitUntil { await reader.readCount() == 2 })
+        run.cancel()
+        #expect(await run.value.result == .cancelled)
+        #expect(await sender.sent().isEmpty)
+
+        let winter = Self.makeWinterAssessment(location)
+        let retry = try await makeRiskSystem(
+            snapshot: winterOnly, morningEngine: morning,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: settings,
+            winterAssessmentSource: .init(load: { _, publish in publish(winter) }, currentLocation: { location }),
+            morningNow: { now }
+        )
+        #expect(await retry.orchestrator.run().didNotify)
+        #expect(await sender.sent().count == 1)
+    }
+
     @Test("Delivered morning risk coalesces before work deadline expiration")
     func deliveredMorningRisk_coalescesBeforeWorkDeadlineExpiration() async throws {
         let deadlineWaiter = ManualDeadlineWaiter()
@@ -1988,6 +2235,43 @@ private actor RecordingRiskSender: NotificationSending {
     }
 }
 
+@MainActor
+private final class WinterMorningPoint {
+    private(set) var current: WSSIAcceptedAssessment.Location
+
+    init(_ current: WSSIAcceptedAssessment.Location) {
+        self.current = current
+    }
+
+    func update(_ current: WSSIAcceptedAssessment.Location) {
+        self.current = current
+    }
+}
+
+private actor BlockingWinterMorningReader {
+    private var reads = 0
+    private let coldReadGate: AsyncGate?
+
+    init(coldReadGate: AsyncGate? = nil) {
+        self.coldReadGate = coldReadGate
+    }
+
+    private func hold() async {
+        reads += 1
+        if reads == 2, let coldReadGate {
+            await coldReadGate.wait()
+        } else {
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    nonisolated func source(at location: WSSIAcceptedAssessment.Location) -> BackgroundOrchestrator.WinterAssessmentSource {
+        .init(load: { _, _ in await self.hold() }, currentLocation: { location })
+    }
+
+    func readCount() -> Int { reads }
+}
+
 private actor CancellationAwareBlockingNotificationSender: NotificationSending {
     private var didStart = false
     private var didObserveCancellation = false
@@ -2183,7 +2467,9 @@ private extension BackgroundOrchestratorCadenceTests {
         coordinator: any HomeIngestionCoordinating,
         morningEngine: MorningEngine? = nil,
         riskChangeEngine: RiskChangeEngine,
-        settingsProvider: Settings
+        settingsProvider: Settings,
+        winterAssessmentSource: BackgroundOrchestrator.WinterAssessmentSource? = nil,
+        morningNow: @escaping @Sendable () -> Date = { .now }
     ) async throws -> RiskSystem {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
@@ -2209,7 +2495,9 @@ private extension BackgroundOrchestratorCadenceTests {
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: settingsProvider,
-            pendingUploadDrainer: NoOpLocationUploadCoordinator()
+            pendingUploadDrainer: NoOpLocationUploadCoordinator(),
+            winterAssessmentSource: winterAssessmentSource,
+            morningNow: morningNow
         )
 
         return .init(orchestrator: orchestrator, modelContainer: container)
@@ -2220,7 +2508,9 @@ private extension BackgroundOrchestratorCadenceTests {
         snapshots: [HomeSnapshot]? = nil,
         morningEngine: MorningEngine? = nil,
         riskChangeEngine: RiskChangeEngine,
-        settingsProvider: Settings
+        settingsProvider: Settings,
+        winterAssessmentSource: BackgroundOrchestrator.WinterAssessmentSource? = nil,
+        morningNow: @escaping @Sendable () -> Date = { .now }
     ) async throws -> RiskSystem {
         let coordinator: any HomeIngestionCoordinating
         if let snapshots {
@@ -2232,7 +2522,9 @@ private extension BackgroundOrchestratorCadenceTests {
             coordinator: coordinator,
             morningEngine: morningEngine,
             riskChangeEngine: riskChangeEngine,
-            settingsProvider: settingsProvider
+            settingsProvider: settingsProvider,
+            winterAssessmentSource: winterAssessmentSource,
+            morningNow: morningNow
         )
     }
 
@@ -2272,20 +2564,21 @@ private extension BackgroundOrchestratorCadenceTests {
 
     func makeMorningEngine<Sender: NotificationSending>(
         sender: Sender,
-        gate: any NotificationGating = AllowAllGate()
+        gate: any NotificationGating = AllowAllGate(),
+        window: Range<Int> = 0..<24
     ) -> MorningEngine {
         MorningEngine(
-            rule: AmRangeLocalRule(window: 0..<24),
+            rule: AmRangeLocalRule(window: window),
             gate: gate,
             composer: MorningComposer(),
             sender: sender
         )
     }
 
-    static func makeRiskSnapshot(change: RiskProfileChange?) -> HomeSnapshot {
+    static func makeRiskSnapshot(change: RiskProfileChange?, at now: Date = .now) -> HomeSnapshot {
         let context = makeContext(
             coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
-            timestamp: Date(),
+            timestamp: now,
             placemarkSummary: "Denver, CO"
         )
         return HomeSnapshot(
@@ -2295,6 +2588,37 @@ private extension BackgroundOrchestratorCadenceTests {
             severeRisk: change?.current.severeRisk ?? .allClear,
             fireRisk: change?.current.fireRisk ?? .clear,
             riskProfileChange: change
+        )
+    }
+
+    static var morningTestTime: Date {
+        Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date(timeIntervalSince1970: 1_767_355_200))!
+    }
+
+    static var winterMorningSettings: NotificationSettings {
+        .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false, winterImpactsEnabled: true)
+    }
+
+    static func staleMorningOutlook(at now: Date) -> ConvectiveOutlookDTO {
+        .init(
+            title: "Day 1 Convective Outlook", link: URL(string: "https://example.com")!,
+            published: now - 26 * 3600, summary: "", fullText: "", day: 1, riskLevel: nil,
+            issued: nil, validUntil: nil
+        )
+    }
+
+    static func makeWinterAssessment(_ location: WSSIAcceptedAssessment.Location) -> WSSIAcceptedAssessment {
+        let now = location.observedAt
+        let revision = WSSIAcceptedRevision(
+            revision: UUID(), issuedAt: now - 3600, validFrom: now - 3600, validTo: now + 23 * 3600,
+            gisFileDate: nil, gisIngestDate: nil, retrievedAt: now, geometryPath: "/geometry"
+        )
+        let overall = WSSIPointAssessment(
+            product: .overallImpact, day: 1, point: location.point, revision: revision,
+            validity: .valid, sourceStatus: .available, pollHealth: .successful, impact: .match(.minor)
+        )
+        return .init(
+            location: location, periods: [.init(assessment: overall, coverage: .unknown)], refreshStatus: .notAttempted
         )
     }
 }

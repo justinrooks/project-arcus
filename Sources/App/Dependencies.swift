@@ -609,7 +609,15 @@ final class Dependencies: Sendable {
             health: healthStore,
             cadence: cadencePolicy,
             notificationSettingsProvider: notificationSettingsProvider,
-            pendingUploadDrainer: locationUploadCoordinator
+            pendingUploadDrainer: locationUploadCoordinator,
+            winterAssessmentSource: wssi.map { service in
+                .init(
+                    load: { time, publish in publish(try? await service.assessment(at: time)) },
+                    currentLocation: {
+                        await locationSession.acceptedPointObservation().flatMap(WSSIAcceptedAssessment.Location.init)
+                    }
+                )
+            }
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
@@ -697,6 +705,10 @@ final class Dependencies: Sendable {
                     ),
                     serverOwnsMesoNotificationDelivery: readBoolSetting(
                         forKey: HTTPDevicePreferenceSyncUploader.ownershipDefaultsKey,
+                        defaultValue: false
+                    ),
+                    winterImpactsEnabled: readBoolSetting(
+                        forKey: WinterImpactsPreference.enabledKey,
                         defaultValue: false
                     )
                 )

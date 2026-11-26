@@ -178,6 +178,28 @@ struct MorningNotificationTests {
         #expect(context.winterImpact?.localTimeZone == centralTime)
     }
 
+    @Test("stale SPC leaves only the accepted winter outlook")
+    func staleSPCLeavesWinterOnly() throws {
+        let winter = winterPeriod(1, impact: .match(.minor), startsInHours: 0)
+        let context = winterContext(
+            [winter], stormRisk: .allClear, fireRisk: .clear, convectiveIssue: winterNow - 26 * 3600
+        )
+        let event = try #require(AmRangeLocalRule().evaluate(context))
+        let message = MorningComposer().compose(event)
+        #expect(event.payload["issue"] == nil)
+        #expect(message.title == "Winter Impacts for Bennett, CO")
+        #expect(message.body.hasPrefix("Minor winter impacts are forecast for Day 1 ("))
+        #expect(message.body.split(separator: "\n").count == 1)
+    }
+
+    @Test("eligible winter impact respects quiet hours")
+    func winterRespectsQuietHours() {
+        let winter = winterPeriod(1, impact: .match(.minor), startsInHours: 0)
+        let context = winterContext([winter], quietHours: 7...8)
+        #expect(context.winterImpact != nil)
+        #expect(AmRangeLocalRule().evaluate(context) == nil)
+    }
+
     @Test("a convective issue time does not label a fire and winter summary")
     func mixedFireAndWinterOmitsConvectiveSubtitle() throws {
         let winter = winterPeriod(2, impact: .match(.moderate), startsInHours: 24)
@@ -228,10 +250,10 @@ struct MorningNotificationTests {
         _ periods: [WSSIAcceptedAssessment.Period], enabled: Bool = true,
         location: WSSIAcceptedAssessment.Location? = nil, stormRisk: StormRiskLevel? = nil,
         fireRisk: FireRiskLevel? = nil, convectiveIssue: Date? = nil,
-        riskProfileChange: RiskProfileChange? = nil
+        riskProfileChange: RiskProfileChange? = nil, quietHours: ClosedRange<Int>? = nil
     ) -> MorningContext {
         .init(
-            now: winterNow, lastConvectiveIssue: convectiveIssue, localTZ: centralTime, quietHours: nil,
+            now: winterNow, lastConvectiveIssue: convectiveIssue, localTZ: centralTime, quietHours: quietHours,
             stormRisk: stormRisk, severeRisk: nil, fireRisk: fireRisk, placeMark: "Bennett, CO",
             riskProfileChange: riskProfileChange,
             acceptedWinterAssessment: .init(location: winterLocation, periods: periods, refreshStatus: .notAttempted),
@@ -348,6 +370,26 @@ struct MorningNotificationTests {
         #expect(await engine.run(ctx: context) == false)
         #expect(await sender.attemptCount() == 2)
     }
+
+    @Test("cancellation during the daily claim releases it for a winter retry")
+    func cancellationDuringMorningClaimAllowsRetry() async {
+        let store = PausingMorningStampStore()
+        let sender = SequencedMorningSender(results: [true])
+        let engine = MorningEngine(
+            rule: AmRangeLocalRule(), gate: MorningGate(store: store), composer: MorningComposer(), sender: sender
+        )
+        let winter = winterPeriod(1, impact: .match(.minor), startsInHours: 0)
+        let context = winterContext([winter])
+        let initial = Task { await engine.run(ctx: context) }
+        var load = store.loadStarted.makeAsyncIterator()
+        _ = await load.next()
+        initial.cancel()
+        await store.releaseLoad()
+        #expect(await initial.value == false)
+        #expect(await sender.attemptCount() == 0)
+        #expect(await engine.run(ctx: context))
+        #expect(await sender.attemptCount() == 1)
+    }
 }
 
 // MARK: - Test Doubles
@@ -360,6 +402,33 @@ actor InMemoryMorningStore: NotificationStateStoring {
     }
     
     func lastStamp() async -> String? { stamp }
+    func setLastStamp(_ stamp: String) async { self.stamp = stamp }
+}
+
+actor PausingMorningStampStore: NotificationStateStoring {
+    nonisolated let loadStarted: AsyncStream<Void>
+    private let signal: AsyncStream<Void>.Continuation
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var stamp: String?
+
+    init() {
+        (loadStarted, signal) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+    }
+
+    func lastStamp() async -> String? {
+        await withCheckedContinuation {
+            waiter = $0
+            signal.yield(())
+        }
+        return stamp
+    }
+
+    func releaseLoad() {
+        waiter?.resume()
+        waiter = nil
+        signal.finish()
+    }
+
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }
 

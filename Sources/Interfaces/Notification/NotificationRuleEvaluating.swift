@@ -9,6 +9,11 @@ import Foundation
 
 protocol NotificationRuleEvaluating: Sendable {
     func evaluate(_ ctx: MorningContext) -> NotificationEvent?
+    func isInDeliveryWindow(at time: Date, localTZ: TimeZone) -> Bool
+}
+
+extension NotificationRuleEvaluating {
+    func isInDeliveryWindow(at time: Date, localTZ: TimeZone) -> Bool { true }
 }
 
 protocol MesoNotificationRuleEvaluating: Sendable {
