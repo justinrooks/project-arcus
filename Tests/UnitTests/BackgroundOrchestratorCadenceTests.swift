@@ -4,6 +4,7 @@ import Testing
 import SwiftData
 import CoreLocation
 import OSLog
+import Synchronization
 import ArcusCore
 @testable import SkyAware
 
@@ -762,6 +763,114 @@ struct BackgroundOrchestratorCadenceTests {
             #expect(await retry.orchestrator.run().didNotify)
             #expect(await sender.sent().first?.body.contains("winter impacts") == true)
         }
+    }
+
+    enum MorningClaimRestriction: CaseIterable {
+        case morningDisabled, windowClosed
+    }
+
+    @Test("Morning-wide policy changes during claim admission release the claim without sending",
+          arguments: [false, true], MorningClaimRestriction.allCases)
+    func morningPolicyChangedDuringClaim(hasWinter: Bool, restriction: MorningClaimRestriction) async throws {
+        let now = Self.morningTestTime
+        let clock = Mutex(now)
+        let snapshot = Self.makeRiskSnapshot(change: nil, at: now)
+        let point = try #require(snapshot.locationSnapshot.flatMap(WSSIAcceptedAssessment.Location.init))
+        let sender = RecordingRiskSender()
+        let store = PausingMorningStampStore()
+        let gate = MorningGate(store: store)
+        let engine = makeMorningEngine(sender: sender, gate: gate, window: 7..<11)
+        let settings = MutableSettingsProvider(settings: Self.winterMorningSettings)
+        let ingestion = AsyncGate()
+        let loaded = CompletionFlag()
+        let winter = Self.makeWinterAssessment(point)
+        let source: BackgroundOrchestrator.WinterAssessmentSource? = hasWinter ? .init(
+            load: { _, publish in
+                publish(winter)
+                await loaded.markFinished()
+            }, currentLocation: { point }
+        ) : nil
+        let system = try await makeRiskSystem(
+            coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot, runGate: ingestion),
+            morningEngine: engine, riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: settings, winterAssessmentSource: source, morningNow: { clock.withLock { $0 } }
+        )
+
+        let run = Task { await system.orchestrator.run() }
+        if hasWinter {
+            #expect(await waitUntil { await loaded.isFinished() })
+        }
+        await ingestion.open()
+        var claims = store.loadStarted.makeAsyncIterator()
+        _ = await claims.next()
+        switch restriction {
+        case .morningDisabled:
+            await settings.update(.init(
+                morningSummariesEnabled: false, mesoNotificationsEnabled: false, winterImpactsEnabled: true
+            ))
+        case .windowClosed:
+            clock.withLock { $0 = now + 4 * 3600 }
+        }
+        await store.releaseLoad()
+        #expect(await run.value.didNotify == false)
+        #expect(await sender.sent().isEmpty)
+
+        await settings.update(Self.winterMorningSettings)
+        clock.withLock { $0 = now }
+        let retry = try await makeRiskSystem(
+            snapshot: snapshot, morningEngine: engine,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: settings, morningNow: { clock.withLock { $0 } }
+        )
+        #expect(await retry.orchestrator.run().didNotify)
+        #expect(await sender.sent().count == 1)
+    }
+
+    @Test("Morning delivery releases its claim if the work deadline passes before cancellation")
+    func workDeadlinePassesDuringMorningClaim() async throws {
+        let now = Self.morningTestTime
+        let settings = NotificationSettings(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        let snapshot = Self.makeRiskSnapshot(change: nil, at: now)
+        let sender = RecordingRiskSender()
+        let store = PausingMorningStampStore()
+        let engine = makeMorningEngine(sender: sender, gate: MorningGate(store: store), window: 7..<11)
+        let workDeadline = Mutex<ContinuousClock.Instant?>(nil)
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let system = try await makeSystem(
+            activeMesos: [], activeAlerts: [], settings: settings,
+            coordinator: RecordingHomeIngestionCoordinator(snapshot: snapshot),
+            morningEngine: engine, morningNow: { now },
+            executionContextFactory: { start in
+                let budget = BackgroundRefreshBudget(
+                    start: start, completionDeadline: start + .seconds(2), finalizationReserve: .zero
+                )
+                workDeadline.withLock { $0 = budget.workDeadline }
+                return .init(budget: budget)
+            },
+            workDeadlineWaiter: { try await deadlineWaiter.wait(until: $0) }
+        )
+
+        let run = Task { await system.orchestrator.run() }
+        guard await waitUntil(timeout: .seconds(2), { await store.isHoldingLoad() }) else {
+            run.cancel()
+            await store.releaseLoad()
+            _ = await run.value
+            Issue.record("Morning claim never reached the held stamp load")
+            return
+        }
+        let deadline = try #require(workDeadline.withLock { $0 })
+        try await ContinuousClock().sleep(until: deadline)
+        // Hold the timer task until the work path itself notices the expired deadline.
+        await store.releaseLoad()
+        #expect(await run.value.result == .expired)
+        #expect(await sender.sent().isEmpty)
+
+        let retry = try await makeRiskSystem(
+            snapshot: snapshot, morningEngine: engine, riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: StaticSettingsProvider(settings: settings), morningNow: { now }
+        )
+        #expect(await retry.orchestrator.run().didNotify)
+        #expect(await sender.sent().count == 1)
     }
 
     @Test("A pending WSSI cache read cannot postpone ordinary SPC delivery")
@@ -1596,6 +1705,7 @@ private extension BackgroundOrchestratorCadenceTests {
         mesoEngine suppliedMesoEngine: MesoEngine? = nil,
         settingsProvider: (any NotificationSettingsProviding)? = nil,
         riskChangeEngine suppliedRiskChangeEngine: RiskChangeEngine? = nil,
+        morningNow: @escaping @Sendable () -> Date = { .now },
         executionContextFactory: @escaping @Sendable (
             ContinuousClock.Instant
         ) -> BackgroundRefreshExecutionContext = {
@@ -1678,6 +1788,7 @@ private extension BackgroundOrchestratorCadenceTests {
             cadence: CadencePolicy(),
             notificationSettingsProvider: settingsProvider ?? StaticSettingsProvider(settings: settings),
             pendingUploadDrainer: pendingUploadDrainer,
+            morningNow: morningNow,
             executionContextFactory: executionContextFactory,
             workDeadlineWaiter: workDeadlineWaiter
         )

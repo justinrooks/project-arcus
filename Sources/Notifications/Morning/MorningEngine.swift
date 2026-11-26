@@ -9,6 +9,11 @@ import Foundation
 import OSLog
 
 struct MorningEngine: Sendable {
+    struct DeliveryAuthorization: Sendable {
+        let time: Date
+        let includeWinter: Bool
+    }
+
     private let logger = Logger.notificationsMorningEngine
     
     let rule: NotificationRuleEvaluating
@@ -30,7 +35,7 @@ struct MorningEngine: Sendable {
     
     func run(
         ctx: MorningContext,
-        winterStillApplies: (@Sendable (MorningContext.WinterImpact) async -> Bool)? = nil
+        authorizeDelivery: (@Sendable (MorningContext.WinterImpact?) async -> DeliveryAuthorization?)? = nil
     ) async -> Bool {
         logger.debug("Running rules")
         guard !Task.isCancelled, let event = rule.evaluate(ctx) else { return false }
@@ -43,13 +48,12 @@ struct MorningEngine: Sendable {
         }
 
         let delivery: NotificationEvent?
-        if let winter = ctx.winterImpact, let winterStillApplies, !(await winterStillApplies(winter)) {
-            // Claim admission can await storage while the accepted point or opt-in changes.
-            delivery = rule.evaluate(.init(
-                now: ctx.now, lastConvectiveIssue: ctx.lastConvectiveIssue, localTZ: ctx.localTZ,
-                quietHours: ctx.quietHours, stormRisk: ctx.stormRisk, severeRisk: ctx.severeRisk,
-                fireRisk: ctx.fireRisk, placeMark: ctx.placeMark, riskProfileChange: ctx.riskProfileChange
-            ))
+        if let authorizeDelivery {
+            // Claim admission can await storage while policy, time, or the accepted point changes.
+            let authorization = await authorizeDelivery(ctx.winterImpact)
+            delivery = authorization.flatMap {
+                rule.evaluate(ctx.atDeliveryTime($0.time, includeWinter: $0.includeWinter))
+            }
         } else {
             delivery = event
         }

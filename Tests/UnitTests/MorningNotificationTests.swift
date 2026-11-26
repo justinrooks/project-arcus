@@ -409,6 +409,7 @@ actor PausingMorningStampStore: NotificationStateStoring {
     nonisolated let loadStarted: AsyncStream<Void>
     private let signal: AsyncStream<Void>.Continuation
     private var waiter: CheckedContinuation<Void, Never>?
+    private var loadReleased = false
     private var stamp: String?
 
     init() {
@@ -416,14 +417,19 @@ actor PausingMorningStampStore: NotificationStateStoring {
     }
 
     func lastStamp() async -> String? {
-        await withCheckedContinuation {
-            waiter = $0
-            signal.yield(())
+        if !loadReleased {
+            await withCheckedContinuation {
+                waiter = $0
+                signal.yield(())
+            }
         }
         return stamp
     }
 
+    func isHoldingLoad() -> Bool { waiter != nil }
+
     func releaseLoad() {
+        loadReleased = true
         waiter?.resume()
         waiter = nil
         signal.finish()

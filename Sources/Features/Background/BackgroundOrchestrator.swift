@@ -333,16 +333,17 @@ actor BackgroundOrchestrator {
                     }
                     defer { winterRead?.cancel() }
 
-                    @Sendable func winterStillApplies(
-                        _ impact: MorningContext.WinterImpact, at location: WSSIAcceptedAssessment.Location?
-                    ) async -> Bool {
-                        guard let winterAssessmentSource, let location,
-                              await winterAssessmentSource.currentLocation() == location else { return false }
+                    @Sendable func authorizeMorningDelivery(
+                        _ impact: MorningContext.WinterImpact?, at location: WSSIAcceptedAssessment.Location?
+                    ) async -> MorningEngine.DeliveryAuthorization? {
+                        let matchesWinterLocation = if impact != nil, let winterAssessmentSource, let location {
+                            await winterAssessmentSource.currentLocation() == location
+                        } else {
+                            false
+                        }
                         let latest = await notificationSettingsProvider.current()
-                        let time = morningNow()
-                        return latest.morningSummariesEnabled && latest.winterImpactsEnabled
-                            && clock.now < workDeadline && time < impact.sourceInterval.end
-                            && morningEngine.rule.isInDeliveryWindow(at: time, localTZ: localTZ)
+                        guard latest.morningSummariesEnabled, clock.now < workDeadline else { return nil }
+                        return .init(time: morningNow(), includeWinter: matchesWinterLocation && latest.winterImpactsEnabled)
                     }
 
                     func attemptWinterOnly(at locationSnapshot: LocationSnapshot?) async throws -> Bool {
@@ -377,7 +378,7 @@ actor BackgroundOrchestrator {
                             placeMark: snapshotLocation == location ? locationSnapshot?.placemarkSummary : nil,
                             acceptedWinterAssessment: assessment,
                             currentWinterLocation: location, winterImpactsEnabled: true
-                        )) { await winterStillApplies($0, at: location) }
+                        )) { await authorizeMorningDelivery($0, at: location) }
                     }
 
                     let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
@@ -488,7 +489,7 @@ actor BackgroundOrchestrator {
                                 currentWinterLocation: winterLocation,
                                 winterImpactsEnabled: morningSettings.winterImpactsEnabled
                             )
-                        ) { await winterStillApplies($0, at: winterLocation) }
+                        ) { await authorizeMorningDelivery($0, at: winterLocation) }
                     }
                     if hasSPC || acceptedWinter != nil { winterRead?.cancel() }
 
