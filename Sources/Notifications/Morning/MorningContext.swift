@@ -15,14 +15,14 @@ struct MorningContext: Sendable {
         let localTimeZone: TimeZone
     }
 
-    let now: Date
+    private(set) var now: Date
     let lastConvectiveIssue: Date?
     let localTZ: TimeZone
     let quietHours: ClosedRange<Int>?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
-    let winterImpact: WinterImpact?
+    private(set) var winterImpact: WinterImpact?
     let placeMark: String?
     let riskProfileChange: RiskProfileChange?
     
@@ -59,5 +59,14 @@ struct MorningContext: Sendable {
         } else {
             winterImpact = nil
         }
+    }
+
+    func atDeliveryTime(_ time: Date, includeWinter: Bool) -> Self {
+        var context = self
+        context.now = time
+        if let winterImpact, !includeWinter || time >= winterImpact.sourceInterval.end {
+            context.winterImpact = nil
+        }
+        return context
     }
 }
