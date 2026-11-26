@@ -988,10 +988,21 @@ final class SkyAwareUITests: XCTestCase {
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
         app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
         app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-winterImpactsEnabled", "NO"]
         app.launch()
 
         let todayTab = app.tabBars.buttons["Today"]
         XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist.")
+
+        let hero = app.buttons["summary-primary-awareness"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 10))
+        XCTAssertEqual(hero.label, "Severe Thunderstorm Warning")
+        let heroValue = hero.value as? String ?? ""
+        XCTAssertTrue(heroValue.contains("Until "))
+        XCTAssertTrue(heroValue.contains("Seek shelter immediately"))
+        hero.tap()
+        XCTAssertTrue(app.buttons["alert-center-watch-row-ui-test-warning-001"].waitForExistence(timeout: 10))
+        todayTab.tap()
 
         let summaryWatchRow = app.buttons["local-alert-row-ui-test-watch-001"]
         XCTAssertTrue(summaryWatchRow.waitForExistence(timeout: 10), "Expected seeded watch row to appear in Summary local alerts.")

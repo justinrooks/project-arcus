@@ -207,13 +207,14 @@ actor AlertRepo {
         guard
             let sent             = normalizedAlertDate(item.sent),
             let effective        = normalizedAlertDate(item.effective),
-            let onset            = normalizedAlertDate(item.onset),
             let expires          = normalizedAlertDate(item.expires),
             let watchDescription = item.description
         else {
             logger.debug("Required watch property missing, returning null.")
             return nil
         }
+        // CAP onset is optional. The persisted date falls back to when the alert takes effect.
+        let onset = normalizedAlertDate(item.onset) ?? effective
         let ends = normalizedAlertDate(item.ends) ?? expires
 
         return .init(
