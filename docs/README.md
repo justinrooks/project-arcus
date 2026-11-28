@@ -17,13 +17,13 @@ Product meaning belongs to North Star, communication to Brand, and visual and in
 
 | Knowledge | Starting point |
 | --- | --- |
-| Client architecture and runtime orientation | [App codebase summary](codebase/skyaware-app-summary.md) |
+| Client architecture and runtime orientation | [Client architecture](architecture/README.md) |
 | Installation credentials, consent, and protocol safeguards | [Installation enrollment](security/installation-enrollment.md) |
 | Local review expectations | [Code review guidance](code_review.md) |
 | Shared principles and reusable capabilities | [Prompt_Fu knowledge index](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/README.md) |
 | Cross-system ownership and backend evolution | [Arcus ecosystem](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/arcus/README.md) |
 
-The existing app summary and installation document contain versioned implementation context that needs reconciliation as the code evolves. Verify current behavior against source, tests, contracts, and accepted decisions. Do not interpret a repository's configured integration as proof of live deployment.
+The client architecture overview describes current composition and ownership. The installation document contains versioned protocol context that still needs reconciliation as the code evolves. Verify current behavior against source, tests, contracts, and accepted decisions. Do not interpret a repository's configured integration as proof of live deployment.
 
 ## Build, Validation, and Evidence
 
@@ -52,7 +52,7 @@ Keep deterministic, simulator UI, physical-device, and measurement evidence dist
 
 [Plans and progress records](plans/), [archived runbooks](runbooks/archive/), [audits](audits/), and other investigation notes preserve prior decisions, implementation rationale, and evidence. They are not blanket instructions for new work. Some remain unreconciled with later implementation or closed GitHub issues.
 
-Additional historical inputs include the [notification strategy](architecture/timely-notifications-strategy.md), [release readiness punchlist](release-readiness-punchlist.md), and [lessons](../tasks/lessons.md). Reconcile their current authority before applying them.
+Additional historical inputs include the [original app summary](codebase/skyaware-app-summary.md), [earlier architectural risks and decisions](codebase/skyaware-app-risks-decisions.md), [architecture recovery audit](audits/codebase-architecture-recovery.md), [notification strategy](architecture/timely-notifications-strategy.md), [release readiness punchlist](release-readiness-punchlist.md), and [lessons](../tasks/lessons.md). Reconcile their current authority before applying them.
 
 Consult historical material when the task requires it. Resolve contradictions against current authoritative evidence before reusing decisions; use GitHub issues and pull requests for implementation scope, status, and change-specific evidence.
 
