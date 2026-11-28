@@ -29,11 +29,12 @@ The existing app summary and installation document contain versioned implementat
 
 | Knowledge | Starting point |
 | --- | --- |
-| Required local regression, performance, and UI navigation lanes | [CI and test-lane procedures](../tools/ci/README.md) |
+| Local regression, performance, and UI navigation validation | [CI and test-lane procedures](../tools/ci/README.md) |
 | Location lifecycle and presence | [Presence lifecycle validation](validation/location-presence-lifecycle.md) |
 | Location enrichment and timing | [Enrichment timing](validation/location-enrichment-timing.md) |
 | WSSI persistence and retention | [Local retention](validation/wssi-local-retention.md) |
 | WSSI physical-device observations | [Integrated device run](validation/wssi-integrated-device-run.md) |
+| Logging categories | [Logger extension](../Sources/Utilities/Extensions/Logger+Extension.swift) |
 | Investigation and audit evidence | [Audits](audits/) |
 
 Keep deterministic, simulator UI, physical-device, and measurement evidence distinct. An investigation describes the source and conditions it examined, not necessarily current behavior.
@@ -50,6 +51,8 @@ Keep deterministic, simulator UI, physical-device, and measurement evidence dist
 ## Historical and Campaign Material
 
 [Plans and progress records](plans/), [archived runbooks](runbooks/archive/), [audits](audits/), and other investigation notes preserve prior decisions, implementation rationale, and evidence. They are not blanket instructions for new work. Some remain unreconciled with later implementation or closed GitHub issues.
+
+Additional historical inputs include the [notification strategy](architecture/timely-notifications-strategy.md), [release readiness punchlist](release-readiness-punchlist.md), and [lessons](../tasks/lessons.md). Reconcile their current authority before applying them.
 
 Consult historical material when the task requires it. Resolve contradictions against current authoritative evidence before reusing decisions; use GitHub issues and pull requests for implementation scope, status, and change-specific evidence.
 
