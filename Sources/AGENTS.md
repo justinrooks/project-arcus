@@ -1,41 +1,29 @@
 # AGENTS.md — SkyAware App Guidance
 
-## Purpose
-- This file provides app-specific guidance for agents working in `Sources/` and related app-layer code.
-- Apply the repo-level guidance in `../AGENTS.md` first, then use this file for rules that are specific to the iOS app layer.
-- Prefer concrete implementation guidance over high-level project summary.
+Apply [repository guidance](../AGENTS.md) first. This file supplements it for work under `Sources/`.
 
-## Product and UX Intent
-- SkyAware is a severe-weather awareness app, not a general forecast app.
-- Prioritize severe-weather relevance, glanceability, and concise communication over broad weather surface area.
-- Preserve privacy-first behavior in location-aware and alert-driven user flows.
-- Keep user-facing behavior calm, clear, and utility-focused.
+Consult the [knowledge index](../docs/README.md) for product meaning, brand and design requirements, architectural context, and relevant validation evidence. Preserve the established severe-weather focus, glanceability, and privacy-first experience.
 
-## App-Layer Architecture Rules
-- Keep SwiftUI views thin; do not move parsing, orchestration, or domain decision-making into view bodies or view modifiers.
-- Preserve clear separation between feature UI, providers, repositories, and utilities.
-- Do not bypass the shared dependency container from feature code without a task-specific reason.
-- Preserve provider and repository boundaries; do not duplicate data-fetching, parsing, persistence, or orchestration logic across layers.
-- Do not expose raw provider, persistence, or framework details directly to user-facing views when a DTO, helper, or view-model boundary is more appropriate.
+## App-Layer Boundaries
 
-## Background and Location Behavior
-- Background scheduling is opportunistic, not guaranteed.
-- Reschedule background work on each run when that is part of the existing flow.
-- Keep background handlers short, resumable, and side-effect aware.
-- Do not assume a force-quit app will continue to receive background execution until relaunched.
-- Treat location-driven flows as dependent on current authorization, accuracy, app lifecycle state, and system policy.
+- Keep SwiftUI views thin; do not move parsing, orchestration, or domain decisions into view bodies or modifiers.
+- Preserve feature UI, provider, repository, and utility responsibilities. Do not bypass the shared dependency container without a task-specific reason.
+- Preserve provider and repository boundaries; do not duplicate fetching, parsing, persistence, or orchestration across layers.
+- Keep raw provider, persistence, and framework details out of user-facing views when a DTO, helper, or view-model boundary is appropriate.
+- Background refresh is coordinated centrally. Do not introduce competing orchestration in features or views.
 
-## Testing Guidance
-- Prefer deterministic tests around provider, repository, and feature seams.
-- Avoid live SPC, NWS, WeatherKit, or other network-backed dependencies in tests.
-- When changing user-facing flows, favor focused tests on behavior rather than implementation details.
-- Keep accessibility identifiers stable when UI tests depend on them.
-- Create tests and testing infrastructure that is compatible and efficient with xcode cloud.
+## Background and Location
 
-## Local Notes and Gotchas
-- Background refresh is coordinated centrally; do not reintroduce competing orchestration paths in features or views.
-- Location-driven behavior can change based on authorization state, accuracy, and app lifecycle.
-- Changes that affect notifications, background work, or location should call out assumptions and validation gaps clearly.
+- Background scheduling is opportunistic, not guaranteed. Reschedule work on each run where required by the existing flow; keep handlers short, resumable, and side-effect aware.
+- Do not assume a force-quit app will continue receiving background execution before relaunch.
+- Location behavior depends on current authorization, accuracy, lifecycle state, and system policy.
+- Changes affecting notifications, background work, or location must identify assumptions and validation gaps.
+
+## Source Testing
+
+Prefer deterministic behavioral tests at provider, repository, and feature seams. Follow the repository's test-lane, network isolation, accessibility identifier, and Xcode Cloud requirements.
+
+Consult [shared SwiftData persistence guidance](https://github.com/justinrooks/Prompt_Fu/blob/main/codex/context/swiftdata-persistence.md) for framework practices. The following requirements remain explicit for SkyAware.
 
 ## SwiftData Persistence Guardrails
 - Do not persist associated-value enums or arbitrary custom `Codable` domain types
@@ -56,6 +44,3 @@
   cache-invalidation decision. Never delete a shared store as a routine workaround.
 - Before accepting a persistence change, run its focused test suite repeatedly and the
   full unit lane at least once, then inspect the resulting `.xcresult` and crash artifacts.
-
-## Instruction Precedence
-- This file supplements the repo-level `../AGENTS.md` with the more specific rules for code under `Sources/`.

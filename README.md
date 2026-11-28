@@ -1,26 +1,26 @@
 # SkyAware
 
-SkyAware is an iOS app built for hyper-local severe weather awareness. It brings together NWS and SPC data to surface current risk, active alerts, and timely notifications in a clear, glanceable way. This repository contains the app and its supporting development context.
+SkyAware is an iOS app for hyper-local severe-weather awareness. It helps people understand local weather risks, active alerts, and evolving conditions in a clear, glanceable experience. This repository contains the app, its widgets, tests, and development documentation.
 
 ## Public Site
+
 [skyaware.app](https://www.skyaware.app)
 
 ## Join the Beta
+
 Try SkyAware on TestFlight and help shape the app.
 
 [Join the SkyAware beta on TestFlight](https://testflight.apple.com/join/2hnEnj6e)
 
-SkyAware is a severe-weather awareness app in active development. It does not issue official warnings and should not be relied upon as a sole source of emergency information.
-
-
 ## Key Features
-- Visualize current severe weather risks for your location
-- Receive notifications about mesoscale discussions, watches, and warnings relevant to your location
-- Morning severe weather risk summary
-- Map layers for categorical and probabilistic severe risks (wind/hail/tornado) plus mesoscale overlays
-- Background refresh with automatic data cleanup and cadence policies
-- Localized risk queries driven by NWS gridpoint metadata (county/zone based watch lookup)
-- In-app diagnostics, including a log viewer and background run health screen
+
+- Local severe-weather risk, alerts, and outlooks
+- Location-aware morning summaries, risk-change notifications, and relevant watches, warnings, and mesoscale discussions
+- Interactive severe-weather risk maps and glanceable widgets
+- Current conditions, Storm Setup, and winter-weather awareness where supported and enabled
+- Cache-forward presentation, opportunistic background refresh, and in-app diagnostics
+
+The app combines SPC and NWS products, Apple WeatherKit, and Arcus backend services. The repository includes Forge WSSI integration alongside existing Signal integrations; this does not establish production deployment or backend migration status.
 
 ## Screenshots
 | Today + Alerts | Today + Risks | Today (Clear) |
@@ -36,55 +36,40 @@ SkyAware is a severe-weather awareness app in active development. It does not is
 | ![](docs/images/12-HailRisk.png) | ![](docs/images/4-ActiveAlerts.png) | ![](docs/images/5-ExampleTornadoWatch.png) |
 
 ## Getting Started
+
 ### Requirements
-- Xcode 16+
-- iOS 18+
-- Swift 6+
+
+- Swift 6 and a compatible Xcode version with the required SDK and simulator runtime
+- iOS 18+ for the app; check the Xcode project for individual target requirements
 
 ### Open in Xcode
+
 ```sh
 xed SkyAware.xcodeproj
 ```
 
 ## Build & Run
+
 ```sh
 xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build
 ```
 
-## Testing
-The canonical validation procedure is maintained in [`AGENTS.md`](AGENTS.md). `SkyAware_Tests` is the required regression lane, `SkyAware_Performance` is an optional measurement lane, and `SkyAware_UI_Smoke` remains the separate simulator navigation-smoke lane. All local selections use `tools/ci/run_test_lane.sh` and its native `.xcresult` verification; the guidance explains what evidence each lane supports and how to report it.
+App configuration lives in `Config/`, and shared assets and previews live in `Resources/`. Use local developer provisioning and secure configuration for capabilities that require credentials. Enable the permissions appropriate to the behavior being tested.
 
-## Configuration
-- App configuration lives in `Config`.
-- Shared assets and previews live in `Resources`.
-- The app uses NWS and SPC as primary data sources.
-- Ensure location and notification permissions are enabled when testing.
+## Development and Documentation
 
-## Architecture
-- **App**: app entry points and dependency wiring.
-- **Features**: SwiftUI screens and feature logic (e.g., Map, Summary, Diagnostics).
-- **Providers**: data fetch and sync (NWS/SPC).
-- **Repos**: persistence and query logic.
-- **Utilities / Views**: shared helpers, extensions, and reusable UI.
+- [Knowledge index](docs/README.md): product, design, architecture, validation, and operational documentation.
+- [Repository guidance](AGENTS.md): development constraints, required validation lanes, and working instructions.
+- [Source guidance](Sources/AGENTS.md): app-layer architecture and persistence safeguards.
+- [CI and test-lane procedures](tools/ci/README.md): regression, performance, and UI navigation validation.
+- [PR template](.github/pull_request_template.md): contribution and review evidence.
 
-Data flow is Provider → Repo → Feature View, with background refresh orchestrated by app lifecycle and cadence policies.
-
-## Logging & Diagnostics
-- Logging categories are centralized under `Sources/Utilities/Extensions/Logger+Extension.swift`.
-- Diagnostics screens include the log viewer and background run health.
-- All logging is treated as public for now; revisit if sensitive data is introduced.
-
-## Contributing
-- Commits follow the project convention: single-line, short, imperative summaries prefixed with `- `.
-- PRs should describe intent, list user-visible changes, and note testing performed.
-- Avoid committing secrets or credentials.
-
-## Security & Privacy
-- Keep private keys and WeatherKit credentials out of the repo.
-- Do not log sensitive location or alert data in production code.
+Keep private keys and WeatherKit credentials out of the repository. Do not log sensitive location or alert data in production code.
 
 ## Weather Awareness Disclaimer
-SkyAware provides informational severe-weather awareness only and does not issue official warnings. Risk summaries, badges, and notifications are provided on a best-effort basis and should not be relied upon as a sole source of emergency information. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities. See `legal/EULA.md` for full terms.
+
+SkyAware provides informational severe-weather awareness only and does not issue official warnings. Risk summaries, badges, and notifications are provided on a best-effort basis and should not be relied upon as a sole source of emergency information. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities. See [EULA](legal/EULA.md) for full terms.
 
 ## License
-Use of SkyAware is governed by the End-User License Agreement in `legal/EULA.md`.
+
+Use of SkyAware is governed by the [End-User License Agreement](legal/EULA.md).

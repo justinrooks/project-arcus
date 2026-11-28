@@ -1,130 +1,62 @@
 # AGENTS.md — SkyAware Repository Guidance
 
-## Purpose
+## Context Discovery
 
-- This file defines durable repository guidance for Codex and other agents working in this repo.
-- Keep changes aligned with the existing architecture, coding patterns, and product goals.
-- Prefer concrete repo-specific guidance over generic advice.
+- Consult [README.md](README.md) for repository orientation and [docs/README.md](docs/README.md) to locate authoritative local knowledge.
+- Follow [Prompt_Fu's shared engineering principles](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/engineering.md) and use its [knowledge index](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/README.md) to locate applicable guidance and reusable capabilities.
+- For cross-system work, consult the [Arcus ecosystem overview](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/arcus/README.md). Verify implementation claims and contracts against their owning repositories.
+- Apply [Sources/AGENTS.md](Sources/AGENTS.md) when working in the app source. Load only relevant documents; historical plans and audits are not automatically current authority.
+- For code review, consult [local review guidance](docs/code_review.md). For user-facing work, consult the product, brand, and design authorities linked from the knowledge index.
+- If shared guidance or local context tools are unavailable, state the limitation and proceed only where local evidence is sufficient.
 
-## Project Structure
+## Repository and Platform
 
-- Root Xcode project lives at `SkyAware.xcodeproj`.
-- App source lives in `Sources`.
-- Shared assets and previews live in `Resources`.
-- Config plist files live in `Config`.
-- Tests live in:
-  - `Tests/UnitTests`
-  - `Tests/UITests`
-- Release artifacts live in `release`.
-- Legal and policy documents live in `legal`.
-- CI helper scripts live in `tools/ci`.
-- Source-specific agent guidance lives in `Sources/AGENTS.md`.
-- UI reference screenshots live in `docs/images`.
-  - Use them to preserve visual consistency when building or revising UI.
-  - Treat them as reference material, not as a source of exact truth unless the task explicitly says to match them.
+- Xcode project: `SkyAware.xcodeproj`; app source: `Sources/`; widgets: `WidgetsExtension/`; shared code: `Shared/`.
+- Assets and previews: `Resources/`; configuration: `Config/`; tests: `Tests/UnitTests/` and `Tests/UITests/`.
+- Swift 6+, iOS 18+ for the app, SwiftUI-first. Respect the deployment targets of individual Xcode targets and Swift concurrency boundaries.
+- Avoid deprecated APIs and cross-platform assumptions unless explicitly required. Do not introduce cross-actor `ModelContext` misuse.
+- Use four-space indentation, approximately 120-column lines when practical, tidy imports, PascalCase types, lowerCamelCase functions/properties, and `Tests` or `UITests` suffixes for test types.
 
-## Build, Test, and Development Commands
+## Build and Validation
 
-- Build (Debug):
-  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
-- Test-lane policy (Debug, simulator):
-  - `SkyAware_Tests` is the default regression suite and is required for normal implementation and CI validation:
-    `tools/ci/run_test_lane.sh unit`
-  - During implementation, run focused regression selections through the same runner so native XCResult verification remains active; run the full unit lane for final regression validation. For example:
-    `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`
-  - `SkyAware_Performance` is an optional measurement suite. Run it during performance investigations or when a
-    change could affect measured behavior; run the regression suite as well when validating such a change:
-    `tools/ci/run_test_lane.sh performance`
-  - Focused measurements use target-qualified selectors through the same runner, with XCResult verification narrowed
-    to the selected expected set. For example:
-    `tools/ci/run_test_lane.sh performance -only-testing:SkyAwarePerformanceTests/MapSceneWarmingMeasurementTests`
-  - `SkyAware_UI_Smoke` remains a separate UI navigation smoke lane:
-    `tools/ci/run_test_lane.sh ui-navigation`
-  - The runner accepts focused `xcodebuild test` selection arguments after the lane name. It creates a fresh
-    `.xcresult` bundle and invokes `ci_scripts/verify_xcresult.sh` for every lane. Focused runs must still use this
-    runner and its native result verification.
-- Evidence reporting: report the exact lane and command, finalized result, logical test counts and parameter-expanded count when available, simulator/runtime, configuration, plan, and `.xcresult` path. Regression results are deterministic behavior evidence. Performance measurements are environment-dependent diagnostics; include the test, environment, and available measurement attachments, and do not present a passing measurement suite as proof of a performance improvement by itself.
-- Deterministic tests use stubs/fakes and make no intentional live WeatherKit, NWS, SPC, Arcus, or APNs requests.
-- `SkyAware_UI_Smoke` provides simulator UI navigation evidence. Unit and performance lanes do not establish rendered UI, physical-device behavior, or Instruments/device performance evidence.
-- Resolve Swift package dependencies:
-  `xcodebuild -resolvePackageDependencies -project SkyAware.xcodeproj`
-- Open in Xcode:
-  `xed SkyAware.xcodeproj`
-- Always check if docker is running before attempting to install dependencies like postgres or redis. If docker is not running, start it and use the postgres and redis instance there.
+- Open: `xed SkyAware.xcodeproj`
+- Resolve packages: `xcodebuild -resolvePackageDependencies -project SkyAware.xcodeproj`
+- Build (Debug): `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
 
-## Platform and Architecture Constraints
+Use the [CI and test-lane procedures](tools/ci/README.md) for simulator validation and evidence requirements:
 
-- Swift 6+, iOS 18+ only.
-- SwiftUI-first.
-- Keep changes aligned with the existing app, server, and shared architecture boundaries in this repository.
-- Avoid deprecated APIs and cross-platform assumptions unless the task explicitly requires them.
-- Do not introduce cross-actor `ModelContext` misuse.
+| Lane | Command | Policy |
+| --- | --- | --- |
+| `SkyAware_Tests` | `tools/ci/run_test_lane.sh unit` | Required regression lane for normal implementation and CI; run the full lane for final regression validation. |
+| `SkyAware_Performance` | `tools/ci/run_test_lane.sh performance` | Optional measurement lane; use for performance investigations or changes affecting measured behavior, alongside regression validation. |
+| `SkyAware_UI_Smoke` | `tools/ci/run_test_lane.sh ui-navigation` | Separate simulator UI navigation evidence. |
 
-## Coding Conventions
-
-- Indent with 4 spaces.
-- Wrap lines around 120 columns when practical.
-- Keep imports ordered and tidy.
-- Naming:
-  - Types use PascalCase.
-  - Functions and properties use lowerCamelCase.
-  - Test types end with `Tests` or `UITests`.
-
-### SwiftUI Specialist
-
-For substantive SwiftUI implementation, architectural review, or performance investigation, use Apple's `swiftui-specialist` skill when available.
-
-Apply it to view composition, Observation and state ownership, view lifecycle, navigation, rendering efficiency, and native SwiftUI API usage.
-
-Treat the skill as Apple framework guidance, not authority to redesign established architecture. Preserve SkyAware's canonical state ownership, cache-forward presentation, Swift 6 concurrency guarantees, deployment targets, and existing design language.
-
-Prefer evidence-backed corrections over stylistic refactoring. Do not invoke the skill for unrelated backend, persistence, or infrastructure work.
-
-If the skill is unavailable in the execution environment, proceed with standard project guidance and note its absence.
-
-## Testing Expectations
-
-- Use Swift Testing (`import Testing`).
-- When hand-editing `project.pbxproj` test membership exception lists, preserve Xcode's filename ordering (for example, `ArcusMesoClientTests.swift` follows the `Alert*` entries). Commit verified ordering-only normalization rather than repeatedly reverting it and leaving the committed project out of order.
-- Do not hit live WeatherKit, NWS, or SPC feeds in tests.
-- Stub or fake providers and network boundaries.
-- When adding UI, include a smoke UI test for the main navigation or happy path when practical.
-- Keep accessibility identifiers stable when they are used for UI testing.
+- Use the runner for focused selections as well as complete lanes; it creates a fresh `.xcresult` and invokes native verification via `ci_scripts/verify_xcresult.sh`. Do not bypass it.
+- Focused regression example: `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`.
+- Focused measurement example (target-qualified): `tools/ci/run_test_lane.sh performance -only-testing:SkyAwarePerformanceTests/MapSceneWarmingMeasurementTests`.
 - Prefer iPhone 17 or iPhone 17 Pro on iOS 26.5 for local simulator runs when available.
-- If test execution produces an `.xcresult`, inspect it and report failures and coverage impact when available.
-- Mirror production namespaces when adding tests.
+- Use Swift Testing (`import Testing`), mirror production namespaces, and stub or fake providers and network boundaries. Deterministic tests must not intentionally make live WeatherKit, NWS, SPC, Arcus, or APNs requests.
+- Preserve Xcode filename ordering when hand-editing test membership exception lists in `project.pbxproj` (for example, `ArcusMesoClientTests.swift` follows the `Alert*` entries). Commit verified ordering-only normalization rather than repeatedly reverting it.
+- For new UI, include a smoke test of the main navigation or happy path when practical; keep existing test-dependent accessibility identifiers stable.
+- Keep tests and test infrastructure compatible and efficient with Xcode Cloud.
+- Validate proportionately to the change. Normal implementation must compile. Inspect finalized results and report commands, lane, outcome, counts (including parameter-expanded counts when available), simulator/runtime, configuration, plan, `.xcresult` path, failures and coverage impact when measured. Never claim execution or coverage that was not obtained.
+- Regression, simulator UI, physical-device, and performance evidence are distinct. Passing measurement tests alone do not prove a performance improvement; report the environment and available measurement attachments.
 
-## Definition of Done
+## SwiftUI Specialist
 
-- The change should compile unless the task explicitly requests draft-only output.
-- Validate the smallest relevant scope before finishing.
-- Prefer minimal diffs that solve the problem cleanly.
-- Do not claim tests passed unless you ran them.
-- Do not claim coverage changed unless you measured it.
+For substantive SwiftUI implementation, architectural review, or performance investigation, use Apple's `swiftui-specialist` skill when available. Apply it to composition, Observation and state ownership, lifecycle, navigation, rendering efficiency, and native API usage.
 
-## Commit and PR Guidance
-
-- Commits should target a single-line imperative summary .
-  - Example: `Fix bug preventing watches from loading`
-- PRs should summarize intent, list user-visible changes, and note validation performed.
-- For UI changes, include screenshots when the workflow calls for them.
-- Call out risk areas and rollback considerations when they matter.
+The skill is framework guidance, not authority to redesign SkyAware. Preserve canonical state ownership, cache-forward presentation, Swift 6 concurrency guarantees, deployment targets, and established design language. Favor evidence-backed changes over stylistic refactoring. Do not invoke the skill for unrelated backend, persistence, or infrastructure work. If unavailable, proceed with standard project guidance and disclose its absence.
 
 ## Security and Configuration
 
-- Keep private keys, WeatherKit credentials, and secrets out of the repo.
-- Use local developer provisioning and per-user secure storage.
+- Keep private keys, WeatherKit credentials, and secrets out of the repository. Use local developer provisioning and per-user secure storage.
 - Verify `Info.plist` changes and secrets templates before sharing builds.
-- Do not log sensitive location or alert data in production code.
-- Preserve the privacy-first handling of location, alert, and weather data across all repository changes.
+- Do not log sensitive location or alert data in production code; preserve privacy-first handling of location, alert, and weather data.
 
-## Related Guidance
+## GitHub and Delivery
 
-- For code review tasks, follow `docs/code_review.md`.
-- For product behavior and meteorological meaning, follow `docs/product/north-star.md`.
-- For brand identity, terminology, and communication, follow `docs/brand/brand-and-voice.md`.
-- For visual and interaction design, start with `docs/design/README.md`, which routes to the relevant surface guidance.
-- For design, UI, brand, screenshots, marketing visuals, and user-facing copy, follow `docs/SkyAware North Star Spec.md`.
+Use the applicable shared workflows and skills in Prompt_Fu, including its [GitHub workflow guidance](https://github.com/justinrooks/Prompt_Fu/blob/main/codex/context/github-workflows.md). Use short imperative commit summaries and the repository's [PR template](.github/pull_request_template.md). Include screenshots for UI changes when the workflow calls for them, and report material risks, rollback considerations, and actual validation evidence.
 
 <!-- trail:start -->
 ## Trail — repo context graph
