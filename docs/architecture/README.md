@@ -79,7 +79,7 @@ This is an ownership and data-flow orientation, not an exhaustive execution or d
 | [WidgetSnapshotRefreshCoordinator](../../Sources/App/HomeRefreshV2/WidgetSnapshotRefreshCoordinator.swift), [WidgetSnapshotStore](../../Shared/WidgetSnapshotStore.swift) | Derived widget publication and shared app-group snapshot storage. |
 | [WeatherAwarenessSnapshotPublisher / store](../../Sources/Repos/WeatherAwarenessSnapshotStore.swift), [GetWeatherAwarenessIntent](../../Sources/App/GetWeatherAwarenessIntent.swift) | App-owned accepted-awareness file publication and read-only shortcut response. |
 
-See [Ingestion and State](ingestion-and-state.md) for the reviewed execution, coordination, acceptance, persistence, freshness and transport provenance contracts. Detailed publication, lifecycle, notification, and installation contracts are still being reconciled within their respective architectural and security guidance.
+See [Ingestion and State](ingestion-and-state.md) for the reviewed execution, coordination, acceptance, persistence, freshness, transport provenance, presentation and reactive-consumer contracts. Detailed feature-specific, lifecycle, notification, and installation contracts are still being reconciled within their respective architectural and security guidance.
 
 ## External integrations
 
