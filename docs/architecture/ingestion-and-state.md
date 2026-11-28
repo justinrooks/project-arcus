@@ -232,7 +232,7 @@ Network-verified future-valid convective candidates can be deferred rather than 
 
 [SpcProvider](../../Sources/Providers/SPC/SpcProvider.swift) and [its sync implementation](../../Sources/Providers/SPC/SpcProvider+Syncing.swift) retain a short process-local current-map cooldown after fully accepted work. Partial acceptance does not establish that cooldown. Future-day categorical and hazard acquisition have their own accepted identities and process-local cooldowns; failed future-day acquisition can retry on subsequent provider invocations independently of the current-map cooldown. These are not independent OS jobs.
 
-Keep OS background scheduling, durable feed admission and provider-local cooldowns separate. The scheduler controls opportunities to execute; admission determines which requested work is due; provider policy suppresses redundant acquisition or admits specific retries. Exact cadence, jitter and OS lifecycle behavior belong to the lifecycle contract.
+Keep OS background scheduling, durable feed admission and provider-local cooldowns separate. The scheduler controls opportunities to execute; admission determines which requested work is due; provider policy suppresses redundant acquisition or admits specific retries. Exact cadence, jitter and OS lifecycle behavior belong to [Location and Lifecycle](location-and-lifecycle.md).
 
 ## Transport provenance and fallback
 

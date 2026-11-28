@@ -20,6 +20,7 @@ Product meaning belongs to North Star, communication to Brand, and visual and in
 | Client architecture and runtime orientation | [Client architecture](architecture/README.md) |
 | Ingestion, acceptance, persistence, freshness and reactive presentation | [Ingestion and State](architecture/ingestion-and-state.md) |
 | Storm Setup, AQI, WSSI, SPC Map, widgets and App Intents | [Feature Data Contracts](architecture/feature-data-contracts.md) |
+| Location observations, context, presence and background lifecycle | [Location and Lifecycle](architecture/location-and-lifecycle.md) |
 | Installation credentials, consent, and protocol safeguards | [Installation enrollment](security/installation-enrollment.md) |
 | Local review expectations | [Code review guidance](code_review.md) |
 | Shared principles and reusable capabilities | [Prompt_Fu knowledge index](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/README.md) |
