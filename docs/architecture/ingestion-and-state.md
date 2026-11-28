@@ -2,7 +2,7 @@
 
 This document describes SkyAware's Home ingestion, acceptance, persistence, freshness, and presentation ownership. Start with the [client architecture overview](README.md) for system composition.
 
-**Reconciliation scope:** the execution, coordination, canonical acceptance and persistence contracts below have been reviewed against current source and historical decisions. Detailed freshness, presentation arbitration, reactive consumers and feature-specific contracts are still being reconciled. Consult their existing source and historical evidence until those sections are reviewed; this document does not supersede that material wholesale.
+**Reconciliation scope:** the execution, coordination, canonical acceptance, persistence, freshness and transport provenance contracts below have been reviewed against current source and historical decisions. Detailed presentation arbitration, reactive consumers and feature-specific contracts are still being reconciled. Consult their existing source and historical evidence until those sections are reviewed; this document does not supersede that material wholesale.
 
 ## Ingestion ownership
 
@@ -178,6 +178,89 @@ Display readiness requires useful core content: weather, risk values or accepted
 
 Follow the local [SwiftData guardrails](../../Sources/AGENTS.md#swiftdata-persistence-guardrails) and their shared engineering reference for disk-backed save/fetch/reopen, shipped-schema compatibility, migration, repeated focused verification and full unit-lane requirements. JSON coding tests and in-memory-only SwiftData tests do not establish on-disk compatibility.
 
+## Durable feed state
+
+[FeedStateStore](../../Sources/Infrastructure/Ingestion/FeedStateStore.swift) owns a versioned, actor-isolated JSON metadata sidecar, separate from SwiftData. It contains no weather payloads. Canonical repositories own accepted data; projection storage owns durable location-scoped representations. The sidecar records feed-specific evidence for admission and consumer invalidation, not an alternative source of domain truth.
+
+Keep the clocks distinct:
+
+| Evidence | Meaning |
+| --- | --- |
+| Last attempt | Work was attempted, not necessarily completed successfully. |
+| Last network success | A live or revalidated response was obtained. |
+| Last canonical acceptance | The feed's applicable acceptance boundary acknowledged data. |
+| Last validity observation | Feed-owned recorded validity evidence, not necessarily source expiration. |
+| Source issuance and validity window | Domain-owned applicability of the accepted weather product. |
+| Projection load time | When a particular location-scoped slice was committed. |
+| Monotonic work deadline | Remaining execution budget, not a wall-clock weather timestamp. |
+
+Sidecar updates merge network-success, acceptance and validity timestamps monotonically; latest-attempt provenance, failure and deferral follow attempt ordering. A completion at the same attempt time takes precedence over a provisional cancellation marker; deterministic tie-breaking handles other equal-time updates. Accepted generation advances on an owner-reported acceptance; generation notifications are emitted after successful sidecar persistence. These are invalidation hints, not domain values or universally network-verified revisions.
+
+The store atomically replaces the sidecar and bounds records by most recent attempt (default 32). Missing metadata is not accepted evidence. Corrupt metadata reads fail; a subsequent update can reconstruct the sidecar. Unsupported versions fail rather than being silently overwritten. Non-finite or future-dated attempt, success, acceptance and validity evidence is invalid; the separate deferred-until field deliberately describes a future applicability boundary. Missing or unusable metadata makes the applicable refresh eligible, subject to normal authorization, force, cancellation and resource policy. Do not destroy canonical data to repair admission metadata.
+
+### Acceptance is feed-specific
+
+| Feed identity | Acceptance boundary |
+| --- | --- |
+| `arcus.alerts` | Repository acknowledgement, including permitted cached merges; error fallback records transport failure and does not establish network success. |
+| `home.hot.<projectionKey>` | Complete coherent location-scoped collection and acknowledged projection commit. |
+| `home.weather.<projectionKey>` | Successful WeatherKit result and acknowledged projection commit. |
+| `spc.map.convective`, `spc.map.fire` | Independent network-backed accepted domain saves. |
+| `spc.outlook` | Network-backed accepted discussion collection save. |
+| Future-day SPC feeds | Independent accepted forecast persistence and network-backed metadata acceptance. |
+
+[ArcusAlertProvider](../../Sources/Providers/ArcusAlertProvider.swift) records repository-level acceptance independently from coherent Home hot freshness. Its generation may advance after a cached merge without new network success. Targeted remote work does not advance coherent Home freshness. Do not use one feed's generation as evidence of another feed's freshness.
+
+## Refresh admission
+
+[HomeIngestionExecutor](../../Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift) hydrates applicable [HomeFreshnessState](../../Sources/App/HomeRefreshV2/HomeFreshnessState.swift) from durable feed evidence when the production sidecar is available. The in-memory value is an execution/read-model input, not the primary durable scheduling authority.
+
+- Hot and WeatherKit admission are scoped by projection identity. Missing location context cannot establish a location-scoped acceptance.
+- Current map admission requires usable records for both convective and fire domains, using the older accepted timestamp. Outlook admission is independent; successful map work cannot hide a failed outlook and vice versa.
+- Slow products and weather use an accepted-date predicate requiring positive generation, no latest failure or deferral, live/revalidated provenance and coherent acceptance time. Coherent hot admission uses its own positive-generation/no-failure predicate because it has a different acceptance boundary.
+- Forced lanes bypass the corresponding executor freshness interval, not all provider cooldowns, authorization, validity, cancellation or resource checks. Follow the individual policy and provider definitions for exact admission behavior.
+
+### Interruption and restart
+
+Applicable hot, map, outlook and WeatherKit attempts record provisional cancellation/failure metadata before acquisition. This marker means successful acceptance has not yet been established, not that cancellation has already occurred. Only the appropriate acknowledgement finalizes accepted freshness. WeatherKit can successfully return authoritative nil; it still requires an acknowledged projection save. Failed, rejected, interrupted or fallback-only attempts remain eligible for retry under their applicable admission policies, including after restart.
+
+Sidecar and canonical repository saves are separate transactions. A canonical save may succeed while its metadata write fails; do not claim a distributed transaction. The conservative policy is to prefer redundant acquisition over unsupported freshness. Sidecar failure must not erase accepted weather data.
+
+## Temporal validity and cooldowns
+
+Network-verified future-valid convective candidates can be deferred rather than rejected as malformed or accepted as current risk. The SPC sidecar records `lastDeferredUntil` without advancing canonical acceptance. The executor's accepted-date predicate treats a deferred record as not fresh; this is not a dedicated wake-up timer at the validity boundary. Canonical source-window checks continue to govern usable retained assessments.
+
+[SpcProvider](../../Sources/Providers/SPC/SpcProvider.swift) and [its sync implementation](../../Sources/Providers/SPC/SpcProvider+Syncing.swift) retain a short process-local current-map cooldown after fully accepted work. Partial acceptance does not establish that cooldown. Future-day categorical and hazard acquisition have their own accepted identities and process-local cooldowns; failed future-day acquisition can retry on subsequent provider invocations independently of the current-map cooldown. These are not independent OS jobs.
+
+Keep OS background scheduling, durable feed admission and provider-local cooldowns separate. The scheduler controls opportunities to execute; admission determines which requested work is due; provider policy suppresses redundant acquisition or admits specific retries. Exact cadence, jitter and OS lifecycle behavior belong to the lifecycle contract.
+
+## Transport provenance and fallback
+
+[HTTPDataDownloader](../../Sources/Infrastructure/Networking/HTTPDataDownloader.swift) distinguishes live acquisition, network-revalidated cached representation (304), local HTTP cache and error fallback. These describe how bytes were obtained, not domain acceptance. A 304 can support acceptance if the applicable representation and domain requirements are satisfied. Local cache and error fallback do not themselves prove new network success or authoritative absence.
+
+HTTP response cache, canonical application cache and Home projection are separate. Rejecting transport fallback must not erase eligible accepted application data. Accepting transport fallback does not necessarily authorize replacing it; preserve each domain's acceptance and lifecycle rules.
+
+### Feed-specific error-fallback policy
+
+Maximum-age fallback requires a parseable origin HTTP `Date` header, nonnegative age and age within the configured limit. Missing, malformed, future-dated or excessively old dates reject fallback. This is transport-representation age, not product validity or application retention duration.
+
+| Client | Error-fallback tolerance |
+| --- | --- |
+| [Arcus alerts](../../Sources/Clients/ArcusClient.swift) and [mesos](../../Sources/Clients/ArcusMesoClient.swift) | 2 minutes |
+| [NWS](../../Sources/Clients/NwsClient.swift) | 2 minutes |
+| [SPC](../../Sources/Clients/SpcClient.swift) | 10 minutes |
+| [Storm Setup](../../Sources/Clients/StormSetupClient.swift) | 5 minutes |
+| [AQI](../../Sources/Clients/AirQualityClient.swift) | 60 minutes |
+| [Forge WSSI](../../Sources/Clients/ForgeWSSIClient.swift) | Explicit revalidation; no error fallback |
+
+These are intentional per-client policies, not a universal safety-critical age. The generic HTTP layer retains an unrestricted legacy option; callers must choose appropriate policy. Do not infer all HTTP requests have the same fallback protections.
+
+### Execution and specialized transport
+
+The shared transport applies task-local foreground/background policy. Budgeted background requests cap timeout by remaining work, admit retry delay only if it fits, enforce an in-flight deadline, and propagate cancellation. Retry-After is bounded and jittered according to the applicable policy. Deadline fallback is available only while work remains and the GET fallback policy permits it; otherwise cancel. Failed writes do not become successful cached reads. Refer to the transport implementation for exact retry and timeout defaults.
+
+Storm Setup specializes foreground HTTP with a 30-second timeout and no retry delays; it does not use the generic foreground policy unchanged. Forge WSSI uses explicit conditional revalidation: exact requested URL, network-backed response, and matching validator evidence for cached-body recovery after 304. It preserves legitimate bodyless 304s, rejects ordinary error fallback and requires a complete body for a missing immutable geometry revision. Manifest and geometry acceptance remain with WSSI's domain owners.
+
 ## Historical rationale and evidence
 
 The following records preserve decisions and historical validation, including later supersessions:
@@ -186,9 +269,11 @@ The following records preserve decisions and historical validation, including la
 - [Simplification runbook](../plans/codebase-simplification-runbook.md) and [progress](../plans/codebase-simplification-progress.md): #332–336 waiter characterization, cancellation, bounded drain and explicit atomic core transaction decisions.
 - [SPC map stability playbook](../plans/spc-map-ingestion-stability-playbook.md) and [progress](../plans/spc-map-ingestion-stability-progress.md): staged validation, independent domain acceptance, transactional replacement and rejection preservation. Later source changes supersede broad original empty/future-window rules.
 - [Cache acceptance runbook](../plans/ingestion-cache-acceptance-runbook.md) and [progress](../plans/ingestion-cache-acceptance-progress.md): typed outcomes, coherent hot acceptance, projection acknowledgement and persistence-gated publication. [Epic #425](https://github.com/justinrooks/project-arcus/issues/425) and all nine children are closed completed; historical pending labels do not describe current status.
+- [Feed-state/provenance runbook](../plans/ingestion-feed-state-provenance-runbook.md) and [progress](../plans/ingestion-feed-state-provenance-progress.md): metadata-only sidecar, acceptance generation and transport provenance. [Epic #426](https://github.com/justinrooks/project-arcus/issues/426) and all four children are closed completed.
+- [Durable scheduling runbook](../plans/ingestion-durable-scheduling-runbook.md) and [progress](../plans/ingestion-durable-scheduling-progress.md): independent durable admission, interrupted-attempt recovery and per-feed fallback rationale. [Epic #423](https://github.com/justinrooks/project-arcus/issues/423) and all four children are closed completed. Historical pending states and schema references describe the original campaign, not current schema or implementation status.
 - [Today performance runbook](../plans/today-refresh-performance-runbook.md): hot priority, core-before-enrichment, and preserved ownership boundaries.
 - [Background reliability runbook](../plans/background-refresh-reliability-runbook.md): background owner lifetime, cancellation, scheduler budgets and location-reuse rationale.
 - [Execution policy runbook](../plans/ingestion-execution-policy-runbook.md) and [progress](../plans/ingestion-execution-policy-progress.md): explicit execution class, scoped HTTP policy, prime reuse, parallel NWS labels and deferred foreground durable reuse. [Epic #421](https://github.com/justinrooks/project-arcus/issues/421) and its five children are closed completed; the historical planned/pending labels are not current implementation status.
 
-Representative current test definitions are in [HomeIngestionCoordinatorTests](../../Tests/UnitTests/HomeIngestionCoordinatorTests.swift), [HomeRefreshPipelineTests](../../Tests/UnitTests/HomeRefreshPipelineTests.swift), [RemoteHotAlertHandlerTests](../../Tests/UnitTests/RemoteHotAlertHandlerTests.swift), [background reuse tests](../../Tests/UnitTests/BackgroundLocationContextReusePolicyTests.swift), and [foreground reuse tests](../../Tests/UnitTests/ForegroundDurableContextReusePolicyTests.swift). Persistence regression definitions include [HomeProjectionStoreTests](../../Tests/UnitTests/HomeProjectionStoreTests.swift), [SpcProviderSyncMapProductsTests](../../Tests/UnitTests/SpcProviderSyncMapProductsTests.swift), and [WSSI accepted-store tests](../../Tests/UnitTests/WSSIAcceptedStoreTests.swift). [WSSI local retention evidence](../validation/wssi-local-retention.md) records measured workload limits. Historical ledgers record executed checks and their limitations; these links do not claim new test execution. [#346](https://github.com/justinrooks/project-arcus/issues/346) retired the universal physical-device profiling campaign without converting incomplete traces into performance evidence. Use targeted validation for concrete questions.
+Representative current test definitions are in [HomeIngestionCoordinatorTests](../../Tests/UnitTests/HomeIngestionCoordinatorTests.swift), [HomeRefreshPipelineTests](../../Tests/UnitTests/HomeRefreshPipelineTests.swift), [RemoteHotAlertHandlerTests](../../Tests/UnitTests/RemoteHotAlertHandlerTests.swift), [background reuse tests](../../Tests/UnitTests/BackgroundLocationContextReusePolicyTests.swift), and [foreground reuse tests](../../Tests/UnitTests/ForegroundDurableContextReusePolicyTests.swift). Persistence regression definitions include [HomeProjectionStoreTests](../../Tests/UnitTests/HomeProjectionStoreTests.swift), [SpcProviderSyncMapProductsTests](../../Tests/UnitTests/SpcProviderSyncMapProductsTests.swift), and [WSSI accepted-store tests](../../Tests/UnitTests/WSSIAcceptedStoreTests.swift). [WSSI local retention evidence](../validation/wssi-local-retention.md) records measured workload limits. Durable metadata and transport regression definitions include [FeedStateStoreTests](../../Tests/UnitTests/FeedStateStoreTests.swift), [HTTPDataDownloaderTests](../../Tests/UnitTests/HTTPDataDownloaderTests.swift) and the Home pipeline and SPC suites above (reopen, interrupted attempts, independent admission, fallback, cancellation and deferred validity). Historical ledgers record executed checks and their limitations; these links do not claim new test execution. [#346](https://github.com/justinrooks/project-arcus/issues/346) retired the universal physical-device profiling campaign without converting incomplete traces into performance evidence. Use targeted validation for concrete questions.
 
