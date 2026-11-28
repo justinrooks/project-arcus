@@ -1,5 +1,7 @@
 # Timely Notifications Strategy (Reconciled to Current Code)
 
+**Historical backend investigation (April 27, 2026).** See [Notifications](notifications.md) for current SkyAware client authority. Backend claims below remain unreconciled pending review in the owning Signal repository; preserve the original evidence and rationale. Do not use this as a current backend baseline.
+
 ## Scope
 This document reconciles strategy intent with the currently implemented Arcus Signal backend flow in `~/Code/arcus-signal/Sources`.
 

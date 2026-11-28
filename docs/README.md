@@ -21,6 +21,7 @@ Product meaning belongs to North Star, communication to Brand, and visual and in
 | Ingestion, acceptance, persistence, freshness and reactive presentation | [Ingestion and State](architecture/ingestion-and-state.md) |
 | Storm Setup, AQI, WSSI, SPC Map, widgets and App Intents | [Feature Data Contracts](architecture/feature-data-contracts.md) |
 | Location observations, context, presence and background lifecycle | [Location and Lifecycle](architecture/location-and-lifecycle.md) |
+| Local notification evaluation, delivery ownership and remote navigation | [Notifications](architecture/notifications.md) |
 | Installation credentials, consent, and protocol safeguards | [Installation enrollment](security/installation-enrollment.md) |
 | Local review expectations | [Code review guidance](code_review.md) |
 | Shared principles and reusable capabilities | [Prompt_Fu knowledge index](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/README.md) |
@@ -55,7 +56,7 @@ Keep deterministic, simulator UI, physical-device, and measurement evidence dist
 
 [Plans and progress records](plans/), [archived runbooks](runbooks/archive/), [audits](audits/), and other investigation notes preserve prior decisions, implementation rationale, and evidence. They are not blanket instructions for new work. Some remain unreconciled with later implementation or closed GitHub issues.
 
-Additional historical inputs include the [original app summary](codebase/skyaware-app-summary.md), [earlier architectural risks and decisions](codebase/skyaware-app-risks-decisions.md), [architecture recovery audit](audits/codebase-architecture-recovery.md), [notification strategy](architecture/timely-notifications-strategy.md), [release readiness punchlist](release-readiness-punchlist.md), and [lessons](../tasks/lessons.md). Reconcile their current authority before applying them.
+Additional historical inputs include the [original app summary](codebase/skyaware-app-summary.md), [earlier architectural risks and decisions](codebase/skyaware-app-risks-decisions.md), [architecture recovery audit](audits/codebase-architecture-recovery.md), [historical Signal notification investigation](architecture/timely-notifications-strategy.md), [release readiness punchlist](release-readiness-punchlist.md), and [lessons](../tasks/lessons.md). Reconcile their current authority before applying them.
 
 Consult historical material when the task requires it. Resolve contradictions against current authoritative evidence before reusing decisions; use GitHub issues and pull requests for implementation scope, status, and change-specific evidence.
 
