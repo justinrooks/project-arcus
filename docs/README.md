@@ -27,7 +27,7 @@ Product meaning belongs to North Star, communication to Brand, and visual and in
 | Shared principles and reusable capabilities | [Prompt_Fu knowledge index](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/README.md) |
 | Cross-system ownership and backend evolution | [Arcus ecosystem](https://github.com/justinrooks/Prompt_Fu/blob/main/docs/arcus/README.md) |
 
-The client architecture overview describes current composition and ownership. The installation document contains versioned protocol context that still needs reconciliation as the code evolves. Verify current behavior against source, tests, contracts, and accepted decisions. Do not interpret a repository's configured integration as proof of live deployment.
+The client architecture overview describes current composition and ownership. The installation document owns current client credentials, consent revisions, transfer admission and known security gaps. Verify current behavior against source, tests, contracts, and accepted decisions. Do not interpret a repository's configured integration as proof of live deployment.
 
 ## Build, Validation, and Evidence
 

@@ -79,7 +79,7 @@ This is an ownership and data-flow orientation, not an exhaustive execution or d
 | [WidgetSnapshotRefreshCoordinator](../../Sources/App/HomeRefreshV2/WidgetSnapshotRefreshCoordinator.swift), [WidgetSnapshotStore](../../Shared/WidgetSnapshotStore.swift) | Derived widget publication and shared app-group snapshot storage. |
 | [WeatherAwarenessSnapshotPublisher / store](../../Sources/Repos/WeatherAwarenessSnapshotStore.swift), [GetWeatherAwarenessIntent](../../Sources/App/GetWeatherAwarenessIntent.swift) | App-owned accepted-awareness file publication and read-only shortcut response. |
 
-See [Ingestion and State](ingestion-and-state.md) for shared execution, coordination, acceptance, persistence, freshness, transport provenance, presentation and reactive-consumer contracts, and [Feature Data Contracts](feature-data-contracts.md) for Storm Setup, AQI, WSSI, SPC Map, widgets and App Intents. See [Location and Lifecycle](location-and-lifecycle.md) for accepted observations, context, presence, authorization and scheduling. See [Notifications](notifications.md) for local evaluation, delivery ownership and remote convergence/navigation. Installation contracts are still being reconciled within the security guidance.
+See [Ingestion and State](ingestion-and-state.md) for shared execution, coordination, acceptance, persistence, freshness, transport provenance, presentation and reactive-consumer contracts, and [Feature Data Contracts](feature-data-contracts.md) for Storm Setup, AQI, WSSI, SPC Map, widgets and App Intents. See [Location and Lifecycle](location-and-lifecycle.md) for accepted observations, context, presence, authorization and scheduling. See [Notifications](notifications.md) for local evaluation, delivery ownership and remote convergence/navigation.
 
 ## External integrations
 
@@ -98,7 +98,7 @@ Signal and ArcusCore are legacy/deprecated; Forge is the strategic backend succe
 
 [Signal configuration](../../Sources/App/ArcusSignalConfiguration.swift) is required and fails fast when missing or invalid. Existing Signal adapters use that configured base, including the independent presence runtime; this is not a requirement that all future services share the same origin. [Forge configuration](../../Sources/App/ArcusForgeConfiguration.swift) validates a separate optional HTTPS origin for WSSI. Missing or invalid Forge configuration does not install a WSSI acquisition service. Eligible foreground ingestion offers WSSI refresh independently; background morning evaluation may consume a suitable already accepted local assessment. This is not background WSSI acquisition.
 
-Installation credentials, consent revisions, compatibility, and deployment prerequisites are addressed in [installation enrollment](../security/installation-enrollment.md); historical protocol claims there still require reconciliation with the current client. Do not infer live compatibility from source alone.
+Installation credentials, consent revisions, compatibility, and deployment prerequisites are addressed in [installation enrollment](../security/installation-enrollment.md). Do not infer live compatibility from source alone.
 
 ## Architecture invariants
 
