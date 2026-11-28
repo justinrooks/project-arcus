@@ -2,7 +2,7 @@
 
 This document describes SkyAware's Home ingestion, acceptance, persistence, freshness, and presentation ownership. Start with the [client architecture overview](README.md) for system composition.
 
-**Reconciliation scope:** the execution, coordination, canonical acceptance, persistence, freshness, transport provenance, presentation and reactive-consumer contracts below have been reviewed against current source and historical decisions. Detailed feature-specific contracts are still being reconciled. Consult their existing source and historical evidence until those sections are reviewed; this document does not supersede that material wholesale.
+See [Feature Data Contracts](feature-data-contracts.md) for specialized acquisition, validity, domain and derived-consumer requirements. Location lifecycle, notification delivery and installation security remain separate architectural concerns. The linked historical records preserve evidence and earlier decisions; reconcile any remaining contradictions against current source before reuse.
 
 ## Ingestion ownership
 
@@ -76,7 +76,7 @@ Use structured provider-lane concurrency and explicit task ownership. Do not int
 
 [RemoteNotificationReceipt](../../Sources/App/RemoteHotAlertHandler.swift) owns a separate 25-second total application budget with two seconds reserved for completion, its own watchdog, and exactly-once completion. Accepted product evidence can survive subsequent failure or timeout of discretionary work; receiving a payload is not by itself canonical acceptance. Receipt-specific results and navigation require separate notification-contract review.
 
-These are application policies, not execution guarantees from iOS. Expiration, cancellation, or insufficient remaining budget must stop discretionary background work. Preserve hot-alert priority, foreground-only AQI, and bounded admission of optional Storm Setup enrichment; their detailed acquisition and acceptance rules belong with the respective feature contracts. WSSI background assessment reads accepted local data rather than starting background acquisition.
+These are application policies, not execution guarantees from iOS. Expiration, cancellation, or insufficient remaining budget must stop discretionary background work. Preserve hot-alert priority, foreground-only AQI, and bounded admission of optional Storm Setup enrichment; their detailed acquisition and acceptance rules are in [Feature Data Contracts](feature-data-contracts.md). WSSI background assessment reads accepted local data rather than starting background acquisition.
 
 The scheduling fallback, cadence, authorization, durable presence delivery, and notification policies will be covered with lifecycle and notification ownership. Do not conflate them with coordinator plan priority.
 
@@ -154,7 +154,7 @@ Skipped slices retain accepted state; explicitly authorized empty slices can cle
 
 [HomeIngestionExecutor](../../Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift) uses that acknowledgement for projection-backed publication. A failed projection save does not invalidate independently accepted canonical domain data: retain a prior durable projection when available, otherwise suppress core replacement. Canonical data remains available for applicable independent evaluation and a later successful run can repair publication. Do not manufacture committed risk changes or publish an uncommitted candidate as accepted widget state. A skipped/no-update attempt may still consume an eligible retained projection; a missing projection-store seam does not establish accepted core status.
 
-Optional enrichment has its own persistence boundary. AQI preserves eligible same-location state on skip, failure or unavailable persistence, and publishes replacement only from the accepted returned record. Older AQI observations cannot replace newer persisted observations. Do not introduce a live-only AQI fallback after a failed save. Storm Setup, WSSI and derived consumer publication have their own feature-specific acceptance rules.
+Optional enrichment has its own persistence boundary. AQI preserves eligible same-location state on skip, failure or unavailable persistence, and publishes replacement only from the accepted returned record. Older AQI observations cannot replace newer persisted observations. Do not introduce a live-only AQI fallback after a failed save. See [Feature Data Contracts](feature-data-contracts.md) for Storm Setup, WSSI and derived consumer acceptance.
 
 Risk comparison state is persisted with the applicable risk commit; foreground observation and background comparison are distinct modes. Rejected domains or failed projection saves must not manufacture a forecast-transition baseline. Detailed comparison identity, eligibility and delivery belong with the notification contract.
 
